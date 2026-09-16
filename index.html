@@ -1688,6 +1688,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" style="margin-top:16px;padding:14px;background:#f8faf9">
 <div class="section-header" style="margin-bottom:10px"><div><strong>Individual User Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Click the modules this user can access. These rights override the role template.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(true)" type="button">Select All</button><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(false)" type="button">Clear All</button></div></div>
 <div id="userPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+ </div>
+ <div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Report Access</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Select exactly which reports this user can view or print.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(true)" type="button">Select All Reports</button><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(false)" type="button">Clear Reports</button></div></div><div id="userReportPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
 </div>
 <div class="user-error" id="userError"></div>
 <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
@@ -1880,6 +1882,20 @@ const ROLE_PAGES={
 const PERMISSION_PAGES=[
  ["dashboard","Dashboard"],["reservations","Reservations"],["guests","Guest Profiles"],["rooms","Rooms"],["checkin","Check-In"],["checkout","Check-Out"],["folios","Guest Folios"],["pmrooms","PM Rooms / Posting"],["pos","Restaurant POS"],["experiences","Experiences"],["payments","Payments"],["reports","Reports"],["settings","Settings"],["users","User Management"]
 ];
+const REPORT_PERMISSION_OPTIONS=[
+ ["daily_summary","Daily / Operational Summary"],["revenue_summary","Revenue Summary"],["reservation_report","Reservation Report"],["payment_report","Payments by Method"],["closing_report","Daily Closing / Reconciliation"],
+ ["printable_arrivals","Arrival List"],["printable_inhouse","Guest In-House List"],["printable_activity","Activity List"],["printable_departures","Departure List"],["printable_oos","Out of Order Rooms"],["printable_reservations","Reservations List"],["printable_nightaudit","Night Audit"],["printable_dailycash","Daily Cash"],["printable_dailychange","Daily Cash Change"],["printable_cashexpenses","Cash Expenses"],["printable_cashtransactions","Cash Transactions"],["printable_creditcard","Credit Card Payments"],["printable_banktransfer","Bank Transfers"],["printable_advance","Advance Payments"],
+ ["accounting_daily","Accounting — Daily Revenue"],["accounting_purchase","Accounting — Purchase Register"],["accounting_grn","Accounting — GRN Register"],["accounting_supplier","Accounting — Supplier Statements"],["accounting_aging","Accounting — AP Aging"],["accounting_expense","Accounting — Expense Register"],["accounting_trial","Accounting — Trial Balance"],["accounting_pl","Accounting — Profit & Loss"],["accounting_balance","Accounting — Balance Sheet"],["accounting_cashbank","Accounting — Cash & Bank Flow"],["accounting_inventory","Accounting — Inventory Valuation"],["accounting_ledger","Accounting — General Ledger Audit"]
+];
+const REPORT_PERMISSION_KEYS=REPORT_PERMISSION_OPTIONS.map(x=>x[0]);
+function getUserReportPermissions(user=currentUser){
+ if(user?.role==="Admin") return REPORT_PERMISSION_KEYS.slice();
+ const stored=Array.isArray(user?.permissions?.reports)?user.permissions.reports:null;
+ return stored?[...new Set(stored)]:[];
+}
+function canAccessReport(id,user=currentUser){ return user?.role==="Admin" || getUserReportPermissions(user).includes(id); }
+function requireReportAccess(id){ if(canAccessReport(id)) return true; alert("Access denied. This report has not been assigned to your user account."); return false; }
+
 const ROLE_PERMISSION_DEFAULTS={
  "Admin":PERMISSION_PAGES.map(x=>x[0]),
  "Manager":["dashboard","reservations","guests","rooms","checkin","checkout","folios","pmrooms","pos","experiences","payments","reports","settings"],
@@ -1963,6 +1979,13 @@ function ensurePropertyShape(p){
     out.property=out.property || "New Property";
     out.location=out.location || "";
     out.currency=out.currency || "$";
+    out.baseCurrency=String(out.baseCurrency||"LKR").toUpperCase();
+    out.guestCurrency=String(out.guestCurrency||((out.currency==="$"||out.currency==="USD")?"USD":out.currency)).toUpperCase();
+    out.postingRate=Number(out.postingRate||320);
+    out.settlementRate=Number(out.settlementRate||out.postingRate||320);
+    out.cashRate=Number(out.cashRate||out.settlementRate||320);
+    out.serviceChargeRate=Number(out.serviceChargeRate||0);
+    out.taxRate=Number(out.taxRate||0);
     out.roomRate=Number(out.roomRate||0);
     out.villaLocal=Number(out.villaLocal||0);
     out.villaForeign=Number(out.villaForeign||0);
@@ -2854,6 +2877,13 @@ function requireRole(...roles){
 }
 
 
+function applyReportPermissions(){
+ const sections={daily_summary:1,revenue_summary:2,payment_report:3,closing_report:4,reservation_report:5};
+ Object.entries(sections).forEach(([id,n])=>{const el=document.querySelector(`#reports .report-section:nth-of-type(${n})`);if(el)el.style.display=canAccessReport(id)?"":"none";});
+ document.querySelectorAll("#printReportType option").forEach(o=>{const ok=canAccessReport("printable_"+o.value);o.hidden=!ok;o.disabled=!ok;});
+ document.querySelectorAll("#accounting button[onclick*='printAccountingReport']").forEach(b=>{const m=(b.getAttribute("onclick")||"").match(/printAccountingReport\(['\"]([^'\"]+)/);if(m)b.style.display=canAccessReport("accounting_"+m[1])?"":"none";});
+}
+
 function applyRoleVisibility(){
 
     /* Check-In is an operational function. Keep it visible for all roles
@@ -2887,6 +2917,8 @@ function applyRoleVisibility(){
             : "none";
 
     }
+
+    applyReportPermissions();
 
 }
 
@@ -3059,6 +3091,9 @@ function renderUsers(){
 function renderUserPermissionCheckboxes(selected=[]){const box=document.getElementById("userPermissionsGrid");if(!box)return;const set=new Set(selected);box.innerHTML=PERMISSION_PAGES.map(([id,label])=>`<label style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:9px;font-size:12px;cursor:pointer"><input type="checkbox" class="user-permission" value="${id}" ${set.has(id)?"checked":""} style="width:auto"><span>${label}</span></label>`).join("");}
 function getSelectedUserPermissions(){return Array.from(document.querySelectorAll(".user-permission:checked")).map(el=>el.value);}
 function setAllUserPermissions(value){document.querySelectorAll(".user-permission").forEach(el=>el.checked=!!value);}
+function renderUserReportPermissionCheckboxes(selected=[]){const box=document.getElementById("userReportPermissionsGrid");if(!box)return;const set=new Set(selected);box.innerHTML=REPORT_PERMISSION_OPTIONS.map(([id,label])=>`<label style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:9px;font-size:12px;cursor:pointer"><input type="checkbox" class="user-report-permission" value="${id}" ${set.has(id)?"checked":""} style="width:auto"><span>${label}</span></label>`).join("");}
+function getSelectedUserReportPermissions(){return Array.from(document.querySelectorAll(".user-report-permission:checked")).map(el=>el.value);}
+function setAllUserReportPermissions(value){document.querySelectorAll(".user-report-permission").forEach(el=>el.checked=!!value); }
 
 function safeOpenUserModal(userId=null){
 
@@ -3128,6 +3163,7 @@ function openUserModal(userId=null){
             .textContent=
             "Leave password blank to keep the existing password.";
         renderUserPermissionCheckboxes(getUserPermissions(user).pages);
+    renderUserReportPermissionCheckboxes(user?.permissions?.reports || []);
 
     }else{
 
@@ -3292,7 +3328,7 @@ async function saveUser(){
 
     const propertyId=
         document.getElementById("userProperty")?.value || (role==="Admin" ? "all" : currentPropertyId || "");
-    const permissions={pages:getSelectedUserPermissions()};
+    const permissions={pages:getSelectedUserPermissions(),reports:getSelectedUserReportPermissions()};
 
 
     document.getElementById("userError")
@@ -4676,26 +4712,16 @@ function saveSettings(){
 ========================================================= */
 
 function clearRevenueHistory(){
-
-    if(!requireRole("Admin")) return;
-
-    const confirmClear=confirm(
-        "Clear booking and revenue history for "+(settings?.property||"this property")+"?\n\n"+
-        "This will delete reservations, folios, payments and POS sales for the CURRENT property only.\n\n"+
-        "Other properties will not be affected."
-    );
-    if(!confirmClear) return;
-
-    const finalConfirm=confirm("FINAL CONFIRMATION\n\nAll history for this property will be permanently deleted.\n\nContinue?");
-    if(!finalConfirm) return;
-
-    reservations=[];
-    folios=[];
-    payments=[];
-    sales=[];
-    saveData();
-    renderAll();
-    alert("Revenue history cleared for "+(settings?.property||"this property")+".");
+ if(!requireRole("Admin")) return;
+ const propertyName=settings?.property||"this property";
+ if(!confirm("Clear booking, revenue and accounting transaction history for "+propertyName+"?\n\nReservations, folios, payments, POS sales, PM postings, expenses, supplier payments, purchase orders, GRNs and journals for the CURRENT property will be permanently deleted.\n\nThe Chart of Accounts and settings will be kept.")) return;
+ if(!confirm("FINAL CONFIRMATION\n\nAll transaction history for this property will be permanently deleted.\n\nContinue?")) return;
+ reservations=[]; folios=[]; payments=[]; sales=[]; pmTransactions=[];
+ ["signature_pms_accounting_expenses","signature_pms_supplier_payments","signature_pms_purchase_orders","signature_pms_accounting_journals","signature_pms_grns"].forEach(key=>{
+  try{const all=JSON.parse(localStorage.getItem(key)||"[]");localStorage.setItem(key,JSON.stringify((all||[]).filter(x=>String(x.propertyId||currentPropertyId)!==String(currentPropertyId))));}catch(e){localStorage.setItem(key,"[]");}
+ });
+ saveData(); renderAll(); if(typeof renderAccounting==="function") renderAccounting();
+ alert("Revenue and accounting transaction history cleared for "+propertyName+". Chart of Accounts was kept.");
 }
 
 /* =========================================================
@@ -4988,6 +5014,9 @@ function saveReservation(){
         reservation.nights=nights;
         reservation.rate=rate;
         reservation.total=total;
+        reservation.currency=reservation.currency||settings?.guestCurrency||settings?.currency||"USD";
+        reservation.baseCurrency=reservation.baseCurrency||settings?.baseCurrency||"LKR";
+        reservation.postingRateAtBooking=Number(reservation.postingRateAtBooking||settings?.postingRate||320);
         reservation.adults=adults;
         reservation.children=children;
         reservation.childrenAges=childrenAges;
@@ -5064,6 +5093,9 @@ function saveReservation(){
         mealPlan,
         breakfastIncluded:bookingType==="room",
         deposit,
+        currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),
+        baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
+        postingRateAtBooking:Number(settings?.postingRate||320),
         status:"Reserved",
         notes,
         createdAt:localDateTime()
@@ -8377,7 +8409,8 @@ else if(["creditcard","banktransfer","advance","dailycash","cashtransactions"].i
 else if(type==="dailychange"||type==="cashexpenses"){let list=pay.filter(p=>String(p.type||"").toLowerCase().includes(type==="dailychange"?"change":"expense"));title=type==="dailychange"?"Daily Cash Change":"Cash Expenses";body=reportRowsTable(["Date / Time","Reference","Guest","Details","Amount","Method","Received By"],list.map(p=>[escapeHtml(p.date||""),escapeHtml(p.reference||""),escapeHtml(p.guestName||""),escapeHtml(p.notes||p.details||""),money(p.amount),escapeHtml(p.method||""),escapeHtml(p.receivedBy||"")]));}
 else if(type==="nightaudit"){const a=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").length,d=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).length,h=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=selected&&r.checkOut>selected).length;const rev=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").reduce((x,r)=>x+Number(r.total||0),0)+sales.filter(x=>x.date===selected).reduce((x,r)=>x+Number(r.total||0),0);title="Night Audit";body=`<div class="report-section"><div class="report-line"><span>Arrivals</span><strong>${a}</strong></div><div class="report-line"><span>Departures</span><strong>${d}</strong></div><div class="report-line"><span>In-House Guests</span><strong>${h}</strong></div><div class="report-line"><span>Accommodation + POS Revenue</span><strong>${money(rev)}</strong></div><div class="report-line"><span>Payments Received</span><strong>${money(pay.reduce((x,p)=>x+Number(p.amount||0),0))}</strong></div><div class="report-line"><strong>Outstanding Guest Balance</strong><strong>${money(reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((x,r)=>x+getBalance(r.id),0))}</strong></div></div>`;}
 box.innerHTML=reportHeader(title,selected)+body+`<div style="margin-top:30px;display:flex;justify-content:space-between"><span>Prepared by: ${escapeHtml(currentUser?.username||"")}</span><span>Signature: ____________________</span></div>`;}
-function printSelectedReport(){if(!canDo("reports.print")){alert("You do not have permission to print reports.");return;}renderPrintableReport();window.print();}
+function printSelectedReport(){
+ const type=document.getElementById("printReportType")?.value; if(type && !requireReportAccess("printable_"+type)) return;if(!canDo("reports.print")){alert("You do not have permission to print reports.");return;}renderPrintableReport();window.print();}
 
 function renderReports(){
 
@@ -9596,7 +9629,14 @@ function accRead(key){
 }
 function accWrite(key,val){ localStorage.setItem(key,JSON.stringify(val||[])); }
 function accProp(list){ return (list||[]).filter(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)); }
-function accMoney(v){ return money(Number(v||0)); }
+function accountingRateFor(obj){
+  if(!obj) return Number(settings?.postingRate||320);
+  const c=String(obj.currency||obj.guestCurrency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();
+  if(c===String(settings?.baseCurrency||"LKR").toUpperCase() || c==="LKR") return 1;
+  return Number(obj.postingRateAtBooking||obj.postingRateAtCalculation||obj.accountingRate||settings?.postingRate||320)||320;
+}
+function toAccountingAmount(v,obj){ return Number(v||0)*accountingRateFor(obj); }
+function accMoney(v){ return String(settings?.baseCurrency||"LKR").toUpperCase()+Number(v||0).toFixed(2); }
 function accId(prefix){ return prefix+"_"+Date.now()+"_"+Math.random().toString(36).slice(2,8); }
 
 const DEFAULT_ACCOUNTS = [
@@ -9727,7 +9767,7 @@ function cashBankFlow(){
   let cashIn=0,bankIn=0,cashOut=0,bankOut=0;
   ps.filter(paymentIsReceived).forEach(p=>{
     if(paymentIsRefund(p)) return;
-    const a=Math.abs(Number(p.amount||0));
+    const a=toAccountingAmount(Math.abs(Number(p.amount||0)),p);
     if(p.method==="Cash") cashIn+=a; else bankIn+=a;
   });
   sp.forEach(p=>{const a=Number(p.amount||0); if(p.method==="Cash") cashOut+=a; else bankOut+=a;});
@@ -9868,9 +9908,12 @@ function saveExpenseEntry(){
 }
 function reportShell(title,body){
   const w=window.open("","_blank","width=1000,height=800");if(!w){alert("Please allow pop-ups to print reports.");return;}
-  w.document.write(`<html><head><title>${escapeHtml(title)}</title><style>body{font-family:Arial;padding:25px;color:#17251d}h1{margin-bottom:5px}h2{margin-top:25px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f5f4}.right{text-align:right}.total{font-weight:bold}small{color:#666}@media print{.no-print{display:none}}</style></head><body><h1>${escapeHtml(settings?.property||"Hotel")} — ${escapeHtml(title)}</h1><small>Printed: ${new Date().toLocaleString()}</small>${body}<script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script></body></html>`);w.document.close();
+  w.document.write(`<html><head><title>${escapeHtml(title)}</title><style>body{font-family:Arial;padding:25px;color:#17251d}h1{margin-bottom:5px}h2{margin-top:25px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f5f4}.right{text-align:right}.total{font-weight:bold}small{color:#666}@media print{.no-print{display:none}}
+#users .section{width:100%;max-width:none}#users .table-wrap{width:100%;overflow-x:auto}#users table{width:100%;min-width:900px}#users table th,#users table td{white-space:nowrap}#users table th:first-child,#users table td:first-child{min-width:160px}#users table th:last-child,#users table td:last-child{min-width:160px}#userModal .modal-box{max-width:900px;width:min(96vw,900px)}#userPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:repeat(3,minmax(0,1fr)) !important}@media(max-width:900px){#userPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}}@media(max-width:600px){#userPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:1fr !important}}
+</style></head><body><h1>${escapeHtml(settings?.property||"Hotel")} — ${escapeHtml(title)}</h1><small>Printed: ${new Date().toLocaleString()}</small>${body}<script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script></body></html>`);w.document.close();
 }
 function printAccountingReport(type){
+ if(!requireReportAccess("accounting_"+type)) return;
   const rev=totalRevenue(), exp=totalManualExpenses(), profit=rev-exp, ap=apBySupplier().reduce((s,x)=>s+x.balance,0), flow=cashBankFlow(), bal=accountBalances();
   let title="",body="";
   if(type==="pl"){
@@ -9951,5 +9994,43 @@ document.addEventListener("click",function(ev){
 
 </script>
 
+
+<!-- SIGNATURE PMS v1.6.6 CURRENCY / TAX / SERVICE CHARGE EXTENSION -->
+<script>
+(function(){
+"use strict";
+function n(v,d=0){const x=Number(v);return Number.isFinite(x)?x:d;}
+function prop(){return (typeof getProperty==='function'?getProperty():null)||{};}
+function cfg(){return (typeof settings!=='undefined'&&settings)?settings:{};}
+function base(){return String(cfg().baseCurrency||'LKR').toUpperCase();}
+function guest(){return String(cfg().guestCurrency||cfg().currency||'USD').toUpperCase();}
+function postRate(){return n(cfg().postingRate,320);}
+function settleRate(){return n(cfg().settlementRate,postRate());}
+function serviceRate(){return Math.max(0,n(cfg().serviceChargeRate,0));}
+function taxRate(){return Math.max(0,n(cfg().taxRate,0));}
+function accMoney(v){return base()+n(v).toFixed(2);}
+window.signatureCurrency={baseCurrency:base,guestCurrency:guest,postingRate:postRate,settlementRate:settleRate,toBase:(a,r)=>n(a)*n(r,postRate()),accountingMoney:accMoney};
+function shape(p){if(!p)return;p.baseCurrency=p.baseCurrency||'LKR';p.guestCurrency=p.guestCurrency||p.currency||'USD';p.postingRate=n(p.postingRate,320);p.settlementRate=n(p.settlementRate,p.postingRate);p.cashRate=n(p.cashRate,p.settlementRate);p.serviceChargeRate=Math.max(0,n(p.serviceChargeRate,0));p.taxRate=Math.max(0,n(p.taxRate,0));}
+try{if(typeof settings!=='undefined')shape(settings);if(typeof properties!=='undefined'&&Array.isArray(properties))properties.forEach(shape);}catch(e){}
+
+window.recalculateFolioTaxesAndService=function(id,opts){
+ const r=(typeof reservations!=='undefined'?reservations:[]).find(x=>x.id===id),f=typeof getFolio==='function'?getFolio(id):null;if(!r||!f)return null;
+ const p=prop(),sr=opts&&opts.serviceRate!=null?Math.max(0,n(opts.serviceRate)):Math.max(0,n(f.serviceChargeRate,p.serviceChargeRate||0)),tr=opts&&opts.taxRate!=null?Math.max(0,n(opts.taxRate)):Math.max(0,n(f.taxRate,p.taxRate||0));
+ const subtotal=Math.max(0,n(r.total)+n(f.restaurant)+n(f.extras)-n(f.discounts));
+ f.serviceChargeRate=sr;f.taxRate=tr;f.serviceCharges=Number((subtotal*sr/100).toFixed(2));f.taxes=Number(((subtotal+f.serviceCharges)*tr/100).toFixed(2));f.currency=f.currency||guest();f.baseCurrency=f.baseCurrency||base();f.postingRateAtCalculation=postRate();f.total=n(r.total)+n(f.restaurant)+n(f.extras)+n(f.serviceCharges)+n(f.taxes)-n(f.discounts);f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();return f;
+};
+window.setFolioServiceCharge=function(id,rate){if(typeof requireRole==='function'&&!requireRole('Admin','Manager','Front Office','Cashier'))return;recalculateFolioTaxesAndService(id,{serviceRate:Math.max(0,n(rate))});if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
+window.setFolioTax=function(id,rate){if(typeof requireRole==='function'&&!requireRole('Admin','Manager','Front Office','Cashier'))return;recalculateFolioTaxesAndService(id,{taxRate:Math.max(0,n(rate))});if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
+window.removeFolioServiceCharge=function(id){setFolioServiceCharge(id,0);};window.removeFolioTax=function(id){setFolioTax(id,0);};
+
+function addSettings(){const page=document.getElementById('settings');if(!page||document.getElementById('currencyAccountingSettings'))return;const anchor=page.querySelector('#ratePlanSection')||null;const sec=document.createElement('div');sec.className='section';sec.id='currencyAccountingSettings';sec.innerHTML='<div class="section-header"><div><h3>Currency &amp; Hotel Accounting</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Guest rates may be foreign currency. Purchasing, expenses and financial statements use LKR.</div></div><span class="badge badge-success">LKR ACCOUNTING</span></div><div class="form-grid"><div class="form-group"><label>Accounting / Base Currency</label><input id="sigBaseCurrency" maxlength="3" value="LKR"></div><div class="form-group"><label>Guest / Selling Currency</label><input id="sigGuestCurrency" maxlength="3" value="USD"></div><div class="form-group"><label>Posting Rate — 1 Foreign Currency</label><input id="sigPostingRate" type="number" min="0" step="0.0001" value="320"></div><div class="form-group"><label>Settlement Rate — 1 Foreign Currency</label><input id="sigSettlementRate" type="number" min="0" step="0.0001" value="320"></div><div class="form-group"><label>Cash Rate — 1 Foreign Currency</label><input id="sigCashRate" type="number" min="0" step="0.0001" value="320"></div><div class="form-group"><label>Default Service Charge %</label><input id="sigServiceChargeRate" type="number" min="0" step="0.01" value="0"></div><div class="form-group"><label>Default Tax %</label><input id="sigTaxRate" type="number" min="0" step="0.01" value="0"></div><div class="form-group full"><div style="font-size:12px;color:#475569;background:#f8faf9;border:1px solid #d1d5db;border-radius:8px;padding:10px"><strong>Rule:</strong> Guest folios keep the guest currency and rate used. GRNs, expenses, supplier AP, cash/bank, P&amp;L and Balance Sheet are LKR.</div></div></div><button class="btn btn-primary" onclick="saveSignatureCurrencySettings()" style="margin-top:12px">Save Currency &amp; Charge Settings</button>';page.insertBefore(sec,anchor);loadSettingsPanel();}
+function loadSettingsPanel(){const s=cfg(),v={sigBaseCurrency:s.baseCurrency||'LKR',sigGuestCurrency:s.guestCurrency||s.currency||'USD',sigPostingRate:s.postingRate||320,sigSettlementRate:s.settlementRate||s.postingRate||320,sigCashRate:s.cashRate||s.settlementRate||320,sigServiceChargeRate:s.serviceChargeRate||0,sigTaxRate:s.taxRate||0};Object.entries(v).forEach(([id,x])=>{const e=document.getElementById(id);if(e)e.value=x;});}
+window.saveSignatureCurrencySettings=function(){if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;if(typeof settings==='undefined'||!settings){alert('Please select a property first.');return;}const v=id=>document.getElementById(id)?.value;const b=String(v('sigBaseCurrency')||'LKR').trim().toUpperCase()||'LKR',g=String(v('sigGuestCurrency')||'USD').trim().toUpperCase()||'USD',pr=Math.max(0,n(v('sigPostingRate'),320)),sr=Math.max(0,n(v('sigSettlementRate'),pr)),cr=Math.max(0,n(v('sigCashRate'),sr)),sc=Math.max(0,n(v('sigServiceChargeRate'),0)),tx=Math.max(0,n(v('sigTaxRate'),0));Object.assign(settings,{baseCurrency:b,guestCurrency:g,currency:g,postingRate:pr,settlementRate:sr,cashRate:cr,serviceChargeRate:sc,taxRate:tx});if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p)Object.assign(p,{baseCurrency:b,guestCurrency:g,currency:g,postingRate:pr,settlementRate:sr,cashRate:cr,serviceChargeRate:sc,taxRate:tx});}if(typeof saveData==='function')saveData();loadSettingsPanel();if(typeof renderAll==='function')renderAll();alert('Currency and charge settings saved. Historical transaction rates are not changed.');};
+
+function folioControls(){const host=document.getElementById('folioModalContent');if(!host||host.querySelector('#folioChargeControls'))return;let rid='';const buttons=host.querySelectorAll('[onclick]');for(const b of buttons){const x=String(b.getAttribute('onclick')||'');let m=x.match(/(?:addManualFolioCharge|openPaymentModal|checkInReservation|checkOutReservation)\(\'([^\']+)\'\)/);if(m){rid=m[1];break;}}if(!rid)return;const f=typeof getFolio==='function'?getFolio(rid):null;if(!f)return;const p=prop(),sr=f.serviceChargeRate!=null?f.serviceChargeRate:(p.serviceChargeRate||0),tr=f.taxRate!=null?f.taxRate:(p.taxRate||0);const d=document.createElement('div');d.id='folioChargeControls';d.className='section';d.style.cssText='padding:12px;margin-top:16px;border:1px solid #d1d5db';d.innerHTML='<div class="section-header"><div><h3>Service Charge &amp; Tax</h3><div style="font-size:12px;color:#6b7280">Service charge is calculated first; tax is calculated on subtotal plus service charge.</div></div></div><div class="form-grid"><div class="form-group"><label>Service Charge %</label><input id="folioServiceRate" type="number" min="0" step="0.01" value="'+sr+'"></div><div class="form-group"><label>Tax %</label><input id="folioTaxRate" type="number" min="0" step="0.01" value="'+tr+'"></div></div><div class="toolbar" style="margin-top:8px"><button class="btn btn-success btn-small" onclick="setFolioServiceCharge(\''+rid+'\',document.getElementById(\'folioServiceRate\').value)">Apply Service Charge</button><button class="btn btn-success btn-small" onclick="setFolioTax(\''+rid+'\',document.getElementById(\'folioTaxRate\').value)">Apply Tax</button><button class="btn btn-secondary btn-small" onclick="setFolioServiceCharge(\''+rid+'\',document.getElementById(\'folioServiceRate\').value);setFolioTax(\''+rid+'\',document.getElementById(\'folioTaxRate\').value)">Apply Both</button><button class="btn btn-danger btn-small" onclick="removeFolioServiceCharge(\''+rid+'\');removeFolioTax(\''+rid+'\')">Clear Both</button></div>';host.appendChild(d);}
+const observer=new MutationObserver(()=>{try{folioControls();}catch(e){}});function boot(){addSettings();try{if(typeof folios!=='undefined')folios.forEach(f=>{const p=prop();f.currency=f.currency||p.guestCurrency||p.currency||'USD';f.baseCurrency=f.baseCurrency||p.baseCurrency||'LKR';if(f.serviceChargeRate==null)f.serviceChargeRate=n(p.serviceChargeRate,0);if(f.taxRate==null)f.taxRate=n(p.taxRate,0);});}catch(e){}const h=document.getElementById('folioModalContent');if(h)observer.observe(h,{childList:true,subtree:true});}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
 
 </body></html>
