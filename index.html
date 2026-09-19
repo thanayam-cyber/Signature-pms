@@ -229,7 +229,9 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
  .sidebar{position:relative !important;width:100% !important;}
  .main{margin-left:0 !important;width:100% !important;}
 }
-</style></head>
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
 <body data-customer-build="true">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
@@ -259,6 +261,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="auth-error" id="loginError" style="display: block;">Invalid username or password.</div>
 <div class="auth-actions">
 <button class="btn btn-primary" onclick="login()">Login</button>
+<button class="btn btn-secondary" id="supabaseLoginBtn" onclick="supabaseLogin()" type="button" style="margin-top:8px;width:100%">Supabase Login</button>
+<div id="supabaseLoginStatus" style="font-size:11px;color:#6b7280;text-align:center;margin-top:7px"></div>
 </div>
 <div style="margin-top:14px;text-align:center">
 <button class="btn btn-secondary btn-small" onclick="recoverAdminAccess()" type="button">
@@ -2646,6 +2650,118 @@ function findUserById(id){
 
 }
 
+
+/* =========================================================
+   SUPABASE AUTH STEP 1
+   Source base: Signature_PMS_v1.9.16_USER_MANAGEMENT_LAYOUT_FIXED.html
+   Browser uses the publishable/anon key only. No service-role key.
+========================================================= */
+const SUPABASE_URL="https://bobzipeevmfyeprtryds.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_x6-F6tq4VnsztERS4AbATw_GlPOY-Hp";
+let supabaseClient=null;
+
+function initSupabaseClient(){
+    try{
+        if(!window.supabase || typeof window.supabase.createClient!=="function") return null;
+        if(!supabaseClient) supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+        return supabaseClient;
+    }catch(err){
+        console.error("Supabase client initialization failed",err);
+        return null;
+    }
+}
+
+async function supabaseLogin(){
+    const client=initSupabaseClient();
+    const status=document.getElementById("supabaseLoginStatus");
+    const errorEl=document.getElementById("loginError");
+    const email=String(document.getElementById("loginUsername")?.value||"").trim();
+    const password=String(document.getElementById("loginPassword")?.value||"");
+    if(status) status.textContent="Connecting to Supabase...";
+    if(errorEl) errorEl.style.display="none";
+    if(!client){
+        if(status) status.textContent="Supabase client is not available.";
+        return;
+    }
+    if(!email || !password){
+        if(status) status.textContent="Enter your Supabase email and password.";
+        return;
+    }
+    try{
+        const {data,error}=await client.auth.signInWithPassword({email,password});
+        if(error) throw error;
+        const authUser=data?.user;
+        if(!authUser) throw new Error("Supabase login succeeded but no Auth user was returned.");
+
+        const {data:profile,error:profileError}=await client
+            .from("profiles")
+            .select("id,username,full_name,role,department,status")
+            .eq("id",authUser.id)
+            .maybeSingle();
+        if(profileError) throw profileError;
+        if(!profile){
+            if(status) status.textContent="Supabase Auth succeeded, but no matching profile was found.";
+            return;
+        }
+        if(String(profile.status||"active").toLowerCase()!=="active"){
+            if(status) status.textContent="This Supabase profile is inactive.";
+            await client.auth.signOut();
+            return;
+        }
+
+        const {data:userProperties,error:propertyError}=await client
+            .from("user_properties")
+            .select("id,user_id,property_id,is_primary,created_at")
+            .eq("user_id",authUser.id);
+        if(propertyError) throw propertyError;
+
+        const {data:permissions,error:permissionError}=await client
+            .from("user_permissions")
+            .select("id,user_id,property_id,module,action,allowed")
+            .eq("user_id",authUser.id)
+            .eq("allowed",true);
+        if(permissionError) throw permissionError;
+
+        const pagePermissions=[];
+        const actionPermissions=[];
+        (permissions||[]).forEach(p=>{
+            if(p.module && p.action) actionPermissions.push(String(p.module)+"."+String(p.action));
+        });
+
+        const mappedUser={
+            id:authUser.id,
+            username:profile.username||authUser.email,
+            email:authUser.email||profile.username||"",
+            name:profile.full_name||profile.username||authUser.email||"",
+            fullName:profile.full_name||profile.username||authUser.email||"",
+            role:profile.role||"Viewer",
+            department:profile.department||"",
+            active:true,
+            permissions:{pages:pagePermissions,actions:[...new Set(actionPermissions)]}
+        };
+
+        users=getStoredUsers();
+        const idx=users.findIndex(u=>String(u.id)===String(mappedUser.id));
+        if(idx>=0) users[idx]={...users[idx],...mappedUser}; else users.push(mappedUser);
+        saveUsers();
+        currentUser=mappedUser;
+
+        const primary=(userProperties||[]).find(x=>x.is_primary) || (userProperties||[])[0];
+        if(primary?.property_id) currentPropertyId=primary.property_id;
+        setSession(mappedUser);
+
+        if(status) status.textContent="Supabase login successful.";
+        showPMS();
+    }catch(err){
+        console.error("Supabase login failed",err);
+        if(status) status.textContent=String(err?.message||"Supabase login failed.");
+        if(errorEl){errorEl.textContent=String(err?.message||"Supabase login failed.");errorEl.style.display="block";}
+    }
+}
+
+function initSupabaseAuthStep1(){
+    initSupabaseClient();
+}
 
 function initAuthentication(){
 
@@ -9355,6 +9471,8 @@ document.addEventListener(
                     calendarStartDate
                 );
 
+
+        initSupabaseAuthStep1();
 
         initAuthentication();
 
