@@ -12257,13 +12257,17 @@ function postStoreMovementsAccounting(movements){
           totals['__INVENTORY_DEBIT__']=(totals['__INVENTORY_DEBIT__']||0)+v;
           totals['__EQUITY_CREDIT__']=(totals['__EQUITY_CREDIT__']||0)+v;
         }else if(num(m.value)<0){
+          /* Outbound stock: expense/cost is DEBITED and inventory is CREDITED. */
           const account=costAccount(a||{category:m.category},m.type);
-          totals[account]=(totals[account]||0)+v;
+          totals['__COST_DEBIT__']=(totals['__COST_DEBIT__']||{});
+          totals['__COST_DEBIT__'][account]=(totals['__COST_DEBIT__'][account]||0)+v;
           totals['__INVENTORY_CREDIT__']=(totals['__INVENTORY_CREDIT__']||0)+v;
         }else{
+          /* Positive stock adjustment: inventory is DEBITED and the offset is CREDITED. */
           totals['__INVENTORY_DEBIT__']=(totals['__INVENTORY_DEBIT__']||0)+v;
           const account=costAccount(a||{category:m.category},m.type);
-          totals[account]=(totals[account]||0)+v;
+          totals['__COST_CREDIT__']=(totals['__COST_CREDIT__']||{});
+          totals['__COST_CREDIT__'][account]=(totals['__COST_CREDIT__'][account]||0)+v;
         }
       });
       const lines=[];
@@ -12271,10 +12275,13 @@ function postStoreMovementsAccounting(movements){
       const invCr=r2(totals['__INVENTORY_CREDIT__']||0);
       const eqCr=r2(totals['__EQUITY_CREDIT__']||0);
       if(invDr>0) lines.push({account:'Inventory Assets',debit:invDr,credit:0});
-      Object.entries(totals).forEach(([account,value])=>{
-        if(account.startsWith('__')) return;
-        const v=r2(value); if(v<=0) return;
-        lines.push({account,debit:0,credit:v});
+      const costDr=totals['__COST_DEBIT__']||{};
+      Object.entries(costDr).forEach(([account,value])=>{
+        const v=r2(value); if(v>0) lines.push({account,debit:v,credit:0});
+      });
+      const costCr=totals['__COST_CREDIT__']||{};
+      Object.entries(costCr).forEach(([account,value])=>{
+        const v=r2(value); if(v>0) lines.push({account,debit:0,credit:v});
       });
       if(invCr>0) lines.push({account:'Inventory Assets',debit:0,credit:invCr});
       if(eqCr>0) lines.push({account:'Owner Equity',debit:0,credit:eqCr});
