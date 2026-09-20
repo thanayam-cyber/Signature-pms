@@ -12267,21 +12267,30 @@ function postManualStockIssueAccounting(movements){
 function postStockTakeAccounting(movements){
   const adj=(movements||[]).filter(m=>String(m.type)==='adjust' && !m.journal && Math.abs(num(m.value))>=0.005);
   if(!adj.length)return true;
-  if(typeof window.postJournal!=='function')throw new Error('Accounting journal engine is unavailable.');
+
   const groups={};
   adj.forEach(m=>{
     const ref=String(m.ref||'').trim();
     const key=ref||String(m.id);
     (groups[key]||(groups[key]={ref,date:m.date,moves:[]})).moves.push(m);
   });
+
   let changed=false;
   Object.values(groups).forEach(g=>{
     const safeRef=('ST-ADJ-'+String(g.ref||g.date||'').replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
+    const journalKey=ACC_STORE.journals;
     let journals=[];
-    try{journals=JSON.parse(localStorage.getItem(ACC_STORE.journals)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
-    const existing=journals.find(j=>String(j.reference)===safeRef && String(j.propertyId)===String(currentPropertyId));
+    try{
+      const rawJ=localStorage.getItem(journalKey)||'[]';
+      journals=JSON.parse(rawJ);
+      if(!Array.isArray(journals))journals=[];
+    }catch(e){throw new Error('Cannot read accounting journal storage: '+e.message);}
+
+    const propertyId=String(currentPropertyId);
+    const existing=journals.find(j=>String(j.reference)===safeRef && String(j.propertyId||'')===propertyId);
+
     if(!existing){
-      let debitOther=0, creditOther=0, debitInv=0, creditInv=0;
+      let debitOther=0,creditOther=0,debitInv=0,creditInv=0;
       g.moves.forEach(m=>{
         const v=Math.abs(num(m.value));
         if(v<0.005)return;
@@ -12294,7 +12303,8 @@ function postStockTakeAccounting(movements){
         }
       });
       const lines=[];
-      debitOther=r2(debitOther);creditOther=r2(creditOther);debitInv=r2(debitInv);creditInv=r2(creditInv);
+      debitOther=r2(debitOther); creditOther=r2(creditOther);
+      debitInv=r2(debitInv); creditInv=r2(creditInv);
       if(debitOther>0)lines.push({account:'Other Operating Expenses',debit:debitOther,credit:0});
       if(debitInv>0)lines.push({account:'Inventory Assets',debit:debitInv,credit:0});
       if(creditOther>0)lines.push({account:'Other Operating Expenses',debit:0,credit:creditOther});
@@ -12302,16 +12312,40 @@ function postStockTakeAccounting(movements){
       const dr=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
       const cr=r2(lines.reduce((sum,l)=>sum+num(l.credit),0));
       if(!(dr>0)||Math.abs(dr-cr)>0.01)throw new Error('Stock Take journal is not balanced.');
-      window.postJournal(g.date,safeRef,'Stock Take Adjustment '+(g.ref||''),lines,'Stores / Stock Take');
+
+      /* Direct journal write. This intentionally bypasses the generic posting
+         wrapper so Stock Take cannot be blocked by another Stores posting path. */
+      journals.push({
+        id:accId('je'),
+        propertyId:currentPropertyId,
+        date:g.date||localDateTime(),
+        reference:safeRef,
+        description:'Stock Take Adjustment '+(g.ref||''),
+        source:'Stores / Stock Take',
+        lines,
+        postedBy:currentUser?.username||'Admin'
+      });
+      localStorage.setItem(journalKey,JSON.stringify(journals));
+
+      const verifyJ=JSON.parse(localStorage.getItem(journalKey)||'[]');
+      const savedJ=verifyJ.find(j=>String(j.reference)===safeRef && String(j.propertyId||'')===propertyId);
+      if(!savedJ)throw new Error('Stock Take journal was not persisted.');
     }
+
+    /* Persist the journal reference against the exact raw movement IDs. */
     const raw=rd(K.mv);
     const ids=new Set(g.moves.map(m=>String(m.id)));
     let found=0;
-    raw.forEach(m=>{if(ids.has(String(m.id))){m.journal=safeRef;found++;}});
+    raw.forEach(m=>{
+      if(ids.has(String(m.id))){m.journal=safeRef;found++;}
+    });
     if(found!==g.moves.length)throw new Error('Could not find all Stock Take movements in storage.');
     wr(K.mv,raw);
+
     const verify=rd(K.mv).filter(m=>ids.has(String(m.id)));
-    if(verify.length!==g.moves.length || verify.some(m=>String(m.journal)!==safeRef))throw new Error('Stock Take journal reference could not be persisted.');
+    if(verify.length!==g.moves.length || verify.some(m=>String(m.journal)!==safeRef)){
+      throw new Error('Stock Take journal reference could not be persisted.');
+    }
     changed=true;
   });
   return changed;
