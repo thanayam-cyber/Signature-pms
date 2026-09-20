@@ -12311,11 +12311,23 @@ function postStoreMovementsAccounting(movements){
 
 function repairUnpostedStoreMovements(){
   try{
-    const pending=mine(rd(K.mv)).filter(m=>!m.journal && ['sale','issue','wastage','adjust','opening'].includes(String(m.type)));
-    if(pending.length) postStoreMovementsAccounting(pending);
-  }catch(e){ console.error('Stores accounting repair failed:',e); }
+    const pending=mine(rd(K.mv)).filter(m=>!m.journal&&['sale','issue','wastage','adjust','opening'].includes(String(m.type)));
+    if(pending.length)postStoreMovementsAccounting(pending);
+    const issues=mine(rd(K.mv)).filter(m=>!m.journal&&m.type==='issue'&&Math.abs(num(m.value))>=0.005);
+    if(issues.length&&typeof postJournal==='function'){
+      const A=allArts(),groups={};issues.forEach(m=>{const k=String(m.ref||m.id);(groups[k]||(groups[k]=[])).push(m);});
+      const all=mine(rd(K.mv));let changed=false;
+      Object.entries(groups).forEach(([ref,moves])=>{
+        const jref='ST-ISSUE-'+String(ref).replace(/[^A-Za-z0-9_-]/g,'-');
+        if(journalEntries().some(j=>String(j.reference)===jref&&String(j.propertyId)===String(currentPropertyId))){moves.forEach(m=>m.journal=jref);changed=true;return;}
+        let total=0;const jl=[];moves.forEach(m=>{const v=Math.abs(num(m.value));if(v<0.005)return;const a=A.find(x=>String(x.id)===String(m.articleId));jl.push({account:costAccount(a||{category:m.category},'issue'),debit:r2(v),credit:0});total+=v;});
+        total=r2(total);if(total<=0)return;jl.push({account:'Inventory Assets',debit:0,credit:total});
+        try{postJournal(moves[0].date,jref,'Stock Issue '+ref,jl,'Stores / issue');moves.forEach(m=>m.journal=jref);changed=true;}catch(e){console.error('Stock Issue recovery failed:',e);}
+      });
+      if(changed){const ids={};issues.forEach(m=>ids[m.id]=m.journal);saveMine(K.mv,all.map(m=>ids[m.id]?{...m,journal:ids[m.id]}:m));}
+    }
+  }catch(e){console.error('Stores accounting repair failed:',e);}
 }
-
 window.storesInventoryValue=function(){
   try{return Object.values(stockState()).reduce((s,x)=>s+x.value,0);}catch(e){return 0;}
 };
@@ -12542,9 +12554,24 @@ window.stSaveIssue=function(){
   Object.keys(need_).forEach(id=>{if(need_[id]>((st[id]||{}).qty||0)+0.0001){const a=allArts().find(x=>String(x.id)===String(id));short.push((a?.name||id)+' (on hand '+fq((st[id]||{}).qty||0)+')');}});
   if(short.length&&!confirm('Insufficient stock for:\n'+short.join('\n')+'\n\nPost anyway? Stock will go negative.'))return;
   const ref=nextRef('SI'),dept=val('stiDept'),date=val('stiDate')||biz(),note=val('stiNote').trim();
-  addMovements(lines.map(l=>({type:'issue',articleId:l.articleId,qty:-l.qty,date,ref,dept,note})));
-  stClose('stIssueModal');renderTab();
-  alert('Stock issue '+ref+' posted.');
+  const made=addMovements(lines.map(l=>({type:'issue',articleId:l.articleId,qty:-l.qty,date,ref,dept,note})));
+  try{
+    const pending=(made||[]).filter(m=>m.type==='issue'&&!m.journal);
+    if(pending.length && typeof postJournal==='function'){
+      const A=allArts(), jl=[]; let total=0;
+      pending.forEach(m=>{const v=Math.abs(num(m.value));if(v<0.005)return;const a=A.find(x=>String(x.id)===String(m.articleId));jl.push({account:costAccount(a||{category:m.category},'issue'),debit:r2(v),credit:0});total+=v;});
+      total=r2(total);
+      if(total>0){
+        jl.push({account:'Inventory Assets',debit:0,credit:total});
+        const jref='ST-ISSUE-'+String(ref).replace(/[^A-Za-z0-9_-]/g,'-');
+        postJournal(date,jref,'Stock Issue '+ref,jl,'Stores / issue');
+        pending.forEach(m=>m.journal=jref);
+        const all=mine(rd(K.mv)),ids=new Set(pending.map(m=>m.id));
+        saveMine(K.mv,all.map(m=>ids.has(m.id)?{...m,journal:jref}:m));
+      }
+    }
+  }catch(e){console.error('Stock Issue accounting post failed:',e);alert('Stock Issue was saved, but accounting posting failed: '+(e?.message||e));stClose('stIssueModal');renderTab();return;}
+  stClose('stIssueModal');renderTab();alert('Stock issue '+ref+' posted and accounted.');
 };
 window.stOpenWaste=function(){
   if(!need('stores.wastage')||!requireArticles())return;
