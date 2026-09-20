@@ -12265,57 +12265,79 @@ function postManualStockIssueAccounting(movements){
    This path deliberately persists the journal reference against the raw movement
    storage, matching the proven Stock Issue persistence pattern. */
 function postStockTakeAccounting(movements){
-  const adj=(movements||[]).filter(m=>String(m.type)==='adjust' && !m.journal && Math.abs(num(m.value))>=0.005);
-  if(!adj.length)return true;
+  const list=(movements||[]).filter(m=>String(m.type)==='adjust' && Math.abs(num(m.value))>=0.005);
+  if(!list.length)return true;
 
+  /* One Stock Take reference must produce exactly ONE journal.  We build the
+     journal from ALL adjustment movements for that reference, then reconcile
+     the stored journal records so previous retry/repair attempts cannot leave
+     duplicate journals behind. */
   const groups={};
-  adj.forEach(m=>{
+  list.forEach(m=>{
     const ref=String(m.ref||'').trim();
-    const key=ref||String(m.id);
+    if(!ref)return;
+    const key=String(currentPropertyId)+'|'+ref;
     (groups[key]||(groups[key]={ref,date:m.date,moves:[]})).moves.push(m);
   });
+
+  const journalKey=ACC_STORE.journals;
+  let journals=[];
+  try{
+    const rawJ=localStorage.getItem(journalKey)||'[]';
+    journals=JSON.parse(rawJ);
+    if(!Array.isArray(journals))journals=[];
+  }catch(e){throw new Error('Cannot read accounting journal storage: '+e.message);}
 
   let changed=false;
   Object.values(groups).forEach(g=>{
     const safeRef=('ST-ADJ-'+String(g.ref||g.date||'').replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
-    const journalKey=ACC_STORE.journals;
-    let journals=[];
-    try{
-      const rawJ=localStorage.getItem(journalKey)||'[]';
-      journals=JSON.parse(rawJ);
-      if(!Array.isArray(journals))journals=[];
-    }catch(e){throw new Error('Cannot read accounting journal storage: '+e.message);}
-
     const propertyId=String(currentPropertyId);
-    const existing=journals.find(j=>String(j.reference)===safeRef && String(j.propertyId||'')===propertyId);
 
-    if(!existing){
-      let debitOther=0,creditOther=0,debitInv=0,creditInv=0;
-      g.moves.forEach(m=>{
-        const v=Math.abs(num(m.value));
-        if(v<0.005)return;
-        if(num(m.value)<0){
-          debitOther+=v;
-          creditInv+=v;
-        }else{
-          debitInv+=v;
-          creditOther+=v;
-        }
-      });
-      const lines=[];
-      debitOther=r2(debitOther); creditOther=r2(creditOther);
-      debitInv=r2(debitInv); creditInv=r2(creditInv);
-      if(debitOther>0)lines.push({account:'Other Operating Expenses',debit:debitOther,credit:0});
-      if(debitInv>0)lines.push({account:'Inventory Assets',debit:debitInv,credit:0});
-      if(creditOther>0)lines.push({account:'Other Operating Expenses',debit:0,credit:creditOther});
-      if(creditInv>0)lines.push({account:'Inventory Assets',debit:0,credit:creditInv});
-      const dr=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
-      const cr=r2(lines.reduce((sum,l)=>sum+num(l.credit),0));
-      if(!(dr>0)||Math.abs(dr-cr)>0.01)throw new Error('Stock Take journal is not balanced.');
+    let debitOther=0,creditOther=0,debitInv=0,creditInv=0;
+    g.moves.forEach(m=>{
+      const v=Math.abs(num(m.value));
+      if(v<0.005)return;
+      if(num(m.value)<0){
+        debitOther+=v;
+        creditInv+=v;
+      }else{
+        debitInv+=v;
+        creditOther+=v;
+      }
+    });
+    debitOther=r2(debitOther); creditOther=r2(creditOther);
+    debitInv=r2(debitInv); creditInv=r2(creditInv);
 
-      /* Direct journal write. This intentionally bypasses the generic posting
-         wrapper so Stock Take cannot be blocked by another Stores posting path. */
-      journals.push({
+    const lines=[];
+    if(debitOther>0)lines.push({account:'Other Operating Expenses',debit:debitOther,credit:0});
+    if(debitInv>0)lines.push({account:'Inventory Assets',debit:debitInv,credit:0});
+    if(creditOther>0)lines.push({account:'Other Operating Expenses',debit:0,credit:creditOther});
+    if(creditInv>0)lines.push({account:'Inventory Assets',debit:0,credit:creditInv});
+
+    const dr=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+    const cr=r2(lines.reduce((sum,l)=>sum+num(l.credit),0));
+    if(!(dr>0)||Math.abs(dr-cr)>0.01)throw new Error('Stock Take journal is not balanced.');
+
+    const sameLines=(a,b)=>{
+      if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;
+      const norm=x=>({account:String(x.account||''),debit:r2(x.debit||0),credit:r2(x.credit||0)});
+      const aa=a.map(norm).sort((x,y)=>x.account.localeCompare(y.account)||x.debit-y.debit||x.credit-y.credit);
+      const bb=b.map(norm).sort((x,y)=>x.account.localeCompare(y.account)||x.debit-y.debit||x.credit-y.credit);
+      return aa.every((x,i)=>x.account===bb[i].account&&x.debit===bb[i].debit&&x.credit===bb[i].credit);
+    };
+
+    const matches=journals.filter(j=>String(j.reference)===safeRef && String(j.propertyId||'')===propertyId);
+    let canonical=matches.find(j=>sameLines(j.lines,lines));
+
+    /* Remove duplicate/stale journals for this Stock Take reference. */
+    if(matches.length>1 || (matches.length===1 && !canonical)){
+      journals=journals.filter(j=>!(String(j.reference)===safeRef && String(j.propertyId||'')===propertyId));
+      canonical=null;
+      changed=true;
+    }
+
+    if(!canonical){
+      canonical={
         id:accId('je'),
         propertyId:currentPropertyId,
         date:g.date||localDateTime(),
@@ -12324,41 +12346,57 @@ function postStockTakeAccounting(movements){
         source:'Stores / Stock Take',
         lines,
         postedBy:currentUser?.username||'Admin'
-      });
-      localStorage.setItem(journalKey,JSON.stringify(journals));
-
-      const verifyJ=JSON.parse(localStorage.getItem(journalKey)||'[]');
-      const savedJ=verifyJ.find(j=>String(j.reference)===safeRef && String(j.propertyId||'')===propertyId);
-      if(!savedJ)throw new Error('Stock Take journal was not persisted.');
+      };
+      journals.push(canonical);
+      changed=true;
     }
 
-    /* Persist the journal reference against the exact raw movement IDs. */
+    /* Persist the single canonical journal before touching movement status. */
+    localStorage.setItem(journalKey,JSON.stringify(journals));
+    const verifyJ=JSON.parse(localStorage.getItem(journalKey)||'[]');
+    const saved=verifyJ.filter(j=>String(j.reference)===safeRef && String(j.propertyId||'')===propertyId);
+    if(saved.length!==1 || !sameLines(saved[0].lines,lines)){
+      throw new Error('Stock Take journal reconciliation failed.');
+    }
+
+    /* Persist the journal reference against every movement belonging to this
+       Stock Take reference, including older unposted lines. */
     const raw=rd(K.mv);
-    const ids=new Set(g.moves.map(m=>String(m.id)));
     let found=0;
     raw.forEach(m=>{
-      if(ids.has(String(m.id))){m.journal=safeRef;found++;}
+      if(String(m.propertyId||'')===propertyId && String(m.type)==='adjust' && String(m.ref||'')===String(g.ref)){
+        m.journal=safeRef;
+        found++;
+      }
     });
+    if(found!==g.moves.length){
+      /* If only a subset was supplied, use the supplied movement IDs as a safe
+         fallback; this avoids touching another property's movements. */
+      const ids=new Set(g.moves.map(m=>String(m.id)));
+      found=0;
+      raw.forEach(m=>{if(ids.has(String(m.id))){m.journal=safeRef;found++;}});
+    }
     if(found!==g.moves.length)throw new Error('Could not find all Stock Take movements in storage.');
     wr(K.mv,raw);
 
-    const verify=rd(K.mv).filter(m=>ids.has(String(m.id)));
+    const verify=rd(K.mv).filter(m=>String(m.propertyId||'')===propertyId && String(m.type)==='adjust' && String(m.ref||'')===String(g.ref));
     if(verify.length!==g.moves.length || verify.some(m=>String(m.journal)!==safeRef)){
       throw new Error('Stock Take journal reference could not be persisted.');
     }
     changed=true;
   });
+
   return changed;
 }
-
 function repairUnpostedStockTakeAdjustments(){
   try{
-    const pending=mine(rd(K.mv)).filter(m=>String(m.type)==='adjust' && !m.journal && Math.abs(num(m.value))>=0.005);
-    if(!pending.length)return;
-    postStockTakeAccounting(pending);
+    const all=mine(rd(K.mv)).filter(m=>String(m.type)==='adjust' && Math.abs(num(m.value))>=0.005);
+    if(!all.length)return;
+    const refs={};
+    all.forEach(m=>{const k=String(m.ref||m.id);(refs[k]||(refs[k]=[])).push(m);});
+    Object.values(refs).forEach(group=>postStockTakeAccounting(group));
   }catch(e){console.error('Stock Take accounting repair failed:',e);}
 }
-
 function repairUnpostedStockIssues(){
   try{
     const pending=mine(rd(K.mv)).filter(m=>String(m.type)==='issue' && !m.journal && Math.abs(num(m.value))>=0.005);
