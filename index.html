@@ -12311,24 +12311,12 @@ function postStoreMovementsAccounting(movements){
 
 function repairUnpostedStoreMovements(){
   try{
-    const raw=rd(K.mv), issues=mine(raw).filter(m=>m&&m.type==='issue'&&Math.abs(num(m.value))>=0.005);
-    if(!issues.length)return;
+    const raw=rd(K.mv);
+    const issues=raw.filter(m=>m&&m.type==='issue'&&!m.journal&&Math.abs(num(m.value))>=0.005);
     const groups={};
     issues.forEach(m=>{const k=String(m.ref||m.id);(groups[k]||(groups[k]=[])).push(m);});
     Object.entries(groups).forEach(([ref,moves])=>{
-      try{
-        // Reload the movements from storage so a stale in-memory journal flag can never block repair.
-        const fresh=mine(rd(K.mv)).filter(m=>m&&m.type==='issue'&&String(m.ref||m.id)===String(ref));
-        if(!fresh.length)return;
-        const jref='ST-ISSUE-'+String(ref).replace(/[^A-Za-z0-9_-]/g,'-');
-        const journals=accRead(ACC_STORE.journals);
-        const hasJournal=journals.some(j=>String(j.reference)===jref && String(j.propertyId)===String(currentPropertyId));
-        if(!hasJournal) postStockIssueAccounting(fresh,ref,fresh[0].date);
-        else {
-          const ids=new Set(fresh.map(m=>m.id));
-          saveMine(K.mv,rd(K.mv).map(m=>ids.has(m.id)?{...m,journal:jref}:m));
-        }
-      }catch(e){console.error('Stock Issue repair failed for '+ref,e);}
+      try{postStockIssueAccounting(moves,ref,moves[0].date);}catch(e){console.error('Stock Issue repair failed for '+ref,e);}
     });
   }catch(e){console.error('Stores accounting repair failed:',e);}
 }
@@ -12551,50 +12539,40 @@ window.stOpenIssue=function(){
   stAddLine('issue');
 };
 function postStockIssueAccounting(movements,ref,date){
-  const moves=(movements||[]).filter(m=>m&&m.type==='issue'&&!m.journal&&Math.abs(num(m.value))>=0.005);
+  const moves=(movements||[]).filter(m=>m&&m.type==='issue'&&Math.abs(num(m.value))>=0.005);
   if(!moves.length)return true;
   const jref='ST-ISSUE-'+String(ref||moves[0].ref||'').replace(/[^A-Za-z0-9_-]/g,'-');
-  const key=(typeof ACC_STORE!=='undefined'&&ACC_STORE.journals)||'signature_pms_accounting_journals';
-  const pid=currentPropertyId;
+  const key=ACC_STORE.journals;
+  const pid=moves[0].propertyId||currentPropertyId;
   let journals=accRead(key);
   let existing=journals.find(j=>String(j.reference)===jref&&String(j.propertyId)===String(pid));
   if(!existing){
-    const A=allArts(),lines=[],ids=new Set();
-    let total=0;
+    const A=allArts(),lines=[]; let total=0;
     moves.forEach(m=>{
-      const v=r2(Math.abs(num(m.value)));
-      if(v<0.005)return;
+      const v=r2(Math.abs(num(m.value))); if(v<0.005)return;
       const a=A.find(x=>String(x.id)===String(m.articleId));
       lines.push({account:costAccount(a||{category:m.category},'issue'),debit:v,credit:0});
-      ids.add(m.id); total=r2(total+v);
+      total=r2(total+v);
     });
     if(total<=0||!lines.length)throw new Error('Stock Issue has no value to post.');
     lines.push({account:'Inventory Assets',debit:0,credit:total});
     const dr=r2(lines.reduce((x,l)=>x+num(l.debit),0));
     const cr=r2(lines.reduce((x,l)=>x+num(l.credit),0));
     if(Math.abs(dr-cr)>0.01)throw new Error('Stock Issue journal is not balanced.');
-    const journal={
-      id:typeof accId==='function'?accId('je'):'je_'+Date.now(),
-      propertyId:pid,
-      date:date||moves[0].date||biz(),
-      reference:jref,
-      description:'Stock Issue '+String(ref||moves[0].ref||''),
-      source:'Stores / issue',
-      lines,
-      postedBy:currentUser?.username||'Admin'
-    };
+    const journal={id:accId('je'),propertyId:pid,date:date||moves[0].date||biz(),reference:jref,description:'Stock Issue '+String(ref||moves[0].ref||''),source:'Stores / issue',lines,postedBy:currentUser?.username||'Admin'};
     journals.push(journal);
     accWrite(key,journals);
-    journals=accRead(key);
-    existing=journals.find(j=>String(j.reference)===jref&&String(j.propertyId)===String(pid));
-    if(!existing)throw new Error('Stock Issue journal could not be written to accounting storage.');
   }
-  const all=mine(rd(K.mv));
-  const moveIds=new Set(moves.map(m=>m.id));
-  const updated=all.map(m=>moveIds.has(m.id)?{...m,journal:jref}:m);
-  saveMine(K.mv,updated);
-  const verify=mine(rd(K.mv)).filter(m=>moveIds.has(m.id));
-  if(verify.some(m=>!m.journal))throw new Error('Accounting journal saved, but Stock Issue movement status could not be updated.');
+  // CRITICAL: update the raw storage array by movement ID, without property filtering.
+  const raw=rd(K.mv);
+  const ids=new Set(moves.map(m=>String(m.id)));
+  const updated=raw.map(m=>ids.has(String(m.id))?{...m,journal:jref}:m);
+  wr(K.mv,updated);
+  // Verify the exact raw records and journal persisted.
+  const verifyRaw=rd(K.mv).filter(m=>ids.has(String(m.id)));
+  const verifyJ=accRead(key).find(j=>String(j.reference)===jref&&String(j.propertyId)===String(pid));
+  if(!verifyJ)throw new Error('Stock Issue journal was not persisted.');
+  if(verifyRaw.length!==ids.size || verifyRaw.some(m=>String(m.journal)!==jref))throw new Error('Stock Issue journal reference was not persisted to the movement.');
   return true;
 }
 window.stSaveIssue=function(){
