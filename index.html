@@ -1107,7 +1107,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="toolbar">
 <button class="btn btn-primary" onclick="openExpenseModal()">+ Expense / Journal</button>
-<button class="btn btn-secondary" onclick="renderAccounting()">Refresh</button>
+<button class="btn btn-secondary" id="accountingRefreshBtn" type="button" onclick="event.preventDefault();event.stopPropagation();window.renderAccounting&&window.renderAccounting();">Refresh</button>
 </div>
 </div>
 <div class="grid-4">
@@ -1209,7 +1209,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="section" id="generalLedgerSection" style="margin-top:14px">
 <div class="section-header"><div><h3>General Ledger</h3><div style="font-size:12px;color:#6b7280">Account-level transactions with debit, credit and running balance.</div></div>
-<div class="toolbar"><label style="font-size:12px;color:#6b7280">Account</label><select id="glAccountFilter" onchange="renderGeneralLedger()" style="min-width:220px"><option value="">All Accounts</option></select><button class="btn btn-secondary accounting-control-btn" id="glRefreshBtn" type="button">Refresh</button><button class="btn btn-primary" onclick="showAccountingReport('ledger')">Open Ledger Report</button><button class="btn btn-primary accounting-control-btn" id="glPrintLedgerBtn" type="button">Print Ledger</button></div></div>
+<div class="toolbar"><label style="font-size:12px;color:#6b7280">Account</label><select id="glAccountFilter" onchange="renderGeneralLedger()" style="min-width:220px"><option value="">All Accounts</option></select><button class="btn btn-secondary accounting-control-btn" id="glRefreshBtn" type="button" onclick="event.preventDefault();event.stopPropagation();window.renderGeneralLedger&&window.renderGeneralLedger();">Refresh</button><button class="btn btn-primary" onclick="showAccountingReport('ledger')">Open Ledger Report</button><button class="btn btn-primary accounting-control-btn" id="glPrintLedgerBtn" type="button">Print Ledger</button></div></div>
 <div class="grid-4" style="margin-bottom:12px"><div class="kpi"><span>Total Debits</span><strong id="glTotalDebit">LKR0.00</strong></div><div class="kpi"><span>Total Credits</span><strong id="glTotalCredit">LKR0.00</strong></div><div class="kpi"><span>Net Movement</span><strong id="glNetMovement">LKR0.00</strong></div><div class="kpi"><span>Transactions</span><strong id="glTxnCount">0</strong></div></div>
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Running Balance</th></tr></thead><tbody id="generalLedgerTable"><tr><td class="empty" colspan="7">No ledger transactions for the selected period.</td></tr></tbody></table></div>
 </div>
@@ -10587,6 +10587,7 @@ function transferARToCityLedger(reservationId){
 window.printCityLedgerStatement=printCityLedgerStatement; window.transferARToCityLedger=transferARToCityLedger;
 
 function renderAccounting(){
+  try{ if(window.syncPOSConsumptionAccounting) window.syncPOSConsumptionAccounting(); }catch(e){ console.warn('Accounting POS sync:',e); }
   const bd=accountingBusinessDate(); const bf=document.getElementById("bankReconFrom"), bt=document.getElementById("bankReconTo"); if(bf&&!bf.value)bf.value=bd; if(bt&&!bt.value)bt.value=bd;
   ensureAccountingBootstrap();
   const rev=totalRevenue(), exp=totalManualExpenses(), ap=apBySupplier().reduce((s,x)=>s+x.balance,0);
@@ -11989,6 +11990,21 @@ window.SignaturePMS_v168={version:'1.6.9',stores:K,refreshPurchasingModule,rende
 </style>
 <script>
 (function(){
+  const ids={
+    accountingRefreshBtn:function(){if(window.renderAccounting)window.renderAccounting();},
+    glRefreshBtn:function(){if(window.renderGeneralLedger)window.renderGeneralLedger();},
+    glPrintLedgerBtn:function(){if(window.printAccountingReport)window.printAccountingReport('ledger');}
+  };
+  document.addEventListener('click',function(e){
+    const b=e.target&&e.target.closest?e.target.closest('button[id]'):null;
+    if(!b||!ids[b.id])return;
+    e.preventDefault();e.stopImmediatePropagation();
+    try{ids[b.id]();}catch(err){console.error('Accounting control error',err);alert('Accounting action failed: '+(err&&err.message?err.message:err));}
+  },true);
+})();
+</script>
+<script>
+(function(){
   function force(){
     ['cityLedgerRefreshBtn','cityLedgerPaymentBtn','bankReconRefreshBtn','bankReconAddLineBtn','bankReconTodayBtn'].forEach(function(id){
       var b=document.getElementById(id); if(!b)return; b.disabled=false; b.removeAttribute('disabled'); b.style.pointerEvents='auto';
@@ -12223,7 +12239,7 @@ function addMovements(list){
     groups && Object.values(groups).forEach(g=>{
       try{
         const ref='ST-POS-'+String(g.ref||g.saleId||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-        const existing=journalEntries().find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
+        const existing=(()=>{try{return JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]').find(j=>String(j.reference)===ref && String(j.propertyId||currentPropertyId)===String(currentPropertyId));}catch(e){return null;}})();
         if(existing){
           g.moves.forEach(m=>{m.journal=ref;});
           return;
@@ -12249,6 +12265,12 @@ function addMovements(list){
         console.error('Automatic Stores accounting post failed:',err);
       }
     });
+    try{
+      const ids=new Set(saleMade.filter(m=>m.journal).map(m=>m.id));
+      if(ids.size){
+        saveMine(K.mv,mine(rd(K.mv)).map(x=>ids.has(x.id)?{...x,journal:saleMade.find(m=>m.id===x.id)?.journal||x.journal}:x));
+      }
+    }catch(e){console.warn('Unable to save POS accounting status:',e);}
     try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
   }
 
@@ -12741,6 +12763,50 @@ window.stRenderFoodCost=function(){
   byId('stFcStatement').innerHTML=st.length?st.map(r=>'<tr><td>'+esc(r.a.name)+'</td><td>'+esc(r.a.unit||'')+'</td><td style="text-align:right">'+fq(r.open)+'</td><td style="text-align:right">'+fq(r.recv)+'</td><td style="text-align:right">'+fq(r.sold)+'</td><td style="text-align:right">'+fq(r.issued)+'</td><td style="text-align:right">'+fq(r.waste)+'</td><td style="text-align:right">'+(r.adj>0?'+':'')+fq(r.adj)+'</td><td style="text-align:right"><strong>'+fq(r.close)+'</strong></td><td style="text-align:right">'+bm(r.value)+'</td></tr>').join(''):'<tr><td colspan="10" class="empty">No stock activity in this period.</td></tr>';
   stRenderPostBox();
 };
+
+/* ---------- POS ACCOUNTING SYNC ---------- */
+function syncPOSConsumptionAccounting(){
+  try{
+    if(typeof postJournal!=='function') return 0;
+    const A=allArts();
+    const M=mine(rd(K.mv));
+    const un=M.filter(m=>m.type==='sale' && !m.journal && Math.abs(num(m.value))>=0.005);
+    if(!un.length) return 0;
+    const journals=(()=>{try{const v=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}})();
+    const updates={};
+    const groups={};
+    un.forEach(m=>{
+      const key=String(m.saleId||m.ref||m.invoiceNo||m.date);
+      const g=groups[key]||(groups[key]={date:m.date,ref:m.invoiceNo||m.ref||('POS-'+m.saleId),moves:[]});
+      g.moves.push(m);
+    });
+    Object.values(groups).forEach(g=>{
+      const ref='ST-POS-'+String(g.ref||g.saleId||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
+      const existing=journals.find(j=>String(j.reference)===ref && String(j.propertyId||currentPropertyId)===String(currentPropertyId));
+      if(existing){g.moves.forEach(m=>updates[m.id]=ref);return;}
+      const totals={};
+      g.moves.forEach(m=>{
+        const a=A.find(x=>String(x.id)===String(m.articleId));
+        const account=costAccount(a||{category:m.category},'sale');
+        totals[account]=(totals[account]||0)+Math.abs(num(m.value));
+      });
+      const lines=[];
+      Object.entries(totals).forEach(([account,value])=>{const v=r2(value);if(v>0)lines.push({account,debit:v,credit:0});});
+      const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+      if(total>0){
+        lines.push({account:'Inventory Assets',debit:0,credit:total});
+        postJournal(g.date,ref,'POS recipe stock consumption '+(g.ref||g.date),lines,'Stores / POS');
+        g.moves.forEach(m=>updates[m.id]=ref);
+      }
+    });
+    if(Object.keys(updates).length){
+      saveMine(K.mv,M.map(m=>updates[m.id]?{...m,journal:updates[m.id]}:m));
+      return Object.keys(updates).length;
+    }
+  }catch(e){console.error('POS accounting sync failed:',e);}
+  return 0;
+}
+window.syncPOSConsumptionAccounting=syncPOSConsumptionAccounting;
 
 /* ---------- POST TO ACCOUNTING ---------- */
 window.stRenderPostBox=function(){
