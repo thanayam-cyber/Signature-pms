@@ -869,17 +869,11 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="report-line"><span>Cash Refunds</span><strong id="cashierCashRefunds">$0.00</strong></div>
 <div class="report-line"><span>Pending Payments (not counted)</span><strong id="cashierPendingPayments">$0.00</strong></div>
 <div class="report-line"><strong>Net Cash to Account</strong><strong id="cashierNetCash">$0.00</strong></div>
-<div class="form-grid" style="margin-top:12px">
-<div class="form-group"><label>Opening Float</label><input id="cashierOpeningFloat" min="0" step="0.01" type="number" value="0"/></div>
-<div class="form-group"><label>Actual Cash Counted</label><input id="cashierActualCash" min="0" placeholder="Enter counted cash" step="0.01" type="number"/></div>
-</div>
+<div class="report-line"><span>Opening Float</span><strong id="cashierOpeningFloatDisplay">$0.00</strong></div>
 <div class="report-line"><span>Expected Cash</span><strong id="cashierExpectedCash">$0.00</strong></div>
+<div class="report-line"><span>Actual Cash Counted</span><strong id="cashierActualCashDisplay">—</strong></div>
 <div class="report-line"><span>Cash Variance</span><strong id="cashierVariance">$0.00</strong></div>
-<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-<button class="btn btn-secondary btn-small" onclick="calculateCashierVariance()">Calculate Variance</button>
-<button class="btn btn-success btn-small" onclick="closeCashierDay()">Close Cashier Day</button>
-</div>
-<div id="cashierCloseMessage" style="font-size:12px;color:#6b7280;margin-top:8px"></div>
+<div id="cashierCloseMessage" style="font-size:12px;color:#6b7280;margin-top:8px">Cashier opening, cash count, reconciliation and closing are controlled in Accounting → Cashier Shift &amp; Daily Closing.</div>
 </div></div>
 </section>
 <!-- CASHIER SHIFT & DAILY CLOSING — v1.8.4 -->
@@ -915,10 +909,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section-header" style="margin-bottom:8px"><h3>3. Cash Count &amp; Reconciliation</h3></div>
 <div class="form-grid">
 <div class="form-group"><label>Expected Cash</label><input id="csExpectedCash" readonly="" type="text"/></div>
-<div class="form-group"><label>Actual Cash Counted</label><input id="csActualCash" min="0" oninput="calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
+<div class="form-group"><label>Actual Cash Counted</label><input id="csActualCash" min="0" oninput="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
 <div class="form-group"><label>Variance</label><input id="csVariance" readonly="" type="text"/></div>
 </div>
-<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-secondary" onclick="calculateCashierVariance()">Calculate Variance</button><button class="btn btn-success" onclick="closeCashierDay()">Close Cashier Day</button></div>
+<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-secondary" onclick="window.calculateCashierVariance()">Calculate Variance</button><button class="btn btn-success" onclick="window.closeCashierDay()">Close Cashier Day</button></div>
 </div>
 <div class="section" style="padding:14px;background:#f8faf9;margin-top:14px">
 <div class="section-header" style="margin-bottom:8px"><h3>4. Closing Record</h3></div>
@@ -2994,6 +2988,12 @@ function canAccessPage(page){
     if(currentUser.role==="Admin") return true;
 
     const perms=getUserPermissions(currentUser);
+    if(page==="reports"){
+        // Reports navigation requires both the Reports module right and at least
+        // one explicitly assigned report. Existing report-level controls below
+        // continue to govern each individual report.
+        return perms.pages.includes("reports") && getUserReportPermissions(currentUser).length>0;
+    }
     if(perms.pages.includes(page)) return true;
 
     // Granular action rights also unlock their parent module.
@@ -4348,6 +4348,7 @@ function showPage(page,button=null){
     // purchasing records (including Purchase Requests) are always visible.
     if(page==="purchasing") setTimeout(()=>{
         if(typeof renderPurchasingModule==="function") renderPurchasingModule();
+        if(typeof renderAccounting==="function") renderAccounting();
         if(typeof renderPurchaseRegister==="function") renderPurchaseRegister();
     },0);
 
@@ -8445,7 +8446,29 @@ function renderPOSInvoices(){
 function savePOSOrder(){if(!requireRole("Admin","Manager","Cashier"))return;const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,propertyId:currentPropertyId});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}folio.restaurant=Number(folio.restaurant||0)+total;folio.total=Number(folio.accommodation||0)+Number(folio.restaurant||0)+Number(folio.extras||0)+Number(folio.taxes||0)+Number(folio.serviceCharges||0)-Number(folio.discounts||0);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();clearPOSOrder();renderAll();logAudit("POS_SALE",saleId,"Restaurant order saved ["+invoiceNo+"]: "+total+" — "+outlet.name+" — "+customerType,currentPropertyId);try{if(typeof storesOnPOSSale==="function")storesOnPOSSale(saleId);}catch(e){console.warn("Stock deduction failed",e);}
 if(confirm("Restaurant order saved successfully.\nInvoice No: "+invoiceNo+"\n\nPrint invoice now?"))printPOSInvoice(saleId);}
 
-function renderPayments(){const tbody=document.getElementById('paymentTable');if(!tbody)return;const filtered=payments.filter(paymentMatchesFilters),sum=paymentSummary(filtered),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);};set('paymentGrossReceived',sum.gross);set('paymentRefunds',sum.refunds);set('paymentNetReceived',sum.net);set('paymentCashTotal',sum.cash-sum.cashRefunds);set('paymentCardTotal',sum.card);set('paymentBankTotal',sum.bank);set('cashierCashReceived',sum.cash);set('cashierCashRefunds',sum.cashRefunds);set('cashierNetCash',sum.cash-sum.cashRefunds);set('cashierPendingPayments',sum.pending);if(!filtered.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No payments match the selected filters.</td></tr>';return;}tbody.innerHTML=filtered.slice().reverse().map(p=>{const r=reservations.find(x=>x.id===p.reservationId),refund=paymentIsRefund(p),status=refund?'Refund':(p.status||'Received'),cls=refund?'payment-status-refund':status==='Pending'?'payment-status-pending':'payment-status-received';return `<tr><td>${escapeHtml(p.date||'-')}</td><td>${escapeHtml(p.reference||'-')}</td><td>${escapeHtml(r?.guestName||p.guestName||'-')}</td><td>${escapeHtml(r?.bookingNo||'-')}</td><td><span class="badge ${refund?'badge-red':'badge-green'}">${escapeHtml(p.type||'-')}</span></td><td>${escapeHtml(p.method||'-')}</td><td>${paymentDetailsHtml(p)}<br><span class="badge ${cls}">${status}</span></td><td><strong class="${refund?'payment-refund':''}">${refund?'-':''}${money(Math.abs(Number(p.amount||0)))}</strong></td><td>${(()=>{const a=[];if(!refund&&paymentIsReceived(p)&&Number(p.amount||0)>0)a.push(`<button class="btn btn-danger btn-small" onclick="openRefundModal('${p.reservationId}','${p.id}')">Refund</button>`);if(p.invoiceNo&&p.saleId)a.push(`<button class="btn btn-secondary btn-small" onclick="printPOSInvoice('${escapeHtml(p.saleId)}')">Invoice</button>`);return a.length?a.join(' '):'-';})()}</td></tr>`;}).join('');calculateCashierVariance(true);}
+function renderPayments(){const tbody=document.getElementById('paymentTable');if(!tbody)return;const filtered=payments.filter(paymentMatchesFilters),sum=paymentSummary(filtered),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);};set('paymentGrossReceived',sum.gross);set('paymentRefunds',sum.refunds);set('paymentNetReceived',sum.net);set('paymentCashTotal',sum.cash-sum.cashRefunds);set('paymentCardTotal',sum.card);set('paymentBankTotal',sum.bank);/* Cashier Daily Summary must use the same business-date cashier collection set as Cashier Shift & Daily Closing. */
+const cashierList=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
+const cashierSum=typeof paymentSummary==='function'?paymentSummary(cashierList):{cash:0,cashRefunds:0,pending:0};
+set('cashierCashReceived',cashierSum.cash);set('cashierCashRefunds',cashierSum.cashRefunds);set('cashierNetCash',cashierSum.cash-cashierSum.cashRefunds);set('cashierPendingPayments',cashierSum.pending);if(!filtered.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No payments match the selected filters.</td></tr>';return;}tbody.innerHTML=filtered.slice().reverse().map(p=>{const r=reservations.find(x=>x.id===p.reservationId),refund=paymentIsRefund(p),status=refund?'Refund':(p.status||'Received'),cls=refund?'payment-status-refund':status==='Pending'?'payment-status-pending':'payment-status-received';return `<tr><td>${escapeHtml(p.date||'-')}</td><td>${escapeHtml(p.reference||'-')}</td><td>${escapeHtml(r?.guestName||p.guestName||'-')}</td><td>${escapeHtml(r?.bookingNo||'-')}</td><td><span class="badge ${refund?'badge-red':'badge-green'}">${escapeHtml(p.type||'-')}</span></td><td>${escapeHtml(p.method||'-')}</td><td>${paymentDetailsHtml(p)}<br><span class="badge ${cls}">${status}</span></td><td><strong class="${refund?'payment-refund':''}">${refund?'-':''}${money(Math.abs(Number(p.amount||0)))}</strong></td><td>${(()=>{const a=[];if(!refund&&paymentIsReceived(p)&&Number(p.amount||0)>0)a.push(`<button class="btn btn-danger btn-small" onclick="openRefundModal('${p.reservationId}','${p.id}')">Refund</button>`);if(p.invoiceNo&&p.saleId)a.push(`<button class="btn btn-secondary btn-small" onclick="printPOSInvoice('${escapeHtml(p.saleId)}')">Invoice</button>`);return a.length?a.join(' '):'-';})()}</td></tr>`;}).join('');
+/* Cashier summary on Payments page: calculate directly from today's settled cashier payments and the open shift. */
+try{
+ const todayList=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
+ const todaySum=typeof paymentSummary==='function'?paymentSummary(todayList):{cash:0,cashRefunds:0};
+ const shift=typeof currentCashierShift==='function'?currentCashierShift():null;
+ const closing=typeof cashierClosingForBusinessDate==='function'?cashierClosingForBusinessDate():null;
+ const hasCashierControl=!!(shift||closing);
+ const opening=hasCashierControl?Number((shift||closing)?.openingFloat||0):0;
+ const expected=hasCashierControl?opening+Number(todaySum.cash||0)-Number(todaySum.cashRefunds||0):0;
+ const actual=closing?Number(closing.actualCash||0):null;
+ const variance=closing?Number(closing.variance||0):0;
+ set('cashierOpeningFloatDisplay',opening);
+ set('cashierExpectedCash',expected);
+ const actualDisplay=document.getElementById('cashierActualCashDisplay');
+ if(actualDisplay) actualDisplay.textContent=(closing && Number.isFinite(Number(closing.actualCash))) ? money(Number(closing.actualCash)) : '—';
+ set('cashierVariance',variance);
+ set('csVarianceTop',variance);
+}catch(e){console.error('Payments cashier summary refresh failed',e);}
+}
 function openStandalonePaymentModal(){if(!requireRole('Admin','Manager','Front Office','Cashier'))return;const select=document.getElementById('standalonePaymentReservation');if(!select)return;const active=reservations.filter(r=>!['Cancelled','Checked-Out'].includes(r.status));select.innerHTML=active.length?active.map(r=>{const fp=getFinancialPosition(r.id);const label=fp.status==='Overpaid'?`Credit ${money(fp.credit)}`:fp.status==='Paid'?'Paid':`Balance ${money(fp.balance)}`;return `<option value="${r.id}">${escapeHtml(r.bookingNo)} — ${escapeHtml(r.guestName)} — ${label}</option>`;}).join(''):'<option value="">No active reservations</option>';document.getElementById('standalonePaymentReceivedBy').value=currentUser?.username||'';updateStandalonePaymentAmountRule();document.getElementById('standalonePaymentModal').classList.add('show');}
 function updateStandalonePaymentBalance(){updateStandalonePaymentAmountRule();}
 function updateStandalonePaymentAmountRule(){const id=document.getElementById('standalonePaymentReservation')?.value,a=document.getElementById('standalonePaymentAmount'),type=document.getElementById('standalonePaymentType')?.value;if(!a)return;if(type==='Deposit')a.value='';else if(id)a.value=getBalance(id).toFixed(2);a.removeAttribute('max');}
@@ -8456,7 +8479,16 @@ function openRefundModal(reservationId,paymentId){if(!requireActionPermission('p
 function closeRefundModal(){document.getElementById('refundModal')?.classList.remove('show');}
 function saveRefund(){if(!requireActionPermission('payments.refund'))return;const m=document.getElementById('refundModal'),rid=m.dataset.reservationId,pid=m.dataset.paymentId,a=Number(document.getElementById('refundAmount').value||0),reason=document.getElementById('refundReason').value.trim(),err=document.getElementById('refundError'),orig=payments.find(x=>x.id===pid),r=reservations.find(x=>x.id===rid)||{};if(!orig){err.textContent='Original payment not found.';return;}const refunded=payments.filter(x=>x.refundOf===pid).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(orig.amount||0))-refunded);if(a<=0||a>refundable+0.01){err.textContent='Refund amount exceeds the refundable amount.';return;}if(!reason){err.textContent='Refund reason is required.';return;}const ref=document.getElementById('refundReference').value.trim()||'REF-'+Date.now();payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:rid,date:localDateTime(),reference:ref,type:'Refund',method:document.getElementById('refundMethod').value,amount:-a,status:'Received',receivedBy:currentUser?.username||'Manager',notes:reason,refundOf:pid,propertyId:currentPropertyId,businessDate:cashierBusinessDate(),guestName:r.guestName||'',roomId:r.roomId||null,cashier:currentUser?.username||'Manager',shiftId:currentCashierShift()?.id||null});saveData();closeRefundModal();renderAll();logAudit('PAYMENT_REFUND',ref,'Refund recorded: '+a,currentPropertyId);alert('Refund recorded successfully.');}
 function cashierBusinessDate(){return (typeof settings!=='undefined'&&settings?.businessDate) ? settings.businessDate : localDateString();}
-function getTodayCashierPayments(){return payments.filter(p=>String(p.propertyId||currentPropertyId)===String(currentPropertyId) && String(p.businessDate||paymentDateOnly(p))===String(cashierBusinessDate()));}
+function getTodayCashierPayments(){
+  const d=String(cashierBusinessDate()||'');
+  return payments.filter(p=>{
+    if(String(p.propertyId||currentPropertyId)!==String(currentPropertyId)) return false;
+    const bd=String(p.businessDate||'').slice(0,10);
+    const pd=String(paymentDateOnly(p)||'');
+    /* A recorded business date is authoritative. Only legacy payments without one use payment date. */
+    return bd ? bd===d : pd===d;
+  });
+}
 function cashierShiftRows(){try{return readArray('signature_pms_cashier_shifts_v184')}catch(e){return []}}
 function saveCashierShiftRows(a){localStorage.setItem('signature_pms_cashier_shifts_v184',JSON.stringify(a));}
 function currentCashierShift(){return cashierShiftRows().find(x=>x.propertyId===currentPropertyId&&x.businessDate===cashierBusinessDate()&&x.status==='Open'&&x.cashier===(currentUser?.username||'Cashier'));}
@@ -8472,8 +8504,21 @@ function openCashierShift(){
     if(closed){alert('The cashier day is already closed for '+formatDate(bd)+'. A new cashier shift can only be opened for the next business date.');return;}
     const rows=cashierShiftRows();
     const openForDate=rows.find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.businessDate||'')===bd&&String(x.status||'Open')==='Open');
-    if(openForDate){alert('A cashier shift is already open for '+formatDate(bd)+'.');return;}
     const f=Number(document.getElementById('csOpeningFloat')?.value||document.getElementById('cashierOpeningFloat')?.value||0);
+    if(openForDate){
+        if(!Number.isFinite(f)||f<0){alert('Opening float cannot be negative.');return;}
+        if(Math.abs(Number(openForDate.openingFloat||0)-f)>0.009){
+            openForDate.openingFloat=f;
+            saveCashierShiftRows(rows);
+            document.getElementById('csOpeningFloat') && (document.getElementById('csOpeningFloat').value=f);
+            document.getElementById('cashierOpeningFloat') && (document.getElementById('cashierOpeningFloat').value=f);
+            cashierShiftRefresh();
+            logAudit('CASHIER_SHIFT_FLOAT_UPDATED',bd,'Opening float updated to '+f+' for the existing open cashier shift.',currentPropertyId);
+            alert('Opening float updated to '+money(f)+'.');
+            return;
+        }
+        alert('A cashier shift is already open for '+formatDate(bd)+'.');return;
+    }
     if(!Number.isFinite(f)||f<0){alert('Opening float cannot be negative.');return;}
     const cashier=currentUser?.username||'Cashier';
     rows.push({id:'CS_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,businessDate:bd,cashier,openingFloat:f,openedAt:localDateTime(),status:'Open'});
@@ -8484,6 +8529,34 @@ function openCashierShift(){
     logAudit('CASHIER_SHIFT_OPENED',bd,'New cashier shift opened for business date '+bd+'. Opening float '+f,currentPropertyId);
     alert('New cashier shift opened successfully for '+formatDate(bd)+'.');
 }
+function updateOpenCashierOpeningFloat(sourceEl){
+    try{
+        const sh=typeof currentCashierShift==='function'?currentCashierShift():null;
+        if(!sh || typeof cashierClosingForBusinessDate==='function' && cashierClosingForBusinessDate()) return;
+        const raw=String(sourceEl?.value??'').trim();
+        if(raw==='') return;
+        const f=Number(raw);
+        if(!Number.isFinite(f)||f<0) return;
+        const rows=cashierShiftRows();
+        const idx=rows.findIndex(x=>x.id===sh.id);
+        if(idx<0) return;
+        rows[idx]={...rows[idx],openingFloat:f};
+        saveCashierShiftRows(rows);
+        const a=document.getElementById('csOpeningFloat'),b=document.getElementById('cashierOpeningFloat');
+        if(a && a!==sourceEl) a.value=f;
+        if(b && b!==sourceEl) b.value=f;
+        cashierShiftRefresh();
+    }catch(e){console.warn('Opening float update failed',e);}
+}
+function bindCashierOpeningFloatPersistence(){
+    ['csOpeningFloat','cashierOpeningFloat'].forEach(id=>{
+        const el=document.getElementById(id); if(!el || el.dataset.openingFloatBound==='1') return;
+        el.dataset.openingFloatBound='1';
+        el.addEventListener('change',()=>updateOpenCashierOpeningFloat(el));
+        el.addEventListener('blur',()=>updateOpenCashierOpeningFloat(el));
+    });
+}
+
 function cashierActualEl(){
     /* Two "Actual Cash Counted" inputs exist (Payments page: cashierActualCash, Cashier Shift page: csActualCash).
        Use the one on the page the user is actually looking at, instead of always picking the hidden csActualCash. */
@@ -8496,17 +8569,35 @@ function cashierActualEl(){
     return a||b;
 }
 function calculateCashierVariance(silent=false){
-    const list=getTodayCashierPayments(),sum=paymentSummary(list),sh=currentCashierShift()||cashierClosingForBusinessDate();
-    const opening=Number(sh?.openingFloat ?? document.getElementById('cashierOpeningFloat')?.value ?? document.getElementById('csOpeningFloat')?.value ?? 0);
-    const expected=opening+sum.cash-sum.cashRefunds;
-    const actualEl=cashierActualEl(),actual=actualEl&&actualEl.value!==''?Number(actualEl.value):null;
-    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=money(v)};
-    if(document.getElementById('cashierExpectedCash'))document.getElementById('cashierExpectedCash').textContent=money(expected);
-    set('csExpectedCash',expected);
-    if(actual===null){set('csVariance','0');if(document.getElementById('cashierVariance'))document.getElementById('cashierVariance').textContent='Enter actual cash';if(!silent)return {expected,actual:null,variance:null};return {expected,actual:null,variance:null};}
-    const variance=actual-expected; set('csVariance',variance); if(document.getElementById('cashierVariance'))document.getElementById('cashierVariance').textContent=money(variance); if(document.getElementById('csVarianceTop'))document.getElementById('csVarianceTop').textContent=money(variance);
+  try{
+    const list=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
+    const sum=typeof paymentSummary==='function'?paymentSummary(list):{cash:0,cashRefunds:0};
+    const sh=(typeof currentCashierShift==='function'?currentCashierShift():null)||(typeof cashierClosingForBusinessDate==='function'?cashierClosingForBusinessDate():null);
+    if(!sh){ const expected=Number(sum.cash||0)-Number(sum.cashRefunds||0); ['csActualCash','cashierActualCash'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const z=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);}; z('csVarianceTop',0); z('cashierVariance',0); return {expected,actual:null,variance:0}; }
+    const opening=Number(sh&&sh.openingFloat!=null?sh.openingFloat:(document.getElementById('csOpeningFloat')?.value||document.getElementById('cashierOpeningFloat')?.value||0));
+    const cashReceived=Number(sum.cash||0), cashRefunds=Number(sum.cashRefunds||0);
+    const expected=opening+cashReceived-cashRefunds;
+    const actualEl=typeof cashierActualEl==='function'?cashierActualEl():(document.getElementById('csActualCash')||document.getElementById('cashierActualCash'));
+    const raw=actualEl?String(actualEl.value??'').trim():'';
+    if(raw===''){ if(!silent) alert('Please enter the actual cash counted.'); return {expected,actual:null,variance:null}; }
+    const actual=Number(raw);
+    if(!Number.isFinite(actual)){ if(!silent) alert('Actual cash counted must be a valid number.'); return {expected,actual:null,variance:null}; }
+    const variance=actual-expected;
+    const moneyFn=(typeof money==='function')?money:(v=>'LKR '+Number(v||0).toFixed(2));
+    const putValue=(id,v)=>{const e=document.getElementById(id);if(e){e.value=Number(v||0).toFixed(2);e.dispatchEvent(new Event('input',{bubbles:true}));}};
+    const putText=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=moneyFn(v);};
+    putValue('csExpectedCash',expected); putText('cashierExpectedCash',expected);
+    putValue('csActualCash',actual); putValue('cashierActualCash',actual);
+    putValue('csVariance',variance); putText('cashierVariance',variance); putText('csVarianceTop',variance);
     return {expected,actual,variance};
+  }catch(err){
+    console.error('Cashier variance calculation failed',err);
+    if(!silent) alert('Unable to calculate cashier variance: '+(err?.message||err));
+    return {expected:0,actual:null,variance:null,error:String(err)};
+  }
 }
+window.calculateCashierVariance=calculateCashierVariance;
+
 function closeCashierDay(){
     if(!requireRole('Admin','Manager','Cashier'))return;
     const sh=currentCashierShift(); if(!sh){alert('Open a cashier shift before closing the cashier day.');return;}
@@ -8521,13 +8612,20 @@ function closeCashierDay(){
 }
 function cashierShiftRefresh(){
     const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=paymentSummary(list),sh=currentCashierShift(),cl=cashierClosingForBusinessDate();
-    const expected=Number((sh||cl)?.openingFloat||0)+sum.cash-sum.cashRefunds; const actual=cl ? Number(cl.actualCash||0) : Number(cashierActualEl()?.value||0); const variance=cl ? Number(cl.variance||0) : actual-expected;
+    const expected=Number((sh||cl)?.openingFloat||0)+sum.cash-sum.cashRefunds; const actualInput=cashierActualEl(); const rawActual=actualInput?String(actualInput.value??'').trim():''; const hasActual=rawActual!==''&&Number.isFinite(Number(rawActual)); const actual=cl ? Number(cl.actualCash||0) : (sh&&hasActual ? Number(rawActual) : 0); const variance=cl ? Number(cl.variance||0) : (sh&&hasActual ? actual-expected : 0);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v}; set('csBusinessDate',formatDate(d));set('csCashier',currentUser?.username||'Cashier');set('csCashierName',currentUser?.username||'Cashier');set('csShiftStatus',cl?'Closed':(sh?'Open':(anyCashierShift()?'Open':'Not Open')));set('csVarianceTop',money(variance));
     set('csGross',money(sum.gross));set('csCash',money(sum.cash));set('csCard',money(sum.card));set('csBank',money(sum.bank));set('csRefunds',money(sum.refunds));set('csNet',money(sum.net));
-    const ce=document.getElementById('csExpectedCash');if(ce)ce.value=money(expected); const cv=document.getElementById('csVariance');if(cv)cv.value=money(variance);
+    const of=document.getElementById('csOpeningFloat');if(of)of.value=String(Number((sh||cl)?.openingFloat||0));
+    const legacyOf=document.getElementById('cashierOpeningFloat');if(legacyOf)legacyOf.value=String(Number((sh||cl)?.openingFloat||0));
+    const ce=document.getElementById('csExpectedCash');if(ce)ce.value=money(expected);
+    const ae=document.getElementById('csActualCash');if(ae){if(!(sh||cl))ae.value='';else if(cl)ae.value=String(actual);else if(hasActual)ae.value=String(actual);}
+    const av=document.getElementById('cashierActualCash');if(av){if(!(sh||cl))av.value='';else if(cl)av.value=String(actual);else if(hasActual)av.value=String(actual);}
+    const cv=document.getElementById('csVariance');if(cv)cv.value=money(variance);
     const cm=document.getElementById('csShiftMessage');if(cm)cm.textContent=cl?'Cashier day is closed.':sh?'Shift opened by '+sh.cashier+' at '+sh.openedAt+'.':anyCashierShift()?'Another cashier has an open cashier shift.':'No cashier shift is open for this business date.';
     const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+money(cl.expectedCash)+' | Actual: '+money(cl.actualCash)+' | Variance: '+money(cl.variance)):'No cashier closing recorded for this business date.';
 }
+bindCashierOpeningFloatPersistence();
+
 function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=paymentSummary(list),w=window.open('','_blank');if(!w)return;const cl=cashierClosingForBusinessDate(),sh=currentCashierShift()||cl;const expected=Number(sh?.openingFloat||0)+sum.cash-sum.cashRefunds;w.document.write(`<html><head><title>Cashier Report ${d}</title><style>body{font-family:Arial;padding:30px}.line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #ddd}</style></head><body><h2>Signature PMS — Daily Cashier Report</h2><div>Business Date: ${d}</div><div>Cashier: ${currentUser?.username||''}</div><div class='line'><span>Opening Float</span><strong>${money(sh?.openingFloat||0)}</strong></div><div class='line'><span>Gross Received</span><strong>${money(sum.gross)}</strong></div><div class='line'><span>Cash Received</span><strong>${money(sum.cash)}</strong></div><div class='line'><span>Card</span><strong>${money(sum.card)}</strong></div><div class='line'><span>Bank / Online</span><strong>${money(sum.bank)}</strong></div><div class='line'><span>Refunds</span><strong>${money(sum.refunds)}</strong></div><div class='line'><span>Net Collections</span><strong>${money(sum.net)}</strong></div><div class='line'><span>Expected Cash</span><strong>${money(cl?.expectedCash??expected)}</strong></div><div class='line'><span>Actual Cash</span><strong>${money(cl?.actualCash??Number(document.getElementById('csActualCash')?.value||0))}</strong></div><div class='line'><span>Variance</span><strong>${money(cl?.variance??(Number(document.getElementById('csActualCash')?.value||0)-expected))}</strong></div></body></html>`);w.document.close();w.focus();w.print();}
 
 
@@ -10591,7 +10689,7 @@ function renderAccounting(){
   ensureAccountingBootstrap();
   const rev=totalRevenue(), exp=totalManualExpenses(), ap=apBySupplier().reduce((s,x)=>s+x.balance,0);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=typeof v==="number"?accMoney(v):v;};
-  set("acctRevenue",rev);set("acctExpenses",exp);set("acctNetProfit",rev-exp);set("acctPayables",ap);
+  set("acctRevenue",rev);set("acctExpenses",exp);set("acctNetProfit",rev-exp);set("acctPayables",ap);set("acctAP",ap);
   set("acctGRNValue",grnRecords().filter(g=>inRange(g.date||g.receivedDate||g.createdAt)).reduce((s,g)=>s+g.amount,0));
   set("acctSupplierPayments",supplierPayments().filter(p=>inRange(p.date)).reduce((s,p)=>s+Number(p.amount||0),0));
   set("acctOpenPO",purchaseOrders().filter(p=>String(p.status||"Open")!=="Closed").length);
@@ -12485,6 +12583,50 @@ function repairUnpostedStockIssues(){
     console.error('Stock Issue accounting repair failed:',e);
   }
 }
+
+/* ---------- POS RECIPE ACCOUNTING REPAIR ----------
+   Repairs POS recipe movements that were saved successfully but whose
+   automatic journal post did not complete. Grouped by invoice/reference so
+   one balanced journal is created per POS invoice, and the exact persisted
+   movements receive the journal reference. */
+function repairUnpostedPOSRecipeAccounting(){
+  try{
+    const pending=mine(rd(K.mv)).filter(m=>String(m.type)==='sale' && !m.journal && Math.abs(num(m.value))>=0.005);
+    if(!pending.length)return;
+    if(typeof window.postJournal!=='function')throw new Error('Accounting journal engine is unavailable.');
+    const A=allArts(),groups={};
+    pending.forEach(m=>{
+      const ref=String(m.invoiceNo||m.ref||m.saleId||'').trim();
+      if(!ref)return;
+      const key=String(currentPropertyId)+'|'+ref;
+      (groups[key]||(groups[key]={ref,date:m.date,moves:[]})).moves.push(m);
+    });
+    Object.values(groups).forEach(g=>{
+      const safeRef=('ST-POS-'+String(g.ref).replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
+      let journals=[];
+      try{journals=JSON.parse(localStorage.getItem(ACC_STORE.journals)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+      const existing=journals.find(j=>String(j.reference)===safeRef && String(j.propertyId)===String(currentPropertyId));
+      if(!existing){
+        const totals={};
+        g.moves.forEach(m=>{
+          const a=A.find(x=>String(x.id)===String(m.articleId));
+          const account=costAccount(a||{category:m.category},'sale');
+          const v=Math.abs(num(m.value));
+          if(v>=0.005)totals[account]=(totals[account]||0)+v;
+        });
+        const lines=[];
+        Object.entries(totals).forEach(([account,value])=>{const v=r2(value);if(v>0)lines.push({account,debit:v,credit:0});});
+        const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+        if(!(total>0))throw new Error('POS recipe consumption amount is zero.');
+        lines.push({account:'Inventory Assets',debit:0,credit:total});
+        window.postJournal(g.date,safeRef,'POS recipe stock consumption '+g.ref,lines,'Stores / POS');
+      }
+      const raw=rd(K.mv),ids=new Set(g.moves.map(m=>String(m.id))); let found=0;
+      raw.forEach(m=>{if(ids.has(String(m.id))){m.journal=safeRef;found++;}});
+      if(found===g.moves.length)wr(K.mv,raw);
+    });
+  }catch(e){console.error('POS recipe accounting repair failed:',e);}
+}
 function nextRef(prefix){
   const pre=prefix+'-'+biz().slice(0,4)+'-';
   const used=new Set(mine(rd(K.mv)).map(m=>String(m.ref||'')).filter(r=>r.startsWith(pre)));
@@ -12527,43 +12669,47 @@ function addMovements(list){
      in sync with Stock On Hand. Manual Stores posting remains available for
      non-POS movements such as issues, wastage and stock-take adjustments. */
   const saleMade=made.filter(m=>m.type==='sale' && Math.abs(num(m.value))>=0.005);
-  if(saleMade.length && typeof postJournal==='function'){
-    const groups={};
-    saleMade.forEach(m=>{
-      const key=String(m.saleId||m.ref||m.invoiceNo||m.date);
-      const g=groups[key]||(groups[key]={date:m.date,ref:m.invoiceNo||m.ref||('POS-'+m.saleId),saleId:m.saleId||'',moves:[]});
-      g.moves.push(m);
-    });
-    groups && Object.values(groups).forEach(g=>{
-      try{
-        const ref='ST-POS-'+String(g.ref||g.saleId||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-        const existing=journalEntries().find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
-        if(existing){
-          g.moves.forEach(m=>{m.journal=ref;});
-          return;
-        }
-        const totals={};
-        g.moves.forEach(m=>{
-          const a=A.find(x=>String(x.id)===String(m.articleId));
-          const account=costAccount(a||{category:m.category},'sale');
-          totals[account]=(totals[account]||0)+Math.abs(num(m.value));
-        });
-        const lines=[];
-        Object.entries(totals).forEach(([account,value])=>{
-          const v=r2(value);
-          if(v>0)lines.push({account,debit:v,credit:0});
-        });
-        const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
-        if(total>0){
+  if(saleMade.length){
+    try{
+      if(typeof window.postJournal!=='function') throw new Error('Accounting journal engine is unavailable.');
+      const groups={};
+      saleMade.forEach(m=>{
+        const key=String(m.saleId||m.ref||m.invoiceNo||m.date);
+        const g=groups[key]||(groups[key]={date:m.date,ref:m.invoiceNo||m.ref||('POS-'+m.saleId),moves:[]});
+        g.moves.push(m);
+      });
+      Object.values(groups).forEach(g=>{
+        const ref='ST-POS-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
+        let journals=[];
+        try{journals=JSON.parse(localStorage.getItem(ACC_STORE.journals)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+        const existing=journals.find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
+        if(!existing){
+          const totals={};
+          g.moves.forEach(m=>{
+            const a=A.find(x=>String(x.id)===String(m.articleId));
+            const account=costAccount(a||{category:m.category},'sale');
+            const v=Math.abs(num(m.value));
+            if(v>=0.005) totals[account]=(totals[account]||0)+v;
+          });
+          const lines=[];
+          Object.entries(totals).forEach(([account,value])=>{
+            const v=r2(value);
+            if(v>0) lines.push({account,debit:v,credit:0});
+          });
+          const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+          if(total<=0) throw new Error('POS recipe consumption amount is zero.');
           lines.push({account:'Inventory Assets',debit:0,credit:total});
-          postJournal(g.date,ref,'POS recipe stock consumption '+(g.ref||g.saleId||''),lines,'Stores / POS');
-          g.moves.forEach(m=>{m.journal=ref;});
+          window.postJournal(g.date,ref,'POS recipe stock consumption '+(g.ref||''),lines,'Stores / POS');
         }
-      }catch(err){
-        console.error('Automatic Stores accounting post failed:',err);
-      }
-    });
-    try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+        const raw=rd(K.mv), ids=new Set(g.moves.map(m=>String(m.id)));
+        let changed=false;
+        raw.forEach(m=>{if(ids.has(String(m.id)) && String(m.journal||'')!==ref){m.journal=ref;changed=true;}});
+        if(changed) wr(K.mv,raw);
+      });
+      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+    }catch(err){
+      console.error('Automatic Stores accounting post failed:',err);
+    }
   }
   return made;
 }
@@ -12703,6 +12849,7 @@ window.renderStores=function(){
   /* Repair any Stock Issues created before the accounting fix. */
   repairUnpostedStockIssues();
   repairUnpostedStockTakeAdjustments();
+  repairUnpostedPOSRecipeAccounting();
   reconcileAllStockTakeJournals();
   const b=byId('stBase');if(b)b.textContent=bcur();
   if(!byId('stMvFrom').value){byId('stMvFrom').value=biz().slice(0,8)+'01';byId('stMvTo').value=biz();}
@@ -12991,6 +13138,7 @@ window.storesOnPOSSale=function(saleId){
     });
   });
   const made=addMovements(lines);
+  try{repairUnpostedPOSRecipeAccounting();}catch(e){console.warn('POS accounting repair failed',e);}
   sale.cogs=made.reduce((s,m)=>s-m.value,0);
   sale.stockDeducted=true;
   sale.noRecipe=missing;
@@ -13244,6 +13392,48 @@ window.stOpenIssueReq=function(id){
   openM('stIssueReqModal','Issue against '+esc(r.number)+' — '+esc(r.department),'<div style="font-size:12px;color:#6b7280;margin-bottom:8px">Requested by '+esc(r.requestedBy)+'. Quantities default to what is available. Issue less than the balance for a partial issue.</div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Item</th><th>Unit</th><th style="text-align:right">Requested</th><th style="text-align:right">Issued</th><th style="text-align:right">Balance</th><th style="text-align:right">On Hand</th><th>Issue now</th></tr></thead><tbody>'+rows+'</tbody></table></div>',
    (canPR?'<button class="btn btn-secondary" style="margin-right:auto" onclick="stReqPR(\''+esc(r.id)+'\')">Raise Purchase Request for shortages</button>':'')+'<button class="btn btn-secondary" onclick="stClose(\'stIssueReqModal\')">Cancel</button><button class="btn btn-primary" onclick="stSaveIssueReq(\''+esc(r.id)+'\')">Post Issue</button>',960);
 };
+/* ---------- REQUISITION ISSUE ACCOUNTING VERIFICATION ----------
+   Requisition issues use the same physical Stock Issue movement, but the
+   requisition flow must also verify that the referenced journal actually exists.
+   This repairs a movement that already has a journal reference but no persisted
+   journal, without touching Stock Take/POS/GRN/Wastage logic. */
+function ensureRequisitionIssueAccounting(movements){
+  const moves=(movements||[]).filter(m=>String(m.type)==='issue' && Math.abs(num(m.value))>=0.005);
+  if(!moves.length)return true;
+  if(typeof window.postJournal!=='function')throw new Error('Accounting journal engine is unavailable.');
+  const groups={};
+  moves.forEach(m=>{
+    const ref=String(m.ref||'').trim(); if(!ref)return;
+    const key=String(currentPropertyId)+'|'+ref;
+    (groups[key]||(groups[key]={ref,date:m.date,moves:[]})).moves.push(m);
+  });
+  Object.values(groups).forEach(g=>{
+    const safeRef=('ST-ISSUE-'+String(g.ref).replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
+    let journals=[];
+    try{journals=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+    const existing=journals.find(j=>String(j.reference)===safeRef && String(j.propertyId)===String(currentPropertyId));
+    if(!existing){
+      const totals={};
+      g.moves.forEach(m=>{
+        const a=allArts().find(x=>String(x.id)===String(m.articleId));
+        const account=costAccount(a||{category:m.category},'issue');
+        const v=Math.abs(num(m.value));
+        if(v>=0.005)totals[account]=(totals[account]||0)+v;
+      });
+      const lines=[];
+      Object.entries(totals).forEach(([account,value])=>{const v=r2(value);if(v>0)lines.push({account,debit:v,credit:0});});
+      const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+      if(!(total>0))throw new Error('Requisition issue accounting amount is zero.');
+      lines.push({account:'Inventory Assets',debit:0,credit:total});
+      window.postJournal(g.date,safeRef,'Stock Issue '+g.ref,lines,'Stores / Stock Issue');
+    }
+    const raw=rd(K.mv), ids=new Set(g.moves.map(m=>String(m.id)));
+    raw.forEach(m=>{if(ids.has(String(m.id)))m.journal=safeRef;});
+    wr(K.mv,raw);
+  });
+  return true;
+}
+
 window.stSaveIssueReq=function(id){
   if(!need('stores.issue'))return;
   const all=reqs(),r=all.find(x=>x.id===id);if(!r||!['Approved','Partially Issued'].includes(r.status))return;
@@ -13260,6 +13450,18 @@ window.stSaveIssueReq=function(id){
   if(short.length&&!confirm('Not enough stock on hand for:\n'+short.map(x=>x.name).join('\n')+'\n\nIssue anyway? Stock will go negative.'))return;
   const date=biz();
   addMovements(list.map(x=>({type:'issue',articleId:x.articleId,qty:-x.qty,date,ref:r.number,dept:r.department,note:'Requisition '+r.number+' — for '+r.requestedBy})));
+  /* Requisition Issue must verify the persisted journal, even when the movement already carries a stale journal reference. */
+  try{
+    const reqIssueMoves=rd(K.mv).filter(m=>String(m.ref)===String(r.number)&&String(m.type)==='issue'&&!String(m.journal||'').startsWith('ST-ISSUE-'));
+    if(reqIssueMoves.length) ensureRequisitionIssueAccounting(reqIssueMoves);
+    else {
+      const allReqMoves=rd(K.mv).filter(m=>String(m.ref)===String(r.number)&&String(m.type)==='issue');
+      const jref='ST-ISSUE-'+String(r.number).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
+      let js=[];try{js=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');}catch(e){js=[];}
+      const exists=Array.isArray(js)&&js.some(j=>String(j.reference)===jref&&String(j.propertyId)===String(currentPropertyId));
+      if(!exists && allReqMoves.length) ensureRequisitionIssueAccounting(allReqMoves);
+    }
+  }catch(err){console.error('Requisition Issue accounting verification failed:',err);}
   list.forEach(x=>{const l=r.lines.find(z=>z.articleId===x.articleId);if(l)l.issuedQty=num(l.issuedQty)+x.qty;});
   (r.issues=r.issues||[]).push({date,by:uname(),lines:list.map(x=>({articleId:x.articleId,qty:x.qty}))});
   r.lastIssueDate=date;
