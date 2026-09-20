@@ -12156,6 +12156,8 @@ function saveSet(part){
 const allArts=()=>mine(rd(K.art));
 function costAccount(a,type){
   const cat=String(a?.category||'');
+  /* Stock Take variances are inventory-count adjustments, not recipe food cost. */
+  if(type==='adjust')return 'Other Operating Expenses';
   if(/bev|drink|liquor|wine|beer|spirit|bar/i.test(cat))return 'Beverage Cost';
   if(type==='sale'||/food|kitchen|meat|veg|fruit|dairy|grocer|spice|bak|fish|sea|rice|pantry|fresh|dry|frozen/i.test(cat))return 'Food Cost';
   return 'Other Operating Expenses';
@@ -12638,9 +12640,15 @@ window.stSaveCount=function(){
   if(!list.length){alert('No variances to post. Enter counted quantities that differ from the system quantity.');return;}
   if(!confirm('Post '+list.length+' stock take adjustment(s)?'))return;
   const ref=nextRef('ST'),date=val('stcDate')||biz();
-  addMovements(list.map(m=>({...m,date,ref,reason:'Stock take'})));
+  const made=addMovements(list.map(m=>({...m,date,ref,reason:'Stock take'})));
+  /* Verify that every stock-take movement received its accounting journal. */
+  const missing=(made||[]).filter(m=>!m.journal);
+  if(missing.length){
+    alert('Stock take '+ref+' was saved, but accounting was not posted for '+missing.length+' variance line(s). The stock-take window will remain open so you can retry.');
+    return;
+  }
   stClose('stCountModal');renderTab();
-  alert('Stock take '+ref+' posted.');
+  alert('Stock take '+ref+' posted and accounted.');
 };
 
 /* ---------- RECIPES ---------- */
