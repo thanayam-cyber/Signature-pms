@@ -12189,6 +12189,83 @@ function avgCost(s,a){
   if(s&&s.qty>0.0001)return s.value/s.qty;
   return num(s?.lastCost)||num(a?.defaultCost)||0;
 }
+
+/* ---------- MANUAL STOCK ISSUE ACCOUNTING ----------
+   Stock Issues are physical stock consumption outside POS recipes.
+   They must create a double-entry journal immediately and persist the journal
+   reference on the exact saved movement. This is intentionally separate from
+   the POS recipe posting path above. */
+function postManualStockIssueAccounting(movements){
+  const issueMoves=(movements||[]).filter(m=>String(m.type)==='issue' && !m.journal && Math.abs(num(m.value))>=0.005);
+  if(!issueMoves.length)return true;
+  if(typeof window.postJournal!=='function')throw new Error('Accounting journal engine is unavailable.');
+
+  const raw=rd(K.mv);
+  let changed=false;
+  const groups={};
+  issueMoves.forEach(m=>{
+    const ref=String(m.ref||'').trim();
+    const key=ref||String(m.id);
+    (groups[key]||(groups[key]={ref,date:m.date,moves:[]})).moves.push(m);
+  });
+
+  Object.values(groups).forEach(g=>{
+    const safeRef=('ST-ISSUE-'+String(g.ref||g.date||'').replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
+    let journals=[];
+    try{journals=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+    const existing=journals.find(j=>String(j.reference)===safeRef && String(j.propertyId)===String(currentPropertyId));
+
+    if(!existing){
+      const totals={};
+      g.moves.forEach(m=>{
+        const a=allArts().find(x=>String(x.id)===String(m.articleId));
+        const account=costAccount(a||{category:m.category},'issue');
+        const v=Math.abs(num(m.value));
+        if(v>=0.005)totals[account]=(totals[account]||0)+v;
+      });
+      const lines=[];
+      Object.entries(totals).forEach(([account,value])=>{
+        const v=r2(value);
+        if(v>0)lines.push({account,debit:v,credit:0});
+      });
+      const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+      if(!(total>0))throw new Error('Stock Issue accounting amount is zero.');
+      lines.push({account:'Inventory Assets',debit:0,credit:total});
+      const dr=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
+      const cr=r2(lines.reduce((sum,l)=>sum+num(l.credit),0));
+      if(Math.abs(dr-cr)>0.01)throw new Error('Stock Issue journal is not balanced.');
+      window.postJournal(g.date,safeRef,'Stock Issue '+(g.ref||''),lines,'Stores / Stock Issue');
+    }
+
+    /* Re-read the raw storage AFTER journal creation and persist the journal
+       reference against the exact movement IDs. */
+    const rawNow=rd(K.mv);
+    const ids=new Set(g.moves.map(m=>String(m.id)));
+    let found=0;
+    rawNow.forEach(m=>{
+      if(ids.has(String(m.id))){m.journal=safeRef;found++;changed=true;}
+    });
+    if(found!==g.moves.length)throw new Error('Could not find all Stock Issue movements in storage.');
+    wr(K.mv,rawNow);
+
+    /* Verification: the persisted movement must now contain the journal ref. */
+    const verify=rd(K.mv).filter(m=>ids.has(String(m.id)));
+    if(verify.length!==g.moves.length || verify.some(m=>String(m.journal)!==safeRef)){
+      throw new Error('Stock Issue journal reference could not be persisted.');
+    }
+  });
+  return changed;
+}
+
+function repairUnpostedStockIssues(){
+  try{
+    const pending=mine(rd(K.mv)).filter(m=>String(m.type)==='issue' && !m.journal && Math.abs(num(m.value))>=0.005);
+    if(!pending.length)return;
+    postManualStockIssueAccounting(pending);
+  }catch(e){
+    console.error('Stock Issue accounting repair failed:',e);
+  }
+}
 function nextRef(prefix){
   const pre=prefix+'-'+biz().slice(0,4)+'-';
   const used=new Set(mine(rd(K.mv)).map(m=>String(m.ref||'')).filter(r=>r.startsWith(pre)));
@@ -12206,6 +12283,17 @@ function addMovements(list){
     all.push(rec);made.push(rec);
   });
   saveMine(K.mv,all);
+
+  /* Manual Stock Issue accounting is posted immediately after the movement is
+     persisted. POS sales continue through their existing accounting path. */
+  const issueMade=made.filter(m=>m.type==='issue' && !m.journal);
+  if(issueMade.length){
+    try{
+      postManualStockIssueAccounting(issueMade);
+    }catch(err){
+      console.error('Manual Stock Issue accounting post failed:',err);
+    }
+  }
 
   /* Automatic Stores -> Accounting posting for POS recipe consumption.
      POS recipe deductions are already valued at the weighted-average cost above;
@@ -12251,66 +12339,8 @@ function addMovements(list){
     });
     try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
   }
-  /* Automatic accounting for manual Store Issues / Wastage.
-     These movements must be posted immediately; the UI intentionally has no
-     separate "Post Stock Consumption" button. */
-  try{ postImmediateStoreAccounting(made); }catch(err){ console.error('Immediate Stores accounting failed:',err); }
   return made;
 }
-
-function postImmediateStoreAccounting(movements){
-  const list=(movements||[]).filter(m=>['issue','wastage'].includes(String(m.type)) && Math.abs(num(m.value))>=0.005);
-  if(!list.length || typeof window.postJournal!=='function') return;
-  const journalKey='signature_pms_accounting_journals';
-  let journals=[];
-  try{ journals=JSON.parse(localStorage.getItem(journalKey)||'[]'); if(!Array.isArray(journals)) journals=[]; }catch(e){ journals=[]; }
-  const groups={};
-  list.forEach(m=>{
-    const key=String(m.type)+'|'+String(m.ref||m.id);
-    (groups[key]||(groups[key]={type:m.type,ref:m.ref,date:m.date,moves:[]})).moves.push(m);
-  });
-  Object.values(groups).forEach(g=>{
-    try{
-      const safeRef=('ST-'+String(g.type).toUpperCase()+'-'+String(g.ref||g.date||'')).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80);
-      const exists=journals.some(j=>String(j.reference)===safeRef && String(j.propertyId||'')===String(currentPropertyId));
-      if(!exists){
-        const totals={};
-        g.moves.forEach(m=>{
-          const v=Math.abs(num(m.value)); if(v<0.005)return;
-          const a=allArts().find(x=>String(x.id)===String(m.articleId));
-          const account=g.type==='wastage' ? 'Other Operating Expenses' : costAccount(a||{category:m.category},'issue');
-          totals[account]=(totals[account]||0)+v;
-        });
-        const lines=[];
-        Object.entries(totals).forEach(([account,value])=>{const v=r2(value);if(v>0)lines.push({account,debit:v,credit:0});});
-        const total=r2(lines.reduce((s,l)=>s+num(l.debit),0));
-        if(total>0){
-          lines.push({account:'Inventory Assets',debit:0,credit:total});
-          window.postJournal(g.date,safeRef,
-            g.type==='issue'?'Stock Issue '+String(g.ref||''):'Wastage '+String(g.ref||''),
-            lines,'Stores / '+g.type);
-        }
-      }
-      let fresh=[];
-      try{fresh=JSON.parse(localStorage.getItem(journalKey)||'[]');if(!Array.isArray(fresh))fresh=[];}catch(e){fresh=[];}
-      const saved=fresh.some(j=>String(j.reference)===safeRef && String(j.propertyId||'')===String(currentPropertyId));
-      if(!saved) throw new Error('Accounting journal was not persisted: '+safeRef);
-      const all=mine(rd(K.mv));
-      saveMine(K.mv,all.map(m=>g.moves.some(x=>x.id===m.id)?{...m,journal:safeRef}:m));
-    }catch(err){ console.error('Stores movement accounting failed for '+String(g.ref||''),err); }
-  });
-}
-
-function repairUnpostedManualStoreAccounting(){
-  try{
-    const pending=mine(rd(K.mv)).filter(m=>!m.journal&&['issue','wastage'].includes(String(m.type)));
-    if(pending.length) postImmediateStoreAccounting(pending);
-  }catch(err){ console.error('Stores unposted repair failed:',err); }
-}
-window.storesRepairUnposted=repairUnpostedManualStoreAccounting;
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(repairUnpostedManualStoreAccounting,1200);setTimeout(repairUnpostedManualStoreAccounting,3000);});
-else{setTimeout(repairUnpostedManualStoreAccounting,1200);setTimeout(repairUnpostedManualStoreAccounting,3000);}
-
 window.storesInventoryValue=function(){
   try{return Object.values(stockState()).reduce((s,x)=>s+x.value,0);}catch(e){return 0;}
 };
@@ -12444,6 +12474,8 @@ function renderTab(){
 window.renderStores=function(){
   ensurePage();
   if(!byId('stores')||!settings)return;
+  /* Repair any Stock Issues created before the accounting fix. */
+  repairUnpostedStockIssues();
   const b=byId('stBase');if(b)b.textContent=bcur();
   if(!byId('stMvFrom').value){byId('stMvFrom').value=biz().slice(0,8)+'01';byId('stMvTo').value=biz();}
   if(!byId('stFcFrom').value){byId('stFcFrom').value=biz().slice(0,8)+'01';byId('stFcTo').value=biz();}
