@@ -12127,6 +12127,7 @@ const saveMine=(k,list)=>wr(k,rd(k).filter(x=>!isMine(x)).concat(list));
 const esc=v=>escapeHtml(v==null?'':v);
 const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0;};
 const r2=v=>Math.round((num(v)+Number.EPSILON)*100)/100;
+const storeJournalId=prefix=>prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
 const bcur=()=>String(settings?.baseCurrency||'LKR').toUpperCase();
 const fx=()=>{const gc=String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();if(gc===bcur()||gc==='LKR')return 1;return num(settings?.postingRate)||320;};
 const bm=v=>bcur()+' '+num(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -12338,7 +12339,7 @@ function postStockTakeAccounting(movements){
 
     if(!canonical){
       canonical={
-        id:accId('je'),
+        id:storeJournalId('je'),
         propertyId:currentPropertyId,
         date:g.date||localDateTime(),
         reference:safeRef,
@@ -12437,7 +12438,7 @@ function reconcileAllStockTakeJournals(){
          cleanup is scoped to this exact Stock Take reference. */
       const matches=journals.filter(j=>String(j.reference)===safeRef);
       const canonical={
-        id:accId('je'),propertyId:currentPropertyId,date:g.date||localDateTime(),
+        id:storeJournalId('je'),propertyId:currentPropertyId,date:g.date||localDateTime(),
         reference:safeRef,description:'Stock Take Adjustment '+g.ref,
         source:'Stores / Stock Take',lines,postedBy:currentUser?.username||'Admin'
       };
