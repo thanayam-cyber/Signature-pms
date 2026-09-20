@@ -12280,7 +12280,7 @@ function postStockTakeAccounting(movements){
     (groups[key]||(groups[key]={ref,date:m.date,moves:[]})).moves.push(m);
   });
 
-  const journalKey=ACC_STORE.journals;
+  const journalKey=K.jr;
   let journals=[];
   try{
     const rawJ=localStorage.getItem(journalKey)||'[]';
@@ -12400,7 +12400,7 @@ function reconcileAllStockTakeJournals(){
     const movements=mine(rd(K.mv)).filter(m=>String(m.type)==='adjust' && Math.abs(num(m.value))>=0.005 && String(m.ref||'').trim());
     if(!movements.length)return;
     let journals=[];
-    try{journals=JSON.parse(localStorage.getItem(ACC_STORE.journals)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+    try{journals=JSON.parse(localStorage.getItem(K.jr)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
     const groups={};
     movements.forEach(m=>{
       const ref=String(m.ref).trim();
@@ -12462,7 +12462,7 @@ function reconcileAllStockTakeJournals(){
       });
       if(movementChanged){wr(K.mv,raw);changed=true;}
     });
-    if(changed) localStorage.setItem(ACC_STORE.journals,JSON.stringify(journals));
+    if(changed) localStorage.setItem(K.jr,JSON.stringify(journals));
   }catch(e){console.error('Stock Take journal reconciliation failed:',e);}
 }
 
