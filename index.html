@@ -12388,6 +12388,84 @@ function postStockTakeAccounting(movements){
 
   return changed;
 }
+
+/* ---------- STOCK TAKE JOURNAL RECONCILIATION / DEDUPLICATION ----------
+   A Stock Take reference is a single accounting event. Rebuild exactly one
+   canonical journal from the persisted adjustment movements whenever Stores
+   or Accounting is opened. This also cleans duplicates created by earlier
+   repair attempts. */
+function reconcileAllStockTakeJournals(){
+  try{
+    const propertyId=String(currentPropertyId||'');
+    const movements=mine(rd(K.mv)).filter(m=>String(m.type)==='adjust' && Math.abs(num(m.value))>=0.005 && String(m.ref||'').trim());
+    if(!movements.length)return;
+    let journals=[];
+    try{journals=JSON.parse(localStorage.getItem(ACC_STORE.journals)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+    const groups={};
+    movements.forEach(m=>{
+      const ref=String(m.ref).trim();
+      (groups[ref]||(groups[ref]={ref,date:m.date,moves:[]})).moves.push(m);
+    });
+    let changed=false;
+    Object.values(groups).forEach(g=>{
+      const safeRef=('ST-ADJ-'+String(g.ref||g.date||'').replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
+      let debitOther=0,creditOther=0,debitInv=0,creditInv=0;
+      g.moves.forEach(m=>{
+        const v=r2(Math.abs(num(m.value))); if(v<0.005)return;
+        if(num(m.value)<0){debitOther+=v;creditInv+=v;}
+        else {debitInv+=v;creditOther+=v;}
+      });
+      debitOther=r2(debitOther); creditOther=r2(creditOther); debitInv=r2(debitInv); creditInv=r2(creditInv);
+      const lines=[];
+      if(debitOther>0)lines.push({account:'Other Operating Expenses',debit:debitOther,credit:0});
+      if(debitInv>0)lines.push({account:'Inventory Assets',debit:debitInv,credit:0});
+      if(creditOther>0)lines.push({account:'Other Operating Expenses',debit:0,credit:creditOther});
+      if(creditInv>0)lines.push({account:'Inventory Assets',debit:0,credit:creditInv});
+      const dr=r2(lines.reduce((a,l)=>a+num(l.debit),0)), cr=r2(lines.reduce((a,l)=>a+num(l.credit),0));
+      if(!(dr>0)||Math.abs(dr-cr)>0.01)return;
+      const sameLines=(a,b)=>{
+        if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;
+        const norm=x=>({account:String(x.account||''),debit:r2(x.debit||0),credit:r2(x.credit||0)});
+        const aa=a.map(norm).sort((x,y)=>x.account.localeCompare(y.account)||x.debit-y.debit||x.credit-y.credit);
+        const bb=b.map(norm).sort((x,y)=>x.account.localeCompare(y.account)||x.debit-y.debit||x.credit-y.credit);
+        return aa.every((x,i)=>x.account===bb[i].account&&x.debit===bb[i].debit&&x.credit===bb[i].credit);
+      };
+      /* For a reference that belongs to the current property, remove EVERY
+         prior journal with that reference. Older versions could have written
+         a duplicate with a missing/legacy property id. Since the reference is
+         tied to the current property's persisted adjustment movements, this
+         cleanup is scoped to this exact Stock Take reference. */
+      const matches=journals.filter(j=>String(j.reference)===safeRef);
+      const canonical={
+        id:accId('je'),propertyId:currentPropertyId,date:g.date||localDateTime(),
+        reference:safeRef,description:'Stock Take Adjustment '+g.ref,
+        source:'Stores / Stock Take',lines,postedBy:currentUser?.username||'Admin'
+      };
+      const currentMatches=matches.filter(j=>String(j.propertyId||'')===propertyId);
+      const validCurrent=currentMatches.find(j=>sameLines(j.lines,lines));
+      /* If there is exactly one correct current-property journal and there are
+         no legacy same-reference records, keep it. Otherwise rebuild one. */
+      const legacyOther=matches.some(j=>String(j.propertyId||'')!==propertyId);
+      if(currentMatches.length===1 && validCurrent && !legacyOther){
+        // already canonical; no write needed
+      }else{
+        journals=journals.filter(j=>String(j.reference)!==safeRef);
+        journals.push(canonical);
+        changed=true;
+      }
+      /* Persist journal reference to all persisted movements for this ref. */
+      const raw=rd(K.mv); let movementChanged=false;
+      raw.forEach(m=>{
+        if(String(m.propertyId||'')===propertyId && String(m.type)==='adjust' && String(m.ref||'')===String(g.ref)){
+          if(String(m.journal)!==safeRef){m.journal=safeRef;movementChanged=true;}
+        }
+      });
+      if(movementChanged){wr(K.mv,raw);changed=true;}
+    });
+    if(changed) localStorage.setItem(ACC_STORE.journals,JSON.stringify(journals));
+  }catch(e){console.error('Stock Take journal reconciliation failed:',e);}
+}
+
 function repairUnpostedStockTakeAdjustments(){
   try{
     const all=mine(rd(K.mv)).filter(m=>String(m.type)==='adjust' && Math.abs(num(m.value))>=0.005);
@@ -12624,6 +12702,7 @@ window.renderStores=function(){
   /* Repair any Stock Issues created before the accounting fix. */
   repairUnpostedStockIssues();
   repairUnpostedStockTakeAdjustments();
+  reconcileAllStockTakeJournals();
   const b=byId('stBase');if(b)b.textContent=bcur();
   if(!byId('stMvFrom').value){byId('stMvFrom').value=biz().slice(0,8)+'01';byId('stMvTo').value=biz();}
   if(!byId('stFcFrom').value){byId('stFcFrom').value=biz().slice(0,8)+'01';byId('stFcTo').value=biz();}
