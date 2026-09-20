@@ -12311,13 +12311,24 @@ function postStoreMovementsAccounting(movements){
 
 function repairUnpostedStoreMovements(){
   try{
-    const issues=mine(rd(K.mv)).filter(m=>!m.journal&&m.type==='issue'&&Math.abs(num(m.value))>=0.005);
+    const raw=rd(K.mv), issues=mine(raw).filter(m=>m&&m.type==='issue'&&Math.abs(num(m.value))>=0.005);
     if(!issues.length)return;
     const groups={};
     issues.forEach(m=>{const k=String(m.ref||m.id);(groups[k]||(groups[k]=[])).push(m);});
     Object.entries(groups).forEach(([ref,moves])=>{
-      try{postStockIssueAccounting(moves,ref,moves[0].date);}
-      catch(e){console.error('Stock Issue repair failed for '+ref,e);}
+      try{
+        // Reload the movements from storage so a stale in-memory journal flag can never block repair.
+        const fresh=mine(rd(K.mv)).filter(m=>m&&m.type==='issue'&&String(m.ref||m.id)===String(ref));
+        if(!fresh.length)return;
+        const jref='ST-ISSUE-'+String(ref).replace(/[^A-Za-z0-9_-]/g,'-');
+        const journals=accRead(ACC_STORE.journals);
+        const hasJournal=journals.some(j=>String(j.reference)===jref && String(j.propertyId)===String(currentPropertyId));
+        if(!hasJournal) postStockIssueAccounting(fresh,ref,fresh[0].date);
+        else {
+          const ids=new Set(fresh.map(m=>m.id));
+          saveMine(K.mv,rd(K.mv).map(m=>ids.has(m.id)?{...m,journal:jref}:m));
+        }
+      }catch(e){console.error('Stock Issue repair failed for '+ref,e);}
     });
   }catch(e){console.error('Stores accounting repair failed:',e);}
 }
@@ -12597,7 +12608,14 @@ window.stSaveIssue=function(){
   let made;
   try{
     made=addMovements(lines.map(l=>({type:'issue',articleId:l.articleId,qty:-l.qty,date,ref,dept,note})));
-    postStockIssueAccounting(made,ref,date);
+    // Re-read from localStorage and post by reference; never rely on the in-memory movement object.
+    const fresh=mine(rd(K.mv)).filter(m=>m&&m.type==='issue'&&String(m.ref)===String(ref));
+    postStockIssueAccounting(fresh,ref,date);
+    // Final persistence verification.
+    const jref='ST-ISSUE-'+String(ref).replace(/[^A-Za-z0-9_-]/g,'-');
+    const savedJ=accRead(ACC_STORE.journals).some(j=>String(j.reference)===jref&&String(j.propertyId)===String(currentPropertyId));
+    const savedM=mine(rd(K.mv)).filter(m=>m&&m.type==='issue'&&String(m.ref)===String(ref));
+    if(!savedJ || savedM.some(m=>String(m.journal)!==jref)) throw new Error('Final Stock Issue verification failed for '+ref);
   }catch(e){console.error('Stock Issue accounting post failed:',e);alert('Stock Issue was saved, but accounting posting failed: '+(e?.message||e));stClose('stIssueModal');renderTab();return;}
   stClose('stIssueModal');renderTab();alert('Stock issue '+ref+' posted and accounted.');
 };
