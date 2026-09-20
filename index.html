@@ -1107,7 +1107,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="toolbar">
 <button class="btn btn-primary" onclick="openExpenseModal()">+ Expense / Journal</button>
-<button class="btn btn-secondary" id="accountingRefreshBtn" type="button" onclick="event.preventDefault();event.stopPropagation();window.renderAccounting&&window.renderAccounting();">Refresh</button>
+<button class="btn btn-secondary" onclick="renderAccounting()">Refresh</button>
 </div>
 </div>
 <div class="grid-4">
@@ -1209,7 +1209,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="section" id="generalLedgerSection" style="margin-top:14px">
 <div class="section-header"><div><h3>General Ledger</h3><div style="font-size:12px;color:#6b7280">Account-level transactions with debit, credit and running balance.</div></div>
-<div class="toolbar"><label style="font-size:12px;color:#6b7280">Account</label><select id="glAccountFilter" onchange="renderGeneralLedger()" style="min-width:220px"><option value="">All Accounts</option></select><button class="btn btn-secondary accounting-control-btn" id="glRefreshBtn" type="button" onclick="event.preventDefault();event.stopPropagation();window.renderGeneralLedger&&window.renderGeneralLedger();">Refresh</button><button class="btn btn-primary" onclick="showAccountingReport('ledger')">Open Ledger Report</button><button class="btn btn-primary accounting-control-btn" id="glPrintLedgerBtn" type="button">Print Ledger</button></div></div>
+<div class="toolbar"><label style="font-size:12px;color:#6b7280">Account</label><select id="glAccountFilter" onchange="renderGeneralLedger()" style="min-width:220px"><option value="">All Accounts</option></select><button class="btn btn-secondary accounting-control-btn" id="glRefreshBtn" type="button">Refresh</button><button class="btn btn-primary" onclick="showAccountingReport('ledger')">Open Ledger Report</button><button class="btn btn-primary accounting-control-btn" id="glPrintLedgerBtn" type="button">Print Ledger</button></div></div>
 <div class="grid-4" style="margin-bottom:12px"><div class="kpi"><span>Total Debits</span><strong id="glTotalDebit">LKR0.00</strong></div><div class="kpi"><span>Total Credits</span><strong id="glTotalCredit">LKR0.00</strong></div><div class="kpi"><span>Net Movement</span><strong id="glNetMovement">LKR0.00</strong></div><div class="kpi"><span>Transactions</span><strong id="glTxnCount">0</strong></div></div>
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Running Balance</th></tr></thead><tbody id="generalLedgerTable"><tr><td class="empty" colspan="7">No ledger transactions for the selected period.</td></tr></tbody></table></div>
 </div>
@@ -10587,7 +10587,6 @@ function transferARToCityLedger(reservationId){
 window.printCityLedgerStatement=printCityLedgerStatement; window.transferARToCityLedger=transferARToCityLedger;
 
 function renderAccounting(){
-  try{ if(window.syncPOSConsumptionAccounting) window.syncPOSConsumptionAccounting(); }catch(e){ console.warn('Accounting POS sync:',e); }
   const bd=accountingBusinessDate(); const bf=document.getElementById("bankReconFrom"), bt=document.getElementById("bankReconTo"); if(bf&&!bf.value)bf.value=bd; if(bt&&!bt.value)bt.value=bd;
   ensureAccountingBootstrap();
   const rev=totalRevenue(), exp=totalManualExpenses(), ap=apBySupplier().reduce((s,x)=>s+x.balance,0);
@@ -11990,21 +11989,6 @@ window.SignaturePMS_v168={version:'1.6.9',stores:K,refreshPurchasingModule,rende
 </style>
 <script>
 (function(){
-  const ids={
-    accountingRefreshBtn:function(){if(window.renderAccounting)window.renderAccounting();},
-    glRefreshBtn:function(){if(window.renderGeneralLedger)window.renderGeneralLedger();},
-    glPrintLedgerBtn:function(){if(window.printAccountingReport)window.printAccountingReport('ledger');}
-  };
-  document.addEventListener('click',function(e){
-    const b=e.target&&e.target.closest?e.target.closest('button[id]'):null;
-    if(!b||!ids[b.id])return;
-    e.preventDefault();e.stopImmediatePropagation();
-    try{ids[b.id]();}catch(err){console.error('Accounting control error',err);alert('Accounting action failed: '+(err&&err.message?err.message:err));}
-  },true);
-})();
-</script>
-<script>
-(function(){
   function force(){
     ['cityLedgerRefreshBtn','cityLedgerPaymentBtn','bankReconRefreshBtn','bankReconAddLineBtn','bankReconTodayBtn'].forEach(function(id){
       var b=document.getElementById(id); if(!b)return; b.disabled=false; b.removeAttribute('disabled'); b.style.pointerEvents='auto';
@@ -12171,20 +12155,9 @@ function saveSet(part){
 /* ---------- articles & ledger ---------- */
 const allArts=()=>mine(rd(K.art));
 function costAccount(a,type){
-  /* Determine the cost account from the article itself. Some properties use
-     a generic article category (or leave it blank), so category alone is not
-     sufficient for beverage recipes. Check the common descriptive fields as
-     well, while keeping the explicit category as the strongest signal. */
-  const cat=String(a?.category||'').trim();
-  const desc=[
-    a?.name,a?.articleName,a?.description,a?.subcategory,a?.subCategory,
-    a?.department,a?.dept,a?.type,a?.itemType,a?.group,a?.articleGroup,
-    a?.class,a?.code
-  ].map(v=>String(v||'')).join(' ');
-  const beveragePattern=/\bbev(?:erage)?s?\b|\bdrink(?:s)?\b|\bliquor\b|\bwine\b|\bbeer\b|\bspirit(?:s)?\b|\bsoft[ -]?drink(?:s)?\b|\bjuice\b|\bcocktail(?:s)?\b|\bmocktail(?:s)?\b|\bbar[ -]?(?:item|stock|store|suppl(?:y|ies))\b/i;
-  const foodPattern=/\bfood\b|\bkitchen\b|\bmeat\b|\bveg(?:etable)?s?\b|\bfruit\b|\bdairy\b|\bgrocer(?:y|ies)\b|\bspice(?:s)?\b|\bbak(?:e|ery|ed)\b|\bfish\b|\bseafood\b|\brice\b|\bpantry\b|\bfresh\b|\bdry\b|\bfrozen\b/i;
-  if(beveragePattern.test(cat)||beveragePattern.test(desc))return 'Beverage Cost';
-  if(type==='sale'||foodPattern.test(cat)||foodPattern.test(desc))return 'Food Cost';
+  const cat=String(a?.category||'');
+  if(/bev|drink|liquor|wine|beer|spirit|bar/i.test(cat))return 'Beverage Cost';
+  if(type==='sale'||/food|kitchen|meat|veg|fruit|dairy|grocer|spice|bak|fish|sea|rice|pantry|fresh|dry|frozen/i.test(cat))return 'Food Cost';
   return 'Other Operating Expenses';
 }
 /* every stock event for this property, oldest first. Receipts come straight from Purchasing GRNs. */
@@ -12234,163 +12207,108 @@ function addMovements(list){
   });
   saveMine(K.mv,all);
 
-  /* Automatic Stores -> Accounting posting for POS recipe consumption.
-     POS recipe deductions are already valued at the weighted-average cost above;
-     create the matching double-entry journal immediately so General Ledger stays
-     in sync with Stock On Hand. Manual Stores posting remains available for
-     non-POS movements such as issues, wastage and stock-take adjustments. */
-  const saleMade=made.filter(m=>m.type==='sale' && Math.abs(num(m.value))>=0.005);
-  if(saleMade.length && typeof postJournal==='function'){
-    const groups={};
-    saleMade.forEach(m=>{
-      const key=String(m.saleId||m.ref||m.invoiceNo||m.date);
-      const g=groups[key]||(groups[key]={date:m.date,ref:m.invoiceNo||m.ref||('POS-'+m.saleId),saleId:m.saleId||'',moves:[]});
-      g.moves.push(m);
-    });
-    groups && Object.values(groups).forEach(g=>{
-      try{
-        const ref='ST-POS-'+String(g.ref||g.saleId||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-        const existing=(()=>{try{return JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]').find(j=>String(j.reference)===ref && String(j.propertyId||currentPropertyId)===String(currentPropertyId));}catch(e){return null;}})();
-        if(existing){
-          g.moves.forEach(m=>{m.journal=ref;});
-          return;
-        }
-        const totals={};
-        g.moves.forEach(m=>{
-          const a=A.find(x=>String(x.id)===String(m.articleId));
-          const account=costAccount(a||{category:m.category},'sale');
-          totals[account]=(totals[account]||0)+Math.abs(num(m.value));
-        });
-        const lines=[];
-        Object.entries(totals).forEach(([account,value])=>{
-          const v=r2(value);
-          if(v>0)lines.push({account,debit:v,credit:0});
-        });
-        const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
-        if(total>0){
-          lines.push({account:'Inventory Assets',debit:0,credit:total});
-          postJournal(g.date,ref,'POS recipe stock consumption '+(g.ref||g.saleId||''),lines,'Stores / POS');
-          g.moves.forEach(m=>{m.journal=ref;});
-        }
-      }catch(err){
-        console.error('Automatic Stores accounting post failed:',err);
-      }
-    });
-    try{
-      const ids=new Set(saleMade.filter(m=>m.journal).map(m=>m.id));
-      if(ids.size){
-        saveMine(K.mv,mine(rd(K.mv)).map(x=>ids.has(x.id)?{...x,journal:saleMade.find(m=>m.id===x.id)?.journal||x.journal}:x));
-      }
-    }catch(e){console.warn('Unable to save POS accounting status:',e);}
-    try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
-  }
-
-  /* Wastage -> Accounting: wastage is an inventory loss, not Food Cost.
-     Use the existing Other Operating Expenses account (5800) because the
-     chart of accounts has no separate Wastage Expense account. */
-  const wastageMade=made.filter(m=>m.type==='wastage' && Math.abs(num(m.value))>=0.005);
-  if(wastageMade.length && typeof postJournal==='function'){
-    try{
-      const groups={};
-      wastageMade.forEach(m=>{
-        const key=String(m.ref||m.date);
-        const g=groups[key]||(groups[key]={date:m.date,ref:m.ref||('WS-'+m.date),moves:[]});
-        g.moves.push(m);
-      });
-      Object.values(groups).forEach(g=>{
-        const ref='ST-WASTE-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-        const existing=journalEntries().find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
-        const total=r2(g.moves.reduce((sum,m)=>sum+Math.abs(num(m.value)),0));
-        if(total<=0)return;
-        if(!existing){
-          postJournal(g.date,ref,'Wastage '+(g.ref||g.date),[
-            {account:'Other Operating Expenses',debit:total,credit:0},
-            {account:'Inventory Assets',debit:0,credit:total}
-          ],'Stores / Wastage');
-        }
-        g.moves.forEach(m=>{m.journal=ref;});
-      });
-      const ids=new Set(wastageMade.filter(m=>m.journal).map(m=>m.id));
-      if(ids.size){
-        saveMine(K.mv,mine(rd(K.mv)).map(x=>ids.has(x.id)?{...x,journal:wastageMade.find(m=>m.id===x.id)?.journal||x.journal}:x));
-      }
-      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
-    }catch(err){
-      console.error('Automatic Stores wastage accounting post failed:',err);
-    }
-  }
-
-  /* Stock Issue -> Accounting: issues are stock consumed outside recipes.
-     Use the same article/category cost mapping as other inventory consumption:
-     food -> Food Cost, beverages -> Beverage Cost, other -> Other Operating Expenses.
-     Post immediately and mark the movement so Stock Movements no longer shows Unposted. */
-  const issueMade=made.filter(m=>m.type==='issue' && Math.abs(num(m.value))>=0.005);
-  if(issueMade.length && typeof postJournal==='function'){
-    try{
-      const groups={};
-      issueMade.forEach(m=>{
-        const key=String(m.ref||m.date);
-        const g=groups[key]||(groups[key]={date:m.date,ref:m.ref||('SI-'+m.date),moves:[]});
-        g.moves.push(m);
-      });
-      Object.values(groups).forEach(g=>{
-        const ref='ST-ISSUE-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-        const existing=journalEntries().find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
-        const totals={};
-        g.moves.forEach(m=>{
-          const a=A.find(x=>String(x.id)===String(m.articleId));
-          const account=costAccount(a||{category:m.category},'issue');
-          totals[account]=(totals[account]||0)+Math.abs(num(m.value));
-        });
-        const lines=[];
-        Object.entries(totals).forEach(([account,value])=>{
-          const v=r2(value);
-          if(v>0)lines.push({account,debit:v,credit:0});
-        });
-        const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
-        if(total<=0)return;
-        if(!existing){
-          lines.push({account:'Inventory Assets',debit:0,credit:total});
-          postJournal(g.date,ref,'Stock issue '+(g.ref||g.date),lines,'Stores / Stock Issue');
-        }
-        g.moves.forEach(m=>{m.journal=ref;});
-      });
-      const ids=new Set(issueMade.filter(m=>m.journal).map(m=>m.id));
-      if(ids.size){
-        saveMine(K.mv,mine(rd(K.mv)).map(x=>ids.has(x.id)?{...x,journal:issueMade.find(m=>m.id===x.id)?.journal||x.journal}:x));
-      }
-      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
-    }catch(err){
-      console.error('Automatic Stores issue accounting post failed:',err);
-    }
-  }
-
-  /* Opening stock is an initial capital contribution, not POS consumption.
-     Post it separately so Owner Equity is never mixed into a Stores/POS
-     consumption journal. */
-  const openingMade=made.filter(m=>m.type==='opening' && Math.abs(num(m.value))>=0.005);
-  if(openingMade.length && typeof postJournal==='function'){
-    try{
-      const ref='ST-OPEN-'+String(openingMade[0].ref||openingMade[0].date||biz()).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-      const existing=journalEntries().find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
-      const total=r2(openingMade.reduce((sum,m)=>sum+Math.abs(num(m.value)),0));
-      if(total>0){
-        if(!existing){
-          postJournal(openingMade[0].date,ref,'Opening stock '+(openingMade[0].note||openingMade[0].date),[
-            {account:'Inventory Assets',debit:total,credit:0},
-            {account:'Owner Equity',debit:0,credit:total}
-          ],'Stores / Opening Stock');
-        }
-        openingMade.forEach(m=>{m.journal=ref;});
-        saveMine(K.mv,mine(rd(K.mv)).map(x=>{const hit=openingMade.find(o=>o.id===x.id);return hit?{...x,journal:ref}:x;}));
-        try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
-      }
-    }catch(err){
-      console.error('Automatic opening stock accounting post failed:',err);
-    }
-  }
+  /* Automatic Stores -> Accounting posting for every stock movement except GRN receipts.
+     POS sales, issues, wastage, stock-take adjustments and opening stock are posted
+     immediately. The same helper also repairs legacy Unposted movements when the
+     Stores page is rendered. */
+  postStoreMovementsAccounting(made);
   return made;
 }
+/* ---------- automatic Stores accounting ---------- */
+function postStoreMovementsAccounting(movements){
+  try{
+    if(typeof postJournal!=='function') return;
+    const A=allArts();
+    const eligible=(movements||[]).filter(m=>['sale','issue','wastage','adjust','opening'].includes(String(m.type)) && Math.abs(num(m.value))>=0.005);
+    if(!eligible.length) return;
+    const groups={};
+    eligible.forEach(m=>{
+      let prefix='', key='', ref='';
+      if(m.type==='sale'){
+        ref=m.invoiceNo||m.ref||('POS-'+m.saleId);
+        prefix='ST-POS-';
+        key='sale|'+String(m.saleId||ref||m.date);
+      }else if(m.type==='issue'){
+        ref=m.ref; prefix='ST-ISSUE-'; key='issue|'+String(ref||m.id);
+      }else if(m.type==='wastage'){
+        ref=m.ref; prefix='ST-WASTE-'; key='wastage|'+String(ref||m.id);
+      }else if(m.type==='opening'){
+        ref=m.ref; prefix='ST-OPEN-'; key='opening|'+String(ref||m.id);
+      }else{
+        ref=m.ref; prefix='ST-ADJ-'; key='adjust|'+String(ref||m.id);
+      }
+      const g=groups[key]||(groups[key]={type:m.type,date:m.date,ref,prefix,moves:[]});
+      g.moves.push(m);
+    });
+    let changed=false;
+    Object.values(groups).forEach(g=>{
+      const safeRef=(g.prefix+String(g.ref||g.date||'').replace(/[^A-Za-z0-9_-]/g,'-')).slice(0,80);
+      const existing=journalEntries().find(j=>String(j.reference)===safeRef && String(j.propertyId)===String(currentPropertyId));
+      if(existing){
+        g.moves.forEach(m=>{m.journal=safeRef;});
+        changed=true;
+        return;
+      }
+      const totals={};
+      g.moves.forEach(m=>{
+        const v=Math.abs(num(m.value)); if(v<0.005) return;
+        const a=A.find(x=>String(x.id)===String(m.articleId));
+        if(m.type==='opening'){
+          totals['__INVENTORY_DEBIT__']=(totals['__INVENTORY_DEBIT__']||0)+v;
+          totals['__EQUITY_CREDIT__']=(totals['__EQUITY_CREDIT__']||0)+v;
+        }else if(num(m.value)<0){
+          const account=costAccount(a||{category:m.category},m.type);
+          totals[account]=(totals[account]||0)+v;
+          totals['__INVENTORY_CREDIT__']=(totals['__INVENTORY_CREDIT__']||0)+v;
+        }else{
+          totals['__INVENTORY_DEBIT__']=(totals['__INVENTORY_DEBIT__']||0)+v;
+          const account=costAccount(a||{category:m.category},m.type);
+          totals[account]=(totals[account]||0)+v;
+        }
+      });
+      const lines=[];
+      const invDr=r2(totals['__INVENTORY_DEBIT__']||0);
+      const invCr=r2(totals['__INVENTORY_CREDIT__']||0);
+      const eqCr=r2(totals['__EQUITY_CREDIT__']||0);
+      if(invDr>0) lines.push({account:'Inventory Assets',debit:invDr,credit:0});
+      Object.entries(totals).forEach(([account,value])=>{
+        if(account.startsWith('__')) return;
+        const v=r2(value); if(v<=0) return;
+        lines.push({account,debit:0,credit:v});
+      });
+      if(invCr>0) lines.push({account:'Inventory Assets',debit:0,credit:invCr});
+      if(eqCr>0) lines.push({account:'Owner Equity',debit:0,credit:eqCr});
+      if(!lines.length) return;
+      const dr=r2(lines.reduce((s,l)=>s+num(l.debit),0));
+      const cr=r2(lines.reduce((s,l)=>s+num(l.credit),0));
+      if(Math.abs(dr-cr)>0.01){
+        console.error('Stores accounting imbalance',g,lines,dr,cr); return;
+      }
+      postJournal(g.date,safeRef,
+        g.type==='sale' ? 'POS recipe stock consumption '+(g.ref||'') :
+        g.type==='issue' ? 'Stock Issue '+(g.ref||'') :
+        g.type==='wastage' ? 'Wastage '+(g.ref||'') :
+        g.type==='opening' ? 'Opening Stock '+(g.ref||'') : 'Stock Take Adjustment '+(g.ref||''),
+        lines,'Stores / '+String(g.type));
+      g.moves.forEach(m=>{m.journal=safeRef;});
+      changed=true;
+    });
+    if(changed){
+      const all=mine(rd(K.mv));
+      const byId={}; eligible.forEach(m=>byId[m.id]=m.journal);
+      saveMine(K.mv,all.map(m=>byId[m.id]?{...m,journal:byId[m.id]}:m));
+      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+    }
+  }catch(err){ console.error('Automatic Stores accounting failed:',err); }
+}
+
+function repairUnpostedStoreMovements(){
+  try{
+    const pending=mine(rd(K.mv)).filter(m=>!m.journal && ['sale','issue','wastage','adjust','opening'].includes(String(m.type)));
+    if(pending.length) postStoreMovementsAccounting(pending);
+  }catch(e){ console.error('Stores accounting repair failed:',e); }
+}
+
 window.storesInventoryValue=function(){
   try{return Object.values(stockState()).reduce((s,x)=>s+x.value,0);}catch(e){return 0;}
 };
@@ -12508,6 +12426,7 @@ function ensurePage(){
 }
 
 window.stTab=function(t){
+  repairUnpostedStoreMovements();
   TAB=t;
   if(byId('stTarget'))byId('stTarget').dataset.loaded='';
   document.querySelectorAll('#stores .st-tabbtn').forEach(b=>{b.className='btn '+(b.dataset.tab===t?'btn-primary':'btn-secondary')+' st-tabbtn';});
@@ -12515,8 +12434,6 @@ window.stTab=function(t){
   renderTab();
 };
 function renderTab(){
-  try{syncWastageAccounting();}catch(e){}
-  try{syncIssueAccounting();}catch(e){}
   const f={stock:'stRenderStock',moves:'stRenderMoves',recipes:'stRenderRecipes',req:'stRenderReq',foodcost:'stRenderFoodCost'}[TAB];
   if(f&&window[f])window[f]();
 }
@@ -12574,6 +12491,7 @@ window.stOpenArticles=function(){
 
 /* ---------- MOVEMENTS ---------- */
 window.stRenderMoves=function(){
+  repairUnpostedStoreMovements();
   const body=byId('stMoveRows');if(!body)return;
   const from=val('stMvFrom')||'0000-00-00',to=val('stMvTo')||'9999-99-99',type=val('stMvType'),q=val('stMvSearch').toLowerCase().trim();
   const ev=ledger().filter(e=>e.date>=from&&e.date<=to&&(!type||e.type===type)&&(!q||(String(e.articleName||'')+' '+String(e.articleCode||'')+' '+String(e.ref||'')+' '+String(e.note||'')).toLowerCase().includes(q))).reverse();
@@ -12609,58 +12527,6 @@ window.stOpenIssue=function(){
   openM('stIssueModal','Stock Issue','<div class="form-grid"><div class="form-group"><label>Date</label><input id="stiDate" type="date" value="'+biz()+'"/></div><div class="form-group"><label>Issue to (department) *</label><select id="stiDept">'+DEPTS.map(d=>'<option>'+esc(d)+'</option>').join('')+'</select></div><div class="form-group full"><label>Note</label><input id="stiNote" placeholder="Optional"/></div></div><div style="font-size:12px;color:#6b7280;margin:6px 0">Use for stock consumed outside recipes (housekeeping, engineering, staff meals…). Recipe items are deducted automatically when sold.</div><div id="stLines"></div><button class="btn btn-secondary btn-small" type="button" onclick="stAddLine(\'issue\')">+ Add article</button>','<button class="btn btn-secondary" onclick="stClose(\'stIssueModal\')">Cancel</button><button class="btn btn-primary" onclick="stSaveIssue()">Post Issue</button>');
   stAddLine('issue');
 };
-function syncIssueAccounting(){
-  try{
-    const M=mine(rd(K.mv)), A=allArts();
-    const un=M.filter(m=>m.type==='issue'&&!m.journal&&Math.abs(num(m.value))>=0.005);
-    if(!un.length)return 0;
-    const updates={};
-    const groups={};
-    un.forEach(m=>{
-      const key=String(m.ref||m.id||m.date);
-      const g=groups[key]||(groups[key]={date:m.date,ref:m.ref||('SI-'+m.date),moves:[]});
-      g.moves.push(m);
-    });
-    const allJ=accRead(ACC_STORE.journals);
-    Object.values(groups).forEach(g=>{
-      const ref='ST-ISSUE-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-      const existing=allJ.find(j=>{
-        const pid=j.propertyId==null||j.propertyId===''?currentPropertyId:j.propertyId;
-        return String(pid)===String(currentPropertyId)&&String(j.reference)===ref;
-      });
-      const totals={};
-      g.moves.forEach(m=>{
-        const a=A.find(x=>String(x.id)===String(m.articleId));
-        const account=costAccount(a||{category:m.category},'issue');
-        totals[account]=(totals[account]||0)+Math.abs(num(m.value));
-      });
-      const lines=[];
-      Object.entries(totals).forEach(([account,value])=>{
-        const v=r2(value); if(v>0)lines.push({account,debit:v,credit:0});
-      });
-      const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
-      if(total<=0)return;
-      if(!existing){
-        lines.push({account:'Inventory Assets',debit:0,credit:total});
-        const clean=lines.filter(l=>l.debit>0||l.credit>0);
-        const dr=r2(clean.reduce((sum,l)=>sum+num(l.debit),0));
-        const cr=r2(clean.reduce((sum,l)=>sum+num(l.credit),0));
-        if(Math.abs(dr-cr)>0.01)throw new Error('Stock issue journal is not balanced.');
-        allJ.push({id:accId('je'),propertyId:currentPropertyId,date:g.date,reference:ref,description:'Stock issue '+g.ref,source:'Stores / Stock Issue',postedBy:currentUser?.username||'Admin',lines:clean});
-      }
-      g.moves.forEach(m=>updates[m.id]=ref);
-    });
-    if(Object.keys(updates).length){
-      accWrite(ACC_STORE.journals,allJ);
-      saveMine(K.mv,M.map(m=>updates[m.id]?{...m,journal:updates[m.id]}:m));
-      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
-      try{if(typeof renderTab==='function')renderTab();}catch(e){}
-    }
-    return Object.keys(updates).length;
-  }catch(e){console.error('Stock issue accounting sync failed:',e);return 0;}
-}
-window.syncIssueAccounting=syncIssueAccounting;
-
 window.stSaveIssue=function(){
   if(!need('stores.issue'))return;
   const lines=readLines();if(!lines.length){alert('Add at least one article with a quantity.');return;}
@@ -12670,7 +12536,6 @@ window.stSaveIssue=function(){
   if(short.length&&!confirm('Insufficient stock for:\n'+short.join('\n')+'\n\nPost anyway? Stock will go negative.'))return;
   const ref=nextRef('SI'),dept=val('stiDept'),date=val('stiDate')||biz(),note=val('stiNote').trim();
   addMovements(lines.map(l=>({type:'issue',articleId:l.articleId,qty:-l.qty,date,ref,dept,note})));
-  syncIssueAccounting();
   stClose('stIssueModal');renderTab();
   alert('Stock issue '+ref+' posted.');
 };
@@ -12679,51 +12544,11 @@ window.stOpenWaste=function(){
   openM('stWasteModal','Record Wastage','<div class="form-grid"><div class="form-group"><label>Date</label><input id="stwDate" type="date" value="'+biz()+'"/></div><div class="form-group"><label>Reason *</label><select id="stwReason">'+WASTE_REASONS.map(d=>'<option>'+esc(d)+'</option>').join('')+'</select></div><div class="form-group full"><label>Note</label><input id="stwNote" placeholder="Optional"/></div></div><div id="stLines"></div><button class="btn btn-secondary btn-small" type="button" onclick="stAddLine(\'waste\')">+ Add article</button>','<button class="btn btn-secondary" onclick="stClose(\'stWasteModal\')">Cancel</button><button class="btn btn-primary" onclick="stSaveWaste()">Post Wastage</button>');
   stAddLine('waste');
 };
-/* ---------- ROBUST WASTAGE ACCOUNTING SYNC ---------- */
-function syncWastageAccounting(){
-  try{
-    if(typeof postJournal!=='function') return 0;
-    const M=mine(rd(K.mv));
-    const un=M.filter(m=>m.type==='wastage' && !m.journal && Math.abs(num(m.value))>=0.005);
-    if(!un.length) return 0;
-    const updates={};
-    const groups={};
-    un.forEach(m=>{
-      const key=String(m.ref||m.id||m.date);
-      const g=groups[key]||(groups[key]={date:m.date,ref:m.ref||('WS-'+m.date),moves:[]});
-      g.moves.push(m);
-    });
-    Object.values(groups).forEach(g=>{
-      const ref='ST-WASTE-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-      let exists=false;
-      try{exists=journalEntries().some(j=>String(j.reference)===ref);}catch(e){exists=false;}
-      const total=r2(g.moves.reduce((sum,m)=>sum+Math.abs(num(m.value)),0));
-      if(total<=0)return;
-      if(!exists){
-        postJournal(g.date,ref,'Wastage '+g.ref,[
-          {account:'Other Operating Expenses',debit:total,credit:0},
-          {account:'Inventory Assets',debit:0,credit:total}
-        ],'Stores / Wastage');
-      }
-      g.moves.forEach(m=>updates[m.id]=ref);
-    });
-    if(Object.keys(updates).length){
-      saveMine(K.mv,M.map(m=>updates[m.id]?{...m,journal:updates[m.id]}:m));
-    }
-    return Object.keys(updates).length;
-  }catch(e){
-    console.error('Wastage accounting sync failed:',e);
-    return 0;
-  }
-}
-window.syncWastageAccounting=syncWastageAccounting;
-
 window.stSaveWaste=function(){
   if(!need('stores.wastage'))return;
   const lines=readLines();if(!lines.length){alert('Add at least one article with a quantity.');return;}
   const ref=nextRef('WS'),reason=val('stwReason'),date=val('stwDate')||biz(),note=val('stwNote').trim();
   addMovements(lines.map(l=>({type:'wastage',articleId:l.articleId,qty:-l.qty,date,ref,reason,note})));
-  syncWastageAccounting();
   stClose('stWasteModal');renderTab();
   alert('Wastage '+ref+' recorded.');
 };
@@ -12950,50 +12775,6 @@ window.stRenderFoodCost=function(){
   stRenderPostBox();
 };
 
-/* ---------- POS ACCOUNTING SYNC ---------- */
-function syncPOSConsumptionAccounting(){
-  try{
-    if(typeof postJournal!=='function') return 0;
-    const A=allArts();
-    const M=mine(rd(K.mv));
-    const un=M.filter(m=>m.type==='sale' && !m.journal && Math.abs(num(m.value))>=0.005);
-    if(!un.length) return 0;
-    const journals=(()=>{try{const v=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}})();
-    const updates={};
-    const groups={};
-    un.forEach(m=>{
-      const key=String(m.saleId||m.ref||m.invoiceNo||m.date);
-      const g=groups[key]||(groups[key]={date:m.date,ref:m.invoiceNo||m.ref||('POS-'+m.saleId),moves:[]});
-      g.moves.push(m);
-    });
-    Object.values(groups).forEach(g=>{
-      const ref='ST-POS-'+String(g.ref||g.saleId||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
-      const existing=journals.find(j=>String(j.reference)===ref && String(j.propertyId||currentPropertyId)===String(currentPropertyId));
-      if(existing){g.moves.forEach(m=>updates[m.id]=ref);return;}
-      const totals={};
-      g.moves.forEach(m=>{
-        const a=A.find(x=>String(x.id)===String(m.articleId));
-        const account=costAccount(a||{category:m.category},'sale');
-        totals[account]=(totals[account]||0)+Math.abs(num(m.value));
-      });
-      const lines=[];
-      Object.entries(totals).forEach(([account,value])=>{const v=r2(value);if(v>0)lines.push({account,debit:v,credit:0});});
-      const total=r2(lines.reduce((sum,l)=>sum+num(l.debit),0));
-      if(total>0){
-        lines.push({account:'Inventory Assets',debit:0,credit:total});
-        postJournal(g.date,ref,'POS recipe stock consumption '+(g.ref||g.date),lines,'Stores / POS');
-        g.moves.forEach(m=>updates[m.id]=ref);
-      }
-    });
-    if(Object.keys(updates).length){
-      saveMine(K.mv,M.map(m=>updates[m.id]?{...m,journal:updates[m.id]}:m));
-      return Object.keys(updates).length;
-    }
-  }catch(e){console.error('POS accounting sync failed:',e);}
-  return 0;
-}
-window.syncPOSConsumptionAccounting=syncPOSConsumptionAccounting;
-
 /* ---------- POST TO ACCOUNTING ---------- */
 window.stRenderPostBox=function(){
   const box=byId('stPostInfo');if(!box)return;
@@ -13002,41 +12783,7 @@ window.stRenderPostBox=function(){
   const v=un.reduce((s,m)=>s+m.value,0);
   box.innerHTML=un.length?('<strong>'+un.length+'</strong> unposted movement(s) up to '+esc(upto)+' · net stock value change <strong>'+bm(v)+'</strong>'):'Nothing waiting to be posted up to '+esc(upto)+'.';
 };
-window.stPostAccounting=function(){
-  if(!need('stores.post'))return;
-  const upto=val('stPostDate')||biz();
-  const M=mine(rd(K.mv)),un=M.filter(m=>!m.journal&&m.date<=upto);
-  if(!un.length){alert('No unposted stock movements up to '+upto+'.');return;}
-  const dates=[...new Set(un.map(m=>m.date))].sort();
-  if(!confirm('Post '+un.length+' stock movement(s) across '+dates.length+' day(s) to Accounting?'))return;
-  const A=allArts(),jr=rd(K.jr),posted={};
-  const refExists=r=>jr.some(j=>isMine(j)&&String(j.reference)===r);
-  dates.forEach(date=>{
-    const acc={};
-    const add=(name,dr,cr)=>{const o=acc[name]||(acc[name]={dr:0,cr:0});o.dr+=dr;o.cr+=cr;};
-    const dayMoves=un.filter(m=>m.date===date);
-    dayMoves.forEach(m=>{
-      const v=Math.abs(m.value);if(v<0.005)return;
-      const a=A.find(x=>String(x.id)===String(m.articleId));
-      const exp=costAccount(a||{category:m.category},m.type);
-      if(m.value<0){add(exp,v,0);add('Inventory Assets',0,v);}
-      else if(m.type==='opening'){add('Inventory Assets',v,0);add('Owner Equity',0,v);}
-      else{add('Inventory Assets',v,0);add(exp,0,v);}
-    });
-    let lines=Object.entries(acc).map(([account,o])=>{const n=r2(o.dr-o.cr);return {account,debit:n>0?n:0,credit:n<0?-n:0};}).filter(l=>l.debit>0||l.credit>0);
-    const dsum=r2(lines.reduce((s,l)=>s+l.debit,0)),csum=r2(lines.reduce((s,l)=>s+l.credit,0)),diff=r2(dsum-csum);
-    if(Math.abs(diff)>=0.01){const inv=lines.find(l=>l.account==='Inventory Assets');if(inv){if(diff>0)inv.credit=r2(inv.credit+diff);else inv.debit=r2(inv.debit-diff);}}
-    let ref='STK-'+date,n=2;while(refExists(ref)){ref='STK-'+date+'-'+n;n++;}
-    if(lines.length){
-      jr.push({id:'je_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,date,reference:ref,description:'Stores consumption '+date,source:'Stores',postedBy:uname(),lines});
-    }
-    dayMoves.forEach(m=>{posted[m.id]=lines.length?ref:'nil';});
-  });
-  wr(K.jr,jr);
-  saveMine(K.mv,M.map(m=>posted[m.id]?{...m,journal:posted[m.id]}:m));
-  renderTab();
-  alert('Stock consumption posted to Accounting ('+dates.length+' journal(s)).');
-};
+window.stPostAccounting=function(){ alert('Stock movements are posted automatically to Accounting.'); };
 
 /* ---------- PRINT ---------- */
 function printDoc(title,inner){
@@ -13203,7 +12950,6 @@ window.stSaveIssueReq=function(id){
   if(short.length&&!confirm('Not enough stock on hand for:\n'+short.map(x=>x.name).join('\n')+'\n\nIssue anyway? Stock will go negative.'))return;
   const date=biz();
   addMovements(list.map(x=>({type:'issue',articleId:x.articleId,qty:-x.qty,date,ref:r.number,dept:r.department,note:'Requisition '+r.number+' — for '+r.requestedBy})));
-  syncIssueAccounting();
   list.forEach(x=>{const l=r.lines.find(z=>z.articleId===x.articleId);if(l)l.issuedQty=num(l.issuedQty)+x.qty;});
   (r.issues=r.issues||[]).push({date,by:uname(),lines:list.map(x=>({articleId:x.articleId,qty:x.qty}))});
   r.lastIssueDate=date;
