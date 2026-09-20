@@ -12171,9 +12171,20 @@ function saveSet(part){
 /* ---------- articles & ledger ---------- */
 const allArts=()=>mine(rd(K.art));
 function costAccount(a,type){
-  const cat=String(a?.category||'');
-  if(/bev|drink|liquor|wine|beer|spirit|bar/i.test(cat))return 'Beverage Cost';
-  if(type==='sale'||/food|kitchen|meat|veg|fruit|dairy|grocer|spice|bak|fish|sea|rice|pantry|fresh|dry|frozen/i.test(cat))return 'Food Cost';
+  /* Determine the cost account from the article itself. Some properties use
+     a generic article category (or leave it blank), so category alone is not
+     sufficient for beverage recipes. Check the common descriptive fields as
+     well, while keeping the explicit category as the strongest signal. */
+  const cat=String(a?.category||'').trim();
+  const desc=[
+    a?.name,a?.articleName,a?.description,a?.subcategory,a?.subCategory,
+    a?.department,a?.dept,a?.type,a?.itemType,a?.group,a?.articleGroup,
+    a?.class,a?.code
+  ].map(v=>String(v||'')).join(' ');
+  const beveragePattern=/\bbev(?:erage)?s?\b|\bdrink(?:s)?\b|\bliquor\b|\bwine\b|\bbeer\b|\bspirit(?:s)?\b|\bsoft[ -]?drink(?:s)?\b|\bjuice\b|\bcocktail(?:s)?\b|\bmocktail(?:s)?\b|\bbar[ -]?(?:item|stock|store|suppl(?:y|ies))\b/i;
+  const foodPattern=/\bfood\b|\bkitchen\b|\bmeat\b|\bveg(?:etable)?s?\b|\bfruit\b|\bdairy\b|\bgrocer(?:y|ies)\b|\bspice(?:s)?\b|\bbak(?:e|ery|ed)\b|\bfish\b|\bseafood\b|\brice\b|\bpantry\b|\bfresh\b|\bdry\b|\bfrozen\b/i;
+  if(beveragePattern.test(cat)||beveragePattern.test(desc))return 'Beverage Cost';
+  if(type==='sale'||foodPattern.test(cat)||foodPattern.test(desc))return 'Food Cost';
   return 'Other Operating Expenses';
 }
 /* every stock event for this property, oldest first. Receipts come straight from Purchasing GRNs. */
@@ -12272,6 +12283,41 @@ function addMovements(list){
       }
     }catch(e){console.warn('Unable to save POS accounting status:',e);}
     try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+  }
+
+  /* Wastage -> Accounting: wastage is an inventory loss, not Food Cost.
+     Use the existing Other Operating Expenses account (5800) because the
+     chart of accounts has no separate Wastage Expense account. */
+  const wastageMade=made.filter(m=>m.type==='wastage' && Math.abs(num(m.value))>=0.005);
+  if(wastageMade.length && typeof postJournal==='function'){
+    try{
+      const groups={};
+      wastageMade.forEach(m=>{
+        const key=String(m.ref||m.date);
+        const g=groups[key]||(groups[key]={date:m.date,ref:m.ref||('WS-'+m.date),moves:[]});
+        g.moves.push(m);
+      });
+      Object.values(groups).forEach(g=>{
+        const ref='ST-WASTE-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
+        const existing=journalEntries().find(j=>String(j.reference)===ref && String(j.propertyId)===String(currentPropertyId));
+        const total=r2(g.moves.reduce((sum,m)=>sum+Math.abs(num(m.value)),0));
+        if(total<=0)return;
+        if(!existing){
+          postJournal(g.date,ref,'Wastage '+(g.ref||g.date),[
+            {account:'Other Operating Expenses',debit:total,credit:0},
+            {account:'Inventory Assets',debit:0,credit:total}
+          ],'Stores / Wastage');
+        }
+        g.moves.forEach(m=>{m.journal=ref;});
+      });
+      const ids=new Set(wastageMade.filter(m=>m.journal).map(m=>m.id));
+      if(ids.size){
+        saveMine(K.mv,mine(rd(K.mv)).map(x=>ids.has(x.id)?{...x,journal:wastageMade.find(m=>m.id===x.id)?.journal||x.journal}:x));
+      }
+      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+    }catch(err){
+      console.error('Automatic Stores wastage accounting post failed:',err);
+    }
   }
 
   /* Opening stock is an initial capital contribution, not POS consumption.
@@ -12424,6 +12470,7 @@ window.stTab=function(t){
   renderTab();
 };
 function renderTab(){
+  try{syncWastageAccounting();}catch(e){}
   const f={stock:'stRenderStock',moves:'stRenderMoves',recipes:'stRenderRecipes',req:'stRenderReq',foodcost:'stRenderFoodCost'}[TAB];
   if(f&&window[f])window[f]();
 }
@@ -12533,11 +12580,51 @@ window.stOpenWaste=function(){
   openM('stWasteModal','Record Wastage','<div class="form-grid"><div class="form-group"><label>Date</label><input id="stwDate" type="date" value="'+biz()+'"/></div><div class="form-group"><label>Reason *</label><select id="stwReason">'+WASTE_REASONS.map(d=>'<option>'+esc(d)+'</option>').join('')+'</select></div><div class="form-group full"><label>Note</label><input id="stwNote" placeholder="Optional"/></div></div><div id="stLines"></div><button class="btn btn-secondary btn-small" type="button" onclick="stAddLine(\'waste\')">+ Add article</button>','<button class="btn btn-secondary" onclick="stClose(\'stWasteModal\')">Cancel</button><button class="btn btn-primary" onclick="stSaveWaste()">Post Wastage</button>');
   stAddLine('waste');
 };
+/* ---------- ROBUST WASTAGE ACCOUNTING SYNC ---------- */
+function syncWastageAccounting(){
+  try{
+    if(typeof postJournal!=='function') return 0;
+    const M=mine(rd(K.mv));
+    const un=M.filter(m=>m.type==='wastage' && !m.journal && Math.abs(num(m.value))>=0.005);
+    if(!un.length) return 0;
+    const updates={};
+    const groups={};
+    un.forEach(m=>{
+      const key=String(m.ref||m.id||m.date);
+      const g=groups[key]||(groups[key]={date:m.date,ref:m.ref||('WS-'+m.date),moves:[]});
+      g.moves.push(m);
+    });
+    Object.values(groups).forEach(g=>{
+      const ref='ST-WASTE-'+String(g.ref||g.date).replace(/[^A-Za-z0-9_-]/g,'-').slice(0,60);
+      let exists=false;
+      try{exists=journalEntries().some(j=>String(j.reference)===ref);}catch(e){exists=false;}
+      const total=r2(g.moves.reduce((sum,m)=>sum+Math.abs(num(m.value)),0));
+      if(total<=0)return;
+      if(!exists){
+        postJournal(g.date,ref,'Wastage '+g.ref,[
+          {account:'Other Operating Expenses',debit:total,credit:0},
+          {account:'Inventory Assets',debit:0,credit:total}
+        ],'Stores / Wastage');
+      }
+      g.moves.forEach(m=>updates[m.id]=ref);
+    });
+    if(Object.keys(updates).length){
+      saveMine(K.mv,M.map(m=>updates[m.id]?{...m,journal:updates[m.id]}:m));
+    }
+    return Object.keys(updates).length;
+  }catch(e){
+    console.error('Wastage accounting sync failed:',e);
+    return 0;
+  }
+}
+window.syncWastageAccounting=syncWastageAccounting;
+
 window.stSaveWaste=function(){
   if(!need('stores.wastage'))return;
   const lines=readLines();if(!lines.length){alert('Add at least one article with a quantity.');return;}
   const ref=nextRef('WS'),reason=val('stwReason'),date=val('stwDate')||biz(),note=val('stwNote').trim();
   addMovements(lines.map(l=>({type:'wastage',articleId:l.articleId,qty:-l.qty,date,ref,reason,note})));
+  syncWastageAccounting();
   stClose('stWasteModal');renderTab();
   alert('Wastage '+ref+' recorded.');
 };
