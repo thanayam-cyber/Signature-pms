@@ -229,8 +229,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
  .sidebar{position:relative !important;width:100% !important;}
  .main{margin-left:0 !important;width:100% !important;}
 }
-</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
+</style></head>
 <body data-customer-build="true">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
@@ -260,8 +259,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="auth-error" id="loginError" style="display: block;">Invalid username or password.</div>
 <div class="auth-actions">
 <button class="btn btn-primary" onclick="login()">Login</button>
-<button class="btn btn-secondary" id="supabaseLoginBtn" onclick="supabaseLogin()" type="button" style="margin-top:8px;width:100%">Supabase Login</button>
-<div id="supabaseLoginStatus" style="font-size:11px;color:#6b7280;text-align:center;margin-top:7px"></div>
 </div>
 <div style="margin-top:14px;text-align:center">
 <button class="btn btn-secondary btn-small" onclick="recoverAdminAccess()" type="button">
@@ -1845,6 +1842,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // Build mode: the Master keeps the Customer Edition Generator; generated hotel editions set this to true.
 const CUSTOMER_BUILD=true;
@@ -2486,7 +2484,214 @@ function statusBadge(status){
     else if(status==="Reserved") cls="badge-yellow";
     else if(status==="Checked-Out") cls="badge-green";
     else if(status==="Cancelled") cls="badge-red";
-    else if(status==="No-Show") cls="badge-red";
+    else if(status==="No-Show") cls="badge-red"/* =========================================================
+   SUPABASE AUTH STEP 2
+   Source base: Signature_PMS_v1.9.16_USER_MANAGEMENT_LAYOUT_FIXED.html
+   Browser uses the publishable/anon key only. No service-role key.
+========================================================= */
+const SUPABASE_URL="https://bobzipeevmfyeprtryds.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_x6-F6tq4VnsztERS4AbATw_GlPOY-Hp";
+let supabaseClient=null;
+
+function initSupabaseClient(){
+    try{
+        if(!window.supabase || typeof window.supabase.createClient!=="function") return null;
+        if(!supabaseClient) supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+        return supabaseClient;
+    }catch(err){
+        console.error("Supabase client initialization failed",err);
+        return null;
+    }
+}
+
+async function supabaseLogin(){
+    const client=initSupabaseClient();
+    const status=document.getElementById("supabaseLoginStatus");
+    const errorEl=document.getElementById("loginError");
+    const email=String(document.getElementById("loginUsername")?.value||"").trim();
+    const password=String(document.getElementById("loginPassword")?.value||"");
+    if(status) status.textContent="Connecting to Supabase...";
+    if(errorEl) errorEl.style.display="none";
+    if(!client){
+        if(status) status.textContent="Supabase client is not available.";
+        return;
+    }
+    if(!email || !password){
+        if(status) status.textContent="Enter your Supabase email and password.";
+        return;
+    }
+    try{
+        const {data,error}=await client.auth.signInWithPassword({email,password});
+        if(error) throw error;
+        const authUser=data?.user;
+        if(!authUser) throw new Error("Supabase login succeeded but no Auth user was returned.");
+
+        const {data:profile,error:profileError}=await client
+            .from("profiles")
+            .select("id,username,full_name,role,department,status")
+            .eq("id",authUser.id)
+            .maybeSingle();
+        if(profileError) throw profileError;
+        if(!profile){
+            if(status) status.textContent="Supabase Auth succeeded, but no matching profile was found.";
+            return;
+        }
+        if(String(profile.status||"active").toLowerCase()!=="active"){
+            if(status) status.textContent="This Supabase profile is inactive.";
+            await client.auth.signOut();
+            return;
+        }
+
+        const {data:userProperties,error:propertyError}=await client
+            .from("user_properties")
+            .select("id,user_id,property_id,is_primary,created_at")
+            .eq("user_id",authUser.id);
+        if(propertyError) throw propertyError;
+
+        const assignedPropertyIds=[...new Set((userProperties||[]).map(x=>x.property_id).filter(Boolean))];
+        let assignedProperties=[];
+        if(assignedPropertyIds.length){
+            const {data:propertyRows,error:propertiesError}=await client
+                .from("properties")
+                .select("id,code,name,address,city,country,phone,email")
+                .in("id",assignedPropertyIds);
+            if(propertiesError) throw propertiesError;
+            assignedProperties=propertyRows||[];
+        }
+
+        const {data:allPermissions,error:permissionError}=await client
+            .from("user_permissions")
+            .select("id,user_id,property_id,module,action,allowed")
+            .eq("user_id",authUser.id)
+            .eq("allowed",true);
+        if(permissionError) throw permissionError;
+
+        // Keep only global permissions (property_id null) and permissions
+        // belonging to one of this user's assigned properties. This prevents
+        // rights from another property being applied accidentally.
+        const assignedSet=new Set(assignedPropertyIds.map(String));
+        const permissions=(allPermissions||[]).filter(p=>{
+            if(!p.property_id) return true;
+            return assignedSet.has(String(p.property_id));
+        });
+
+        const pagePermissions=[];
+        const actionPermissions=[];
+        (permissions||[]).forEach(p=>{
+            const module=String(p.module||"").trim();
+            const action=String(p.action||"").trim();
+            if(!module || !action) return;
+            // Support explicit page rows if they are stored in Supabase.
+            if(module.toLowerCase()==="page" || module.toLowerCase()==="pages") pagePermissions.push(action);
+            else actionPermissions.push(module+"."+action);
+        });
+
+        const mappedUser={
+            id:authUser.id,
+            username:profile.username||authUser.email,
+            email:authUser.email||profile.username||"",
+            name:profile.full_name||profile.username||authUser.email||"",
+            fullName:profile.full_name||profile.username||authUser.email||"",
+            role:profile.role||"Viewer",
+            department:profile.department||"",
+            active:true,
+            permissions:{pages:[...new Set(pagePermissions)],actions:[...new Set(actionPermissions)]},
+            supabasePermissions:permissions.map(p=>({id:p.id,property_id:p.property_id||null,module:p.module||"",action:p.action||"",allowed:p.allowed===true}))
+        };
+
+        users=getStoredUsers();
+        const idx=users.findIndex(u=>String(u.id)===String(mappedUser.id));
+        if(idx>=0) users[idx]={...users[idx],...mappedUser}; else users.push(mappedUser);
+        saveUsers();
+        currentUser=mappedUser;
+
+        const primary=(userProperties||[]).find(x=>x.is_primary) || (userProperties||[])[0];
+        if(primary?.property_id) currentPropertyId=primary.property_id;
+
+        // Load the assigned Supabase property records without destroying existing PMS property data.
+        (assignedProperties||[]).forEach(sp=>{
+            const idx=properties.findIndex(p=>String(p.id)===String(sp.id));
+            const patch={
+                id:sp.id,
+                property:sp.name||sp.code||"Property",
+                location:[sp.address,sp.city,sp.country].filter(Boolean).join(", "),
+                phone:sp.phone||"",
+                email:sp.email||"",
+                supabaseCode:sp.code||""
+            };
+            if(idx>=0) properties[idx]=ensurePropertyShape({...properties[idx],...patch});
+            else properties.push(ensurePropertyShape(patch));
+        });
+        if((assignedProperties||[]).length) saveProperties();
+        setSession(mappedUser);
+
+        if(status) status.textContent=`Supabase login successful. ${permissions.length} allowed permission(s) loaded.`;
+        showPMS();
+    }catch(err){
+        console.error("Supabase login failed",err);
+        if(status) status.textContent=String(err?.message||"Supabase login failed.");
+        if(errorEl){errorEl.textContent=String(err?.message||"Supabase login failed.");errorEl.style.display="block";}
+    }
+}
+
+async function supabaseRestoreSession(authUser){
+    const client=initSupabaseClient();
+    if(!client || !authUser) return;
+    try{
+        const {data:profile,error:profileError}=await client.from("profiles").select("id,username,full_name,role,department,status").eq("id",authUser.id).maybeSingle();
+        if(profileError || !profile || String(profile.status||"active").toLowerCase()!=="active"){
+            await client.auth.signOut();
+            showLoginScreen();
+            return;
+        }
+        const {data:userProperties,error:propertyError}=await client.from("user_properties").select("id,user_id,property_id,is_primary,created_at").eq("user_id",authUser.id);
+        if(propertyError) throw propertyError;
+        const assignedPropertyIds=[...new Set((userProperties||[]).map(x=>x.property_id).filter(Boolean))];
+        const {data:propertyRows,error:propertiesError}=assignedPropertyIds.length?await client.from("properties").select("id,code,name,address,city,country,phone,email").in("id",assignedPropertyIds):{data:[],error:null};
+        if(propertiesError) throw propertiesError;
+        const {data:allPermissions,error:permissionError}=await client.from("user_permissions").select("id,user_id,property_id,module,action,allowed").eq("user_id",authUser.id).eq("allowed",true);
+        if(permissionError) throw permissionError;
+        const assignedSet=new Set(assignedPropertyIds.map(String));
+        const permissions=(allPermissions||[]).filter(p=>!p.property_id||assignedSet.has(String(p.property_id)));
+        const pagePermissions=[],actionPermissions=[];
+        permissions.forEach(p=>{const module=String(p.module||"").trim(),action=String(p.action||"").trim();if(!module||!action)return;if(["page","pages"].includes(module.toLowerCase()))pagePermissions.push(action);else actionPermissions.push(module+"."+action);});
+        const mappedUser={id:authUser.id,username:profile.username||authUser.email,email:authUser.email||profile.username||"",name:profile.full_name||profile.username||authUser.email||"",fullName:profile.full_name||profile.username||authUser.email||"",role:profile.role||"Viewer",department:profile.department||"",active:true,permissions:{pages:[...new Set(pagePermissions)],actions:[...new Set(actionPermissions)]},supabasePermissions:permissions.map(p=>({id:p.id,property_id:p.property_id||null,module:p.module||"",action:p.action||"",allowed:p.allowed===true}))};
+        users=getStoredUsers();
+        const idx=users.findIndex(u=>String(u.id)===String(mappedUser.id));
+        if(idx>=0) users[idx]={...users[idx],...mappedUser}; else users.push(mappedUser);
+        saveUsers();
+        currentUser=mappedUser;
+        (propertyRows||[]).forEach(sp=>{const idx=properties.findIndex(p=>String(p.id)===String(sp.id));const patch={id:sp.id,property:sp.name||sp.code||"Property",location:[sp.address,sp.city,sp.country].filter(Boolean).join(", "),phone:sp.phone||"",email:sp.email||"",supabaseCode:sp.code||""};if(idx>=0)properties[idx]=ensurePropertyShape({...properties[idx],...patch});else properties.push(ensurePropertyShape(patch));});
+        if((propertyRows||[]).length) saveProperties();
+        const primary=(userProperties||[]).find(x=>x.is_primary)||(userProperties||[])[0];
+        if(primary?.property_id) currentPropertyId=primary.property_id;
+        setSession(mappedUser);
+        showPMS();
+    }catch(err){
+        console.error("Supabase session restore failed",err);
+        showLoginScreen();
+    }
+}
+
+async function initSupabaseAuthStep1(){
+    const client=initSupabaseClient();
+    if(!client) return;
+    try{
+        const {data}=await client.auth.getSession();
+        if(data?.session?.user){
+            console.info("Supabase session restored for",data.session.user.email||data.session.user.id);
+        }
+        client.auth.onAuthStateChange((event,session)=>{
+            if(event==="SIGNED_OUT") clearSession();
+        });
+    }catch(err){
+        console.warn("Supabase session check failed",err);
+    }
+}
+
+
+
+;
 
     return `<span class="badge ${cls}">${escapeHtml(status)}</span>`;
 }
@@ -2599,72 +2804,61 @@ function findUserById(id){
 }
 
 
-/* =========================================================
-   SUPABASE CONNECTION LAYER — V14
-   Uses the proven V1.9.17 authentication/property-loading approach.
-   V14 PMS modules remain local until their individual cloud sync is added.
-========================================================= */
-const SUPABASE_URL="https://bobzipeevmfyeprtryds.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY="sb_publishable_x6-F6tq4VnsztERS4AbATw_GlPOY-Hp";
-let supabaseClient=null;
-function initSupabaseClient(){
-    try{
-        if(!window.supabase || typeof window.supabase.createClient!=="function") return null;
-        if(!supabaseClient) supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
-        return supabaseClient;
-    }catch(err){ console.error("Supabase client initialization failed",err); return null; }
-}
-async function loadSupabaseUserIntoV14(authUser){
-    const client=initSupabaseClient(); if(!client||!authUser) return false;
-    const {data:profile,error:profileError}=await client.from("profiles").select("id,username,full_name,role,department,status").eq("id",authUser.id).maybeSingle();
-    if(profileError) throw profileError;
-    if(!profile) throw new Error("Supabase Auth succeeded, but no matching profile was found.");
-    if(String(profile.status||"active").toLowerCase()!=="active") throw new Error("This Supabase profile is inactive.");
-    const {data:userProperties,error:propertyError}=await client.from("user_properties").select("id,user_id,property_id,is_primary,created_at").eq("user_id",authUser.id);
-    if(propertyError) throw propertyError;
-    const assignedPropertyIds=[...new Set((userProperties||[]).map(x=>x.property_id).filter(Boolean))];
-    let assignedProperties=[];
-    if(String(profile.role||"").toLowerCase()==="admin"){
-        const {data:rows,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email").order("name");
-        if(error) throw error; assignedProperties=rows||[];
-    }else if(assignedPropertyIds.length){
-        const {data:rows,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email").in("id",assignedPropertyIds);
-        if(error) throw error; assignedProperties=rows||[];
+function initAuthentication(){
+
+    users=getStoredUsers();
+
+    const session=getSession();
+
+    // If a Supabase session exists, let the cloud user continue directly.
+    const client=initSupabaseClient();
+    if(client){
+        client.auth.getSession().then(({data})=>{
+            if(data?.session?.user){
+                supabaseRestoreSession(data.session.user).catch(err=>console.warn("Supabase session restore failed",err));
+                return;
+            }
+            if(!users.length){
+                showLoginScreen();
+                return;
+            }
+            if(session){
+                const user=findUserById(session.id);
+                if(user && user.active && user.username===session.username && user.role===session.role){
+                    currentUser=user;
+                    if(session.propertyId) currentPropertyId=session.propertyId;
+                    setSession(user);
+                    showPMS();
+                    return;
+                }
+            }
+            showLoginScreen();
+        }).catch(()=>{
+            if(!users.length) showLoginScreen(); else showLoginScreen();
+        });
+        return;
     }
-    const {data:allPermissions,error:permissionError}=await client.from("user_permissions").select("id,user_id,property_id,module,action,allowed").eq("user_id",authUser.id).eq("allowed",true);
-    if(permissionError) throw permissionError;
-    const assignedSet=new Set(assignedProperties.map(x=>String(x.id)));
-    const permissions=(allPermissions||[]).filter(x=>!x.property_id||assignedSet.has(String(x.property_id)));
-    const pagePermissions=[],actionPermissions=[],reportPermissions=[];
-    permissions.forEach(x=>{const m=String(x.module||"").trim(),a=String(x.action||"").trim();if(!m||!a)return;const ml=m.toLowerCase();if(ml==="page"||ml==="pages")pagePermissions.push(a);else if(ml==="report"||ml==="reports")reportPermissions.push(a);else actionPermissions.push(m+"."+a);});
-    const isAdmin=String(profile.role||"").toLowerCase()==="admin";
-    const mappedUser={id:authUser.id,username:profile.username||authUser.email,email:authUser.email||profile.username||"",name:profile.full_name||profile.username||authUser.email||"",fullName:profile.full_name||profile.username||authUser.email||"",role:profile.role||"Viewer",department:profile.department||"",active:true,propertyId:isAdmin?"all":(assignedProperties.length===1?assignedProperties[0].id:assignedProperties.map(x=>x.id)),permissions:{pages:isAdmin?PERMISSION_PAGES.map(x=>x[0]):[...new Set(pagePermissions)],actions:isAdmin?ACTION_PERMISSION_KEYS.slice():[...new Set(actionPermissions)],reports:isAdmin?REPORT_PERMISSION_KEYS.slice():[...new Set(reportPermissions)]},supabasePermissions:permissions.map(x=>({id:x.id,property_id:x.property_id||null,module:x.module||"",action:x.action||"",allowed:x.allowed===true}))};
-    users=getStoredUsers(); const idx=users.findIndex(x=>String(x.id)===String(mappedUser.id)); if(idx>=0) users[idx]={...users[idx],...mappedUser}; else users.push(mappedUser); saveUsers(); currentUser=mappedUser;
-    assignedProperties.forEach(sp=>{const idx=properties.findIndex(x=>String(x.id)===String(sp.id));const patch={id:sp.id,property:sp.name||sp.code||"Property",location:[sp.address,sp.city,sp.country].filter(Boolean).join(", "),phone:sp.phone||"",email:sp.email||"",supabaseCode:sp.code||""};if(idx>=0)properties[idx]=ensurePropertyShape({...properties[idx],...patch});else properties.push(ensurePropertyShape(patch));});
-    if(assignedProperties.length) saveProperties();
-    const primary=(userProperties||[]).find(x=>x.is_primary)||(userProperties||[])[0];
-    currentPropertyId=isAdmin?(getSession()?.propertyId&&properties.some(x=>String(x.id)===String(getSession().propertyId))?getSession().propertyId:(primary?.property_id||assignedProperties[0]?.id||properties[0]?.id||null)):(primary?.property_id||assignedProperties[0]?.id||currentPropertyId);
-    setSession(currentUser); return true;
-}
-async function supabaseLogin(){
-    const client=initSupabaseClient(),status=document.getElementById("supabaseLoginStatus");
-    if(status)status.textContent="Connecting to Supabase..."; clearAuthError("loginError");
-    const email=String(document.getElementById("loginUsername")?.value||"").trim(),password=String(document.getElementById("loginPassword")?.value||"");
-    if(!client){if(status)status.textContent="Supabase client is not available.";return;} if(!email||!password){if(status)status.textContent="Enter your Supabase email and password.";return;}
-    try{const {data,error}=await client.auth.signInWithPassword({email,password});if(error)throw error;await loadSupabaseUserIntoV14(data?.user);if(status)status.textContent="Supabase login successful.";showPMS();}catch(err){console.error("Supabase login failed",err);if(status)status.textContent=String(err?.message||"Supabase login failed.");showAuthError("loginError",String(err?.message||"Supabase login failed."));}
-}
-async function restoreSupabaseSession(){
-    const client=initSupabaseClient();if(!client)return false;try{const {data}=await client.auth.getSession();if(data?.session?.user){await loadSupabaseUserIntoV14(data.session.user);return true;}}catch(err){console.warn("Supabase session restore failed",err);}return false;
+
+    if(!users.length){
+        showSetupScreen();
+        return;
+    }
+
+    if(session){
+        const user=findUserById(session.id);
+        if(user && user.active && user.username===session.username && user.role===session.role){
+            currentUser=user;
+            if(session.propertyId) currentPropertyId=session.propertyId;
+            setSession(user);
+            showPMS();
+            return;
+        }
+    }
+
+    showLoginScreen();
+
 }
 
-async function initAuthentication(){
-    users=getStoredUsers();
-    if(await restoreSupabaseSession()){ showPMS(); return; }
-    const session=getSession();
-    if(session){const user=findUserById(session.id);if(user&&user.active&&user.username===session.username&&user.role===session.role){currentUser=user;if(session.propertyId)currentPropertyId=session.propertyId;setSession(user);showPMS();return;}}
-    if(!users.length){showSetupScreen();return;}
-    showLoginScreen();
-}
 
 function showSetupScreen(){
 
@@ -2887,20 +3081,94 @@ function recoverAdminAccess(){
 
 
 async function login(){
-    const username=document.getElementById("loginUsername").value.trim(),password=document.getElementById("loginPassword").value;
-    clearAuthError("loginError"); if(!username||!password){showAuthError("loginError","Please enter username and password.");return;}
-    users=getStoredUsers(); const user=users.find(x=>String(x.username).toLowerCase()===username.toLowerCase());
-    if(user&&user.active){const passwordHash=await hashPassword(password);if(passwordHash===user.passwordHash){currentUser=user;setSession(user);showPMS();return;}}
-    if(username.includes("@")){await supabaseLogin();return;}
-    showAuthError("loginError",user&&!user.active?"This user account is inactive. Please contact an Administrator.":"Invalid username or password.");
+
+    const username=
+        document.getElementById("loginUsername")
+        .value.trim();
+
+    const password=
+        document.getElementById("loginPassword")
+        .value;
+
+    clearAuthError("loginError");
+
+
+    if(!username || !password){
+
+        showAuthError(
+            "loginError",
+            "Please enter username and password."
+        );
+
+        return;
+
+    }
+
+
+    users=getStoredUsers();
+
+
+    const user=
+        users.find(
+            u=>String(u.username).toLowerCase()===
+               username.toLowerCase()
+        );
+
+
+    if(!user){
+
+        showAuthError(
+            "loginError",
+            "Invalid username or password."
+        );
+
+        return;
+
+    }
+
+
+    if(!user.active){
+
+        showAuthError(
+            "loginError",
+            "This user account is inactive. Please contact an Administrator."
+        );
+
+        return;
+
+    }
+
+
+    const passwordHash=
+        await hashPassword(password);
+
+
+    if(passwordHash!==user.passwordHash){
+
+        showAuthError(
+            "loginError",
+            "Invalid username or password."
+        );
+
+        return;
+
+    }
+
+
+    currentUser=user;
+
+    setSession(user);
+
+    showPMS();
+
 }
+
 
 function logout(){
 
     if(!confirm("Do you want to logout?"))
         return;
 
-    try{const c=initSupabaseClient();if(c)c.auth.signOut().catch(()=>{});}catch(e){}
     clearSession();
 
     currentUser=null;
