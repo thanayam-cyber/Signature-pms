@@ -234,7 +234,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
 ========================================================= -->
-<div class="auth-overlay" id="authOverlay" style="display: none;">
+<div class="auth-overlay" id="authOverlay" style="display: flex;">
 <div class="auth-card">
 <div class="auth-brand">
 <h1>Signature</h1>
@@ -242,7 +242,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.0</small>
 </div>
 <!-- LOGIN -->
-<div id="loginView" style="display: none;">
+<div id="loginView" style="display: block;">
 <h2 class="auth-title">Staff Login</h2>
 <p class="auth-subtitle">Secure access to your hotel management and point-of-sale system.</p>
 <div class="form-group" style="margin-bottom:13px">
@@ -270,7 +270,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <!-- FIRST ADMIN -->
-<div id="setupView" style="display: block;">
+<div id="setupView" style="display: none;">
 <h2 class="auth-title">Create First Admin</h2>
 <p class="auth-subtitle">
                 No users exist yet. Create the first Administrator account to start using Signature PMS.
@@ -2874,17 +2874,40 @@ function findUserById(id){
 }
 
 
-function initAuthentication(){
+async function initAuthentication(){
 
     users=getStoredUsers();
 
     const session=getSession();
 
+    // Cloud-first startup: on a fresh browser, check the existing Supabase
+    // session before showing the First Admin setup. This prevents a normal
+    // cloud user on another computer from being asked to create a new Admin.
+    try{
+        const client=initSupabaseClient();
+        if(client){
+            const {data:{session:cloudSession}}=await client.auth.getSession();
+            if(cloudSession?.user){
+                const ctx=await fetchCloudContext();
+                applyCloudContext(ctx);
+                try{await hydrateSupabaseRooms();}catch(e){console.warn("Cloud rooms refresh skipped:",e);}
+                try{await hydrateSupabaseReservations();}catch(e){console.warn("Cloud reservations refresh skipped:",e);}
+                supabaseCloudReady=true;
+                showPMS();
+                return;
+            }
+        }
+    }catch(cloudErr){
+        console.warn("Cloud-first authentication check skipped:",cloudErr);
+    }
+
     if(!users.length){
-
-        showSetupScreen();
+        // No local users on this browser does not mean the hotel has no users.
+        // Show the normal login screen and let login() authenticate against
+        // Supabase first. First Admin setup is now reserved for true offline
+        // / initial installations.
+        showLoginScreen();
         return;
-
     }
 
     if(session){
@@ -3165,23 +3188,31 @@ async function login(){
 
     users=getStoredUsers();
 
+    // Cloud-first login: if this browser has no local copy of the user,
+    // authenticate against Supabase and hydrate the user's PMS profile,
+    // property and permissions. This is required for first login on a new
+    // computer.
+    const localUser=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
+    if(!localUser && String(username).includes("@")){
+        try{
+            const ok=await hydrateCloudAfterLocalLogin(username,password);
+            if(ok){
+                showPMS();
+                return;
+            }
+        }catch(cloudErr){
+            console.warn("Cloud login failed:",cloudErr);
+        }
+    }
 
-    const user=
-        users.find(
-            u=>String(u.username).toLowerCase()===
-               username.toLowerCase()
-        );
-
+    const user=localUser;
 
     if(!user){
-
         showAuthError(
             "loginError",
-            "Invalid username or password."
+            "Invalid username or password, or this account is not yet connected to Signature PMS Cloud."
         );
-
         return;
-
     }
 
 
@@ -10764,6 +10795,14 @@ document.addEventListener(
                 );
 
 
+        // Defensive cloud-login startup: never expose First Admin setup on a fresh browser.
+        // The setup screen is reserved for explicit offline/initial installation flows.
+        try{
+            const ao=document.getElementById("authOverlay"), lv=document.getElementById("loginView"), sv=document.getElementById("setupView");
+            if(ao){ao.style.display="flex";}
+            if(lv){lv.style.display="block";}
+            if(sv){sv.style.display="none";}
+        }catch(e){}
         initAuthentication();
 
     }
