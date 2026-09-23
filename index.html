@@ -1414,6 +1414,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="toolbar">
 <span id="supabaseCloudStatus" class="badge badge-gray">Not connected</span>
+<button class="btn btn-secondary" onclick="supabaseSignInPrompt()">Sign in to Supabase</button>
 <button class="btn btn-secondary" onclick="checkSupabaseCloudStatus()">Check Connection</button>
 <button class="btn btn-primary" onclick="syncSupabaseStep2()">Sync Cloud Data</button>
 </div>
@@ -15428,6 +15429,40 @@ async function checkSupabaseCloudStatus(){
         return false;
     }
 }
+async function supabaseSignInPrompt(){
+    const client=initSupabaseClient();
+    if(!client){
+        alert("Supabase client could not be loaded.");
+        return false;
+    }
+    const email=window.prompt("Supabase sign-in\n\nEnter your Supabase Auth email:","");
+    if(!email) return false;
+    const password=window.prompt("Supabase sign-in\n\nEnter your Supabase Auth password:");
+    if(password===null) return false;
+    setSupabaseCloudBadge("Signing in...","gray");
+    setSupabaseCloudMessage("Signing in to Supabase...","info");
+    try{
+        const {data,error}=await client.auth.signInWithPassword({email:String(email).trim(),password});
+        if(error) throw error;
+        if(!data?.session?.user) throw new Error("Supabase did not return an active session.");
+        const ctx=await fetchCloudContext();
+        applyCloudContext(ctx);
+        try{await hydrateSupabaseRooms();}catch(e){console.warn("Cloud rooms refresh skipped:",e);}
+        try{await hydrateSupabaseReservations();}catch(e){console.warn("Cloud reservations refresh skipped:",e);}
+        supabaseCloudReady=true;
+        setSupabaseCloudBadge("Connected","green");
+        setSupabaseCloudMessage("Signed in as "+(data.session.user.email||data.session.user.id)+". Cloud property and rooms are loaded.","success");
+        alert("Supabase sign-in successful. Your cloud property and rooms have been loaded.");
+        return true;
+    }catch(err){
+        supabaseCloudReady=false;
+        setSupabaseCloudBadge("Sign-in failed","gray");
+        setSupabaseCloudMessage("Supabase sign-in failed: "+(err?.message||err),"error");
+        alert("Supabase sign-in failed: "+(err?.message||err));
+        return false;
+    }
+}
+
 function normalizeCloudPropertyText(value){return String(value||"").trim().toLowerCase().replace(/\s+/g," ");}
 function rekeyLocalPropertyData(oldId,newId){
  const oldKey=String(oldId||""),newKey=String(newId||"");if(!oldKey||!newKey||oldKey===newKey)return;
