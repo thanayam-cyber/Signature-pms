@@ -3146,95 +3146,57 @@ function recoverAdminAccess(){
 
 
 async function login(){
-
-    const username=
-        document.getElementById("loginUsername")
-        .value.trim();
-
-    const password=
-        document.getElementById("loginPassword")
-        .value;
-
+    const username=document.getElementById("loginUsername")?.value.trim()||"";
+    const password=document.getElementById("loginPassword")?.value||"";
     clearAuthError("loginError");
-
-
-    if(!username || !password){
-
-        showAuthError(
-            "loginError",
-            "Please enter username and password."
-        );
-
+    if(!username||!password){
+        showAuthError("loginError","Please enter username and password.");
         return;
-
     }
-
-
-    users=getStoredUsers();
-
-    // Cloud-first login for email accounts. Even when a stale/local copy of
-    // the user exists on this browser, authenticate against Supabase first.
-    // This prevents an old local password hash from blocking the real cloud
-    // Admin account on another computer.
-    const localUser=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
-    if(String(username).includes("@")){
-        try{
-            const ok=await hydrateCloudAfterLocalLogin(username,password);
-            if(ok){
-                showPMS();
+    const loginBtn=document.querySelector('#loginView button[onclick*="login"]');
+    const originalText=loginBtn?.textContent||"Login";
+    if(loginBtn){loginBtn.disabled=true;loginBtn.textContent="Connecting…";}
+    try{
+        users=getStoredUsers();
+        // Email accounts are always authenticated directly by Supabase.
+        // Do not fall back to a stale local password for an email account.
+        if(String(username).includes("@")){
+            try{
+                const ok=await hydrateCloudAfterLocalLogin(username,password);
+                if(ok){
+                    showPMS();
+                    return;
+                }
+                showAuthError("loginError","Supabase login failed. Please check the email/password and try again.");
+                return;
+            }catch(cloudErr){
+                console.error("Supabase login failed:",cloudErr);
+                showAuthError("loginError","Supabase connection/login failed: "+(cloudErr?.message||cloudErr));
                 return;
             }
-        }catch(cloudErr){
-            console.warn("Cloud login failed:",cloudErr);
         }
+        const user=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
+        if(!user){
+            showAuthError("loginError","Invalid username or password.");
+            return;
+        }
+        if(!user.active){
+            showAuthError("loginError","This user account is inactive. Please contact an Administrator.");
+            return;
+        }
+        const passwordHash=await hashPassword(password);
+        if(passwordHash!==user.passwordHash){
+            showAuthError("loginError","Invalid username or password.");
+            return;
+        }
+        currentUser=user;
+        setSession(user);
+        showPMS();
+    }finally{
+        if(loginBtn){loginBtn.disabled=false;loginBtn.textContent=originalText;}
     }
-
-    const user=localUser;
-
-    if(!user){
-        showAuthError(
-            "loginError",
-            "Invalid username or password, or this account is not yet connected to Signature PMS Cloud."
-        );
-        return;
-    }
-
-
-    if(!user.active){
-
-        showAuthError(
-            "loginError",
-            "This user account is inactive. Please contact an Administrator."
-        );
-
-        return;
-
-    }
-
-
-    const passwordHash=
-        await hashPassword(password);
-
-
-    if(passwordHash!==user.passwordHash){
-
-        showAuthError(
-            "loginError",
-            "Invalid username or password."
-        );
-
-        return;
-
-    }
-
-
-    currentUser=user;
-
-    setSession(user);
-
-    showPMS();
-
 }
+
 
 
 function logout(){
