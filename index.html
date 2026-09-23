@@ -3188,12 +3188,12 @@ async function login(){
 
     users=getStoredUsers();
 
-    // Cloud-first login: if this browser has no local copy of the user,
-    // authenticate against Supabase and hydrate the user's PMS profile,
-    // property and permissions. This is required for first login on a new
-    // computer.
+    // Cloud-first login for email accounts. Even when a stale/local copy of
+    // the user exists on this browser, authenticate against Supabase first.
+    // This prevents an old local password hash from blocking the real cloud
+    // Admin account on another computer.
     const localUser=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
-    if(!localUser && String(username).includes("@")){
+    if(String(username).includes("@")){
         try{
             const ok=await hydrateCloudAfterLocalLogin(username,password);
             if(ok){
