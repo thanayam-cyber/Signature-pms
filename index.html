@@ -2880,26 +2880,10 @@ async function initAuthentication(){
 
     const session=getSession();
 
-    // Cloud-first startup: on a fresh browser, check the existing Supabase
-    // session before showing the First Admin setup. This prevents a normal
-    // cloud user on another computer from being asked to create a new Admin.
-    try{
-        const client=initSupabaseClient();
-        if(client){
-            const {data:{session:cloudSession}}=await client.auth.getSession();
-            if(cloudSession?.user){
-                const ctx=await fetchCloudContext();
-                applyCloudContext(ctx);
-                try{await hydrateSupabaseRooms();}catch(e){console.warn("Cloud rooms refresh skipped:",e);}
-                try{await hydrateSupabaseReservations();}catch(e){console.warn("Cloud reservations refresh skipped:",e);}
-                supabaseCloudReady=true;
-                showPMS();
-                return;
-            }
-        }
-    }catch(cloudErr){
-        console.warn("Cloud-first authentication check skipped:",cloudErr);
-    }
+    // Always require an explicit login when the PMS page is opened.
+    // A persistent Supabase session may remain in the browser, but it must
+    // never bypass the Signature PMS login screen. Cloud context is loaded
+    // only after login() successfully authenticates the user.
 
     if(!users.length){
         // No local users on this browser does not mean the hotel has no users.
