@@ -15371,6 +15371,34 @@ window.login=async function(){
   const username=byId('loginUsername').value.trim(),password=byId('loginPassword').value;
   clearAuthError('loginError');
   if(!username||!password){showAuthError('loginError','Please enter username and password.');return;}
+
+  // CLOUD-FIRST LOGIN: Master Admin "admin" is bound to the real Supabase
+  // Auth identity thanayam@gmail.com. Email usernames also authenticate via Supabase.
+  // This block must run before the local-user check so a new computer can log in.
+  const isCloudLogin = username.toLowerCase()==='admin' || username.includes('@');
+  if(isCloudLogin){
+    try{
+      const cloudUsername = username.toLowerCase()==='admin' ? 'admin' : username;
+      const ok = await loginWithCloudUsername(cloudUsername,password);
+      if(ok){
+        const key=username.toLowerCase();
+        const att=readAtt();
+        delete att[key];
+        writeAtt(att);
+        auditAs('admin','Admin','LOGIN','admin','Cloud Supabase login successful');
+        showPMS();
+        return;
+      }
+      showAuthError('loginError','Supabase login failed. Please check the cloud account and try again.');
+      return;
+    }catch(err){
+      console.error('Cloud login failed:',err);
+      showAuthError('loginError','Supabase login failed: '+(err?.message||err));
+      return;
+    }
+  }
+
+  // LOCAL PMS USERS (non-cloud usernames)
   const key=username.toLowerCase(),att=readAtt(),rec=att[key]||{count:0,lockedUntil:0};
   if(rec.lockedUntil>Date.now()){
     const m=Math.max(1,Math.ceil((rec.lockedUntil-Date.now())/60000));
@@ -15381,7 +15409,7 @@ window.login=async function(){
   const user=users.find(u=>String(u.username).toLowerCase()===key);
   let ok=false;
   if(user)ok=await verifyPw(user,password);
-  else await pbkdf2(password,new Uint8Array(16),ITER); /* keep timing similar for unknown usernames */
+  else await pbkdf2(password,new Uint8Array(16),ITER);
   if(!ok){
     rec.count=(rec.count||0)+1;
     let msg='Invalid username or password.';
@@ -15393,7 +15421,7 @@ window.login=async function(){
   }
   if(!user.active){showAuthError('loginError','This user account is inactive. Please contact an Administrator.');return;}
   delete att[key];writeAtt(att);
-  if(!String(user.passwordHash).startsWith('pbkdf2$'))user.passwordHash=await window.hashPassword(password); /* upgrade old hash */
+  if(!String(user.passwordHash).startsWith('pbkdf2$'))user.passwordHash=await window.hashPassword(password);
   user.lastLoginAt=localDateTime();
   saveUsers();
   currentUser=user;
