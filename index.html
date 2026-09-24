@@ -3158,35 +3158,55 @@ async function login(){
     if(loginBtn){loginBtn.disabled=true;loginBtn.textContent="Connecting…";}
     try{
         users=getStoredUsers();
-        // Email accounts are always authenticated directly by Supabase.
-        // Do not fall back to a stale local password for an email account.
-        if(String(username).includes("@")){
-            try{
-                const ok=await hydrateCloudAfterLocalLogin(username,password);
-                if(ok){
-                    showPMS();
-                    return;
-                }
-                showAuthError("loginError","Supabase login failed. Please check the email/password and try again.");
-                return;
-            }catch(cloudErr){
-                console.error("Supabase login failed:",cloudErr);
-                showAuthError("loginError","Supabase connection/login failed: "+(cloudErr?.message||cloudErr));
+        const user=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
+
+        // Existing local users are verified locally first, then their same
+        // username/password is connected to Supabase Auth. This one-time
+        // provisioning makes the account usable from other devices.
+        if(!String(username).includes("@") && user){
+            if(!user.active){
+                showAuthError("loginError","This user account is inactive. Please contact an Administrator.");
                 return;
             }
+            const passwordHash=await hashPassword(password);
+            if(passwordHash!==user.passwordHash){
+                showAuthError("loginError","Invalid username or password.");
+                return;
+            }
+            try{
+                const cloud=await ensureCloudAuthForLocalUser(username,password);
+                if(cloud.ok && cloud.session?.user){
+                    // Bind the existing PMS user to the real Supabase Auth UUID
+                    // and create/update its cloud profile, property assignment and permissions.
+                    user.id=cloud.session.user.id;
+                    user.authUserId=cloud.session.user.id;
+                    saveUsers();
+                    await syncCurrentUserToSupabaseCloud(user,password);
+                    const ok=await hydrateCloudAfterLocalLogin(username,password);
+                    if(ok){ showPMS(); return; }
+                }
+                console.warn("Cloud username provisioning/login failed:",cloud.reason);
+            }catch(cloudErr){ console.warn("Cloud username provisioning failed:",cloudErr); }
+            // Do not silently turn a cloud-managed login into a local-only login.
+            // Local fallback is retained only for users that have never been cloud-bound.
+            if(user.authUserId || (user.id && String(user.id).includes("-"))){
+                showAuthError("loginError","Cloud login failed: "+(user.cloudAuthError||"Please check the Supabase Auth account and Email confirmation setting."));
+                return;
+            }
+            currentUser=user;
+            setSession(user);
+            showPMS();
+            return;
         }
-        const user=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
+
+        // On a new device there is no local user record. Authenticate the
+        // username through its Supabase Auth identity instead of localStorage.
+        try{
+            const ok=await hydrateCloudAfterLocalLogin(username,password);
+            if(ok){ showPMS(); return; }
+        }catch(cloudErr){ console.error("Supabase login failed:",cloudErr); }
         if(!user){
-            showAuthError("loginError","Invalid username or password.");
-            return;
-        }
-        if(!user.active){
-            showAuthError("loginError","This user account is inactive. Please contact an Administrator.");
-            return;
-        }
-        const passwordHash=await hashPassword(password);
-        if(passwordHash!==user.passwordHash){
-            showAuthError("loginError","Invalid username or password.");
+            showAuthError("loginError","Invalid username or password, or this username has not yet been connected to PMS Cloud. Log in once on the original PMS computer to connect it.");
             return;
         }
         currentUser=user;
@@ -4002,10 +4022,20 @@ async function saveUser(){
 
         saveUsers();
 
-        if(String(user.id||"").includes("-")){
-            try{ await syncCurrentUserToSupabaseCloud(user,password); }
-            catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
-        }
+        // New PMS users are provisioned as Supabase Auth users immediately.
+        // No existing PMS data is deleted or recreated.
+        try{
+            const created=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
+            const cloud=await ensureCloudAuthForLocalUser(username,password);
+            if(cloud.ok && cloud.session?.user && created){
+                created.id=cloud.session.user.id;
+                created.authUserId=cloud.session.user.id;
+                saveUsers();
+                await syncCurrentUserToSupabaseCloud(created,password);
+            }else if(!cloud.ok){
+                console.warn("Supabase user provisioning skipped:",cloud.reason);
+            }
+        }catch(cloudErr){ console.warn("Supabase user provisioning skipped",cloudErr); }
 
         closeUserModal();
 
@@ -15544,20 +15574,67 @@ function applyCloudContext(ctx){
     state.updateCurrentUserDisplay();
     state.renderAll();
 }
+function cloudAuthEmailForUsername(username){
+    const raw=String(username||"").trim().toLowerCase();
+    if(!raw) return "";
+    // Signature PMS Master Admin is the existing Supabase Auth account.
+    // The PMS username remains "admin" while the cloud identity is the
+    // real Supabase email account used to connect the master tenant.
+    if(raw==="admin") return "thanayam@gmail.com";
+    if(raw.includes("@")) return raw;
+    return raw.replace(/[^a-z0-9._-]/g,"-")+"@auth.signaturepms.local";
+}
+async function ensureCloudAuthForLocalUser(username,password){
+    const client=initSupabaseClient();
+    if(!client) return {ok:false,reason:"Supabase client unavailable."};
+    const email=cloudAuthEmailForUsername(username);
+    try{
+        let result=await client.auth.signInWithPassword({email,password});
+        if(!result.error && result.data?.session) return {ok:true,session:result.data.session};
+        result=await client.auth.signUp({email,password});
+        if(result.error && !/already registered|already exists|user already/i.test(result.error.message||"")){
+            return {ok:false,reason:result.error.message||"Cloud account creation failed."};
+        }
+        if(result.data?.session) return {ok:true,session:result.data.session};
+        result=await client.auth.signInWithPassword({email,password});
+        if(!result.error && result.data?.session) return {ok:true,session:result.data.session};
+        return {ok:false,reason:result.error?.message||"Cloud account exists but is not ready for password login. Check Supabase Email confirmation settings."};
+    }catch(err){
+        return {ok:false,reason:err?.message||String(err)};
+    }
+}
 async function hydrateCloudAfterLocalLogin(username,password){
     const client=initSupabaseClient();
-    if(!client || !String(username).includes("@"))return false;
+    if(!client) return false;
+    const loginValue=String(username||"").trim();
     try{
-        const {data,error}=await client.auth.signInWithPassword({email:username,password});
-        if(error||!data?.session) return false;
+        const email=loginValue.includes("@")?loginValue:cloudAuthEmailForUsername(loginValue);
+        const {data,error}=await client.auth.signInWithPassword({email,password});
+        if(error||!data?.session){
+            setSupabaseCloudMessage("Supabase login failed: "+(error?.message||"No active session"),"error");
+            return false;
+        }
         const ctx=await fetchCloudContext();
+        if(!ctx.profile){
+            setSupabaseCloudMessage("Supabase Auth is valid, but the PMS cloud profile is missing for this user.","error");
+            return false;
+        }
+        if(String(ctx.profile.status||"").toLowerCase()!=="active") return false;
         applyCloudContext(ctx);
-        await hydrateSupabaseReservations();
-        await hydrateSupabaseRooms();
+        if(String(loginValue).toLowerCase()==="admin" && window.signaturePMSState?.currentUser){
+            window.signaturePMSState.currentUser.username="admin";
+            window.signaturePMSState.currentUser.name=ctx.profile.full_name||"Master Admin";
+            window.signaturePMSState.currentUser.fullName=ctx.profile.full_name||"Master Admin";
+            window.signaturePMSState.setSession(window.signaturePMSState.currentUser);
+        }
+        try{await hydrateSupabaseReservations();}catch(e){console.warn("Cloud reservations refresh skipped:",e);}
+        try{await hydrateSupabaseRooms();}catch(e){console.warn("Cloud rooms refresh skipped:",e);}
         supabaseCloudReady=true;
+        setSupabaseCloudBadge("Connected","green");
         return true;
     }catch(err){
-        console.warn("Supabase login bridge skipped:",err);
+        console.warn("Supabase login bridge failed:",err);
+        setSupabaseCloudMessage("Supabase username login failed: "+(err?.message||err),"error");
         return false;
     }
 }
@@ -15639,7 +15716,7 @@ async function syncCurrentUserToSupabaseCloud(user,password){
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
-    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"active":"inactive"},{onConflict:"id"});
+    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"Active":"Inactive"},{onConflict:"id"});
     if(profileError)throw profileError;
     const propertyId=user.propertyId&&user.propertyId!=="all"?user.propertyId:null;
     const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);if(dp)throw dp;
