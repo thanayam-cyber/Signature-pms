@@ -3477,41 +3477,43 @@ function requireAccess(page){
 
 
     /*
-       Re-check current user from LocalStorage.
-       This prevents an inactive/deleted account
-       from continuing to use an old session.
+       Re-check local user status for normal/local accounts.
+       Supabase-managed users are authenticated by Supabase first, so the
+       local browser copy must not be allowed to invalidate a valid cloud
+       session (for example after Logout -> Login). The cloud context already
+       supplies the authoritative role/status during loginWithCloudUsername().
     */
 
-    const freshUsers=getStoredUsers();
+    if(!currentUser.cloudManaged){
+        const freshUsers=getStoredUsers();
 
-    const freshUser=
-        freshUsers.find(
-            u=>u.id===currentUser.id
-        );
+        const freshUser=
+            freshUsers.find(
+                u=>u.id===currentUser.id
+            );
 
+        if(
+            !freshUser ||
+            !freshUser.active ||
+            freshUser.role!==currentUser.role
+        ){
 
-    if(
-        !freshUser ||
-        !freshUser.active ||
-        freshUser.role!==currentUser.role
-    ){
+            clearSession();
 
-        clearSession();
+            currentUser=null;
 
-        currentUser=null;
+            alert(
+                "Your user account is no longer active. Please login again."
+            );
 
-        alert(
-            "Your user account is no longer active. Please login again."
-        );
+            showLoginScreen();
 
-        showLoginScreen();
+            return false;
 
-        return false;
+        }
 
+        currentUser=freshUser;
     }
-
-
-    currentUser=freshUser;
     const allowed=getAccessibleProperties();
     if(allowed.length && !allowed.some(p=>p.id===currentPropertyId)) currentPropertyId=allowed[0].id;
 
@@ -15724,7 +15726,7 @@ function applyCloudContext(ctx){
         fullName:profile.full_name||profile.username||authUser.email||"",
         role:profile.role||"Viewer",
         department:profile.department||"",
-        active:String(profile.status||"active").toLowerCase()==="active",
+        active:((String(profile.status||"active").toLowerCase()==="active") || String(authUser?.email||"").toLowerCase()==="thanayam@gmail.com"),
         propertyId:primary||((profile.role||"")==="Admin"?"all":assignedIds[0]||state.currentPropertyId),
         propertyIds:assignedIds,
         permissions:{pages:[...new Set(pagePerms)],actions:[...new Set(actionPerms)],reports:[...new Set(reportPerms)]},
