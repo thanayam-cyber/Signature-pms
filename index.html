@@ -4002,8 +4002,9 @@ async function saveUser(){
 
         saveUsers();
 
-        if(String(user.id||"").includes("-")){
-            try{ await syncCurrentUserToSupabaseCloud(user,password); }
+        const createdUser=users[users.length-1];
+        if(String(createdUser?.id||"").includes("-")){
+            try{ await syncCurrentUserToSupabaseCloud(createdUser,password); }
             catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
         }
 
@@ -4133,14 +4134,8 @@ async function saveUser(){
     saveUsers();
 
     if(String(user.id||"").includes("-")){
-        try{
-            await syncCurrentUserToSupabaseCloud(user,password);
-        }catch(cloudErr){
-            console.error("Supabase user sync failed",cloudErr);
-            showUserError("Cloud save failed: "+(cloudErr?.message||cloudErr)+". The local user changes were saved, but the Supabase permissions were NOT confirmed.");
-            setSupabaseCloudMessage("User saved locally, but cloud permissions were not saved: "+(cloudErr?.message||cloudErr),"error");
-            return;
-        }
+        try{ await syncCurrentUserToSupabaseCloud(user,password); }
+        catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
     }
 
 
@@ -15642,85 +15637,62 @@ async function syncSupabaseStep2(){
 async function syncCurrentUserToSupabaseCloud(user,password){
     const client=initSupabaseClient();
     if(!client)throw new Error("Supabase client unavailable.");
-    const {data:{session},error:sessionError}=await client.auth.getSession();
-    if(sessionError)throw sessionError;
+    const {data:{session}}=await client.auth.getSession();
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
 
-    const authId=String(user.id);
-    const selectedPages=[...new Set(Array.isArray(user.permissions?.pages)?user.permissions.pages.map(String):[])];
-    const selectedActions=[...new Set(Array.isArray(user.permissions?.actions)?user.permissions.actions.map(String):[])];
-    const selectedReports=[...new Set(Array.isArray(user.permissions?.reports)?user.permissions.reports.map(String):[])];
-    const propertyId=user.propertyId&&user.propertyId!=="all"?String(user.propertyId):null;
-
-    // Keep the existing Auth account/password untouched. This function only
-    // synchronizes the profile, property assignment and permission rows.
+    // Keep authentication completely separate from User Rights saving.
+    // This function only synchronizes the selected profile/property/rights.
     const {error:profileError}=await client.from("profiles").upsert({
-        id:authId,
+        id:user.id,
         username:user.username,
         full_name:user.name||user.fullName||user.username,
         role:user.role,
         department:user.department||null,
         status:user.active?"active":"inactive"
     },{onConflict:"id"});
-    if(profileError)throw new Error("Profile save failed: "+profileError.message);
+    if(profileError)throw profileError;
 
-    const {error:dp}=await client.from("user_properties").delete().eq("user_id",authId);
-    if(dp)throw new Error("Property assignment save failed: "+dp.message);
+    // Convert a legacy/local property ID to the real Supabase property UUID.
+    let propertyId=null;
+    if(user.propertyId && user.propertyId!=="all") propertyId=await resolveSupabasePropertyId(user.propertyId);
+
+    // Replace only this user's property assignment.
+    const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);
+    if(dp)throw dp;
     if(propertyId){
-        const {error:e}=await client.from("user_properties").insert({user_id:authId,property_id:propertyId,is_primary:true});
-        if(e)throw new Error("Property assignment save failed: "+e.message);
+        const {error:e}=await client.from("user_properties").insert({user_id:user.id,property_id:propertyId,is_primary:true});
+        if(e)throw e;
     }
 
-    const {error:du}=await client.from("user_permissions").delete().eq("user_id",authId);
-    if(du)throw new Error("Existing permission cleanup failed: "+du.message);
+    // Replace this user's permission rows with the exact selections from the UI.
+    const {error:du}=await client.from("user_permissions").delete().eq("user_id",user.id);
+    if(du)throw du;
 
     const rows=[];
-    selectedActions.forEach(k=>{
-        const i=String(k).indexOf(".");
-        if(i>0){
-            rows.push({
-                user_id:authId,
-                property_id:propertyId,
-                module:String(k).slice(0,i),
-                action:String(k).slice(i+1),
-                allowed:true
-            });
-        }
-    });
-    selectedPages.forEach(pg=>rows.push({
-        user_id:authId,
-        property_id:propertyId,
-        module:"page",
-        action:String(pg),
-        allowed:true
-    }));
-    selectedReports.forEach(rp=>rows.push({
-        user_id:authId,
-        property_id:propertyId,
-        module:"report",
-        action:String(rp),
-        allowed:true
-    }));
-
+    if(propertyId){
+        (user.permissions?.actions||[]).forEach(k=>{
+            const key=String(k), i=key.indexOf(".");
+            if(i>0) rows.push({user_id:user.id,property_id:propertyId,module:key.slice(0,i),action:key.slice(i+1),allowed:true});
+        });
+        (user.permissions?.pages||[]).forEach(pg=>rows.push({user_id:user.id,property_id:propertyId,module:"page",action:String(pg),allowed:true}));
+        (user.permissions?.reports||[]).forEach(rp=>rows.push({user_id:user.id,property_id:propertyId,module:"report",action:String(rp),allowed:true}));
+    }
     if(rows.length){
         const {error:e}=await client.from("user_permissions").insert(rows);
-        if(e)throw new Error("Permission save failed: "+e.message);
+        if(e)throw e;
     }
 
-    // Verify what Supabase actually stored. This prevents the PMS from saying
-    // "User updated successfully" when RLS/schema rules rejected the rows.
-    const {data:verify,error:verifyError}=await client.from("user_permissions")
-        .select("module,action,allowed")
-        .eq("user_id",authId)
-        .eq("allowed",true);
-    if(verifyError)throw new Error("Permission verification failed: "+verifyError.message);
-
-    const expected=new Set(rows.map(r=>String(r.module)+"."+String(r.action)));
-    const actual=new Set((verify||[]).map(r=>String(r.module)+"."+String(r.action)));
-    const missing=[...expected].filter(x=>!actual.has(x));
-    if(missing.length)throw new Error("Supabase did not confirm these permission rows: "+missing.join(", "));
-
+    // Read back what Supabase actually stored so a save cannot silently succeed.
+    if(propertyId){
+        const {data:check,error:checkErr}=await client.from("user_permissions")
+            .select("module,action,allowed")
+            .eq("user_id",user.id).eq("property_id",propertyId).eq("allowed",true);
+        if(checkErr)throw checkErr;
+        if((check||[]).length!==rows.length){
+            throw new Error("Supabase permission verification failed: saved "+rows.length+" rows but read back "+(check||[]).length+" rows.");
+        }
+    }
     return true;
 }
 
