@@ -256,7 +256,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-secondary btn-small" onclick="toggleLoginPassword()" type="button">Show</button>
 </div>
 </div>
-<div class="auth-error" id="loginError" style="display: block;">Invalid username or password.</div>
+<div class="auth-error" id="loginError" style="display: none;"></div>
+<div id="cloudRecoveryLinkWrap" style="margin-top:10px;text-align:center">
+<button class="btn btn-secondary btn-small" onclick="startCloudPasswordRecovery()" type="button">Forgot / Reset Cloud Password</button>
+</div>
 <div class="auth-actions">
 <button class="btn btn-primary" onclick="login()">Login</button>
 </div>
@@ -267,6 +270,26 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div style="font-size:11px;color:#6b7280;margin-top:6px">
                     Use this only if the local administrator password is unknown. PMS data is not deleted.
                 </div>
+</div>
+</div>
+<!-- CLOUD PASSWORD RECOVERY -->
+<div id="cloudRecoveryView" style="display:none;">
+<h2 class="auth-title">Reset Cloud Password</h2>
+<p class="auth-subtitle">Set a new password for your Supabase cloud account.</p>
+<div class="form-group" style="margin-bottom:13px">
+<label>New Password</label>
+<input autocomplete="new-password" id="recoveryNewPassword" type="password"/>
+</div>
+<div class="form-group" style="margin-bottom:13px">
+<label>Confirm New Password</label>
+<input autocomplete="new-password" id="recoveryConfirmPassword" type="password"/>
+</div>
+<div class="auth-error" id="recoveryError" style="display:none;"></div>
+<div class="auth-actions">
+<button class="btn btn-primary" onclick="completeCloudPasswordRecovery()" type="button">Save New Password</button>
+</div>
+<div style="margin-top:14px;text-align:center">
+<button class="btn btn-secondary btn-small" onclick="showLoginView()" type="button">Back to Login</button>
 </div>
 </div>
 <!-- FIRST ADMIN -->
@@ -3145,6 +3168,140 @@ function recoverAdminAccess(){
 }
 
 
+function masterAdminCloudEmail(username){
+    const u=String(username||"").trim().toLowerCase();
+    if(u==="admin") return "thanayam@gmail.com";
+    return u.includes("@") ? u : "";
+}
+
+async function loginWithCloudUsername(username,password){
+    const email=masterAdminCloudEmail(username);
+    if(!email) throw new Error("No cloud email mapping exists for this username.");
+    const client=initSupabaseClient();
+    if(!client) throw new Error("Supabase client could not be initialized. Check that the Supabase JavaScript library loaded.");
+
+    const authResult=await client.auth.signInWithPassword({email,password});
+    if(authResult.error) throw new Error("Supabase Auth: "+authResult.error.message);
+    if(!authResult.data?.session || !authResult.data?.user) throw new Error("Supabase Auth returned no session.");
+
+    let ctx;
+    try{
+        ctx=await fetchCloudContext();
+    }catch(err){
+        throw new Error("Supabase Auth succeeded, but loading the PMS profile failed: "+(err?.message||err));
+    }
+
+    if(!ctx?.profile) throw new Error("Supabase Auth succeeded, but no profile was found for Auth UID "+authResult.data.user.id+".");
+    if(String(ctx.profile.id)!==String(authResult.data.user.id)) throw new Error("Profile/Auth UID mismatch.");
+
+    // The existing Supabase account is the Master Admin identity. Keep the
+    // product-facing PMS username as "admin" so the cloud Auth account is
+    // transparently bound to the PMS Master Admin.
+    if(email==="thanayam@gmail.com") ctx.profile.username="admin";
+    applyCloudContext(ctx);
+    if(window.signaturePMSState?.currentUser){
+        window.signaturePMSState.currentUser.username="admin";
+        window.signaturePMSState.currentUser.role="Admin";
+        window.signaturePMSState.currentUser.propertyId="all";
+        window.signaturePMSState.currentUser.cloudManaged=true;
+        window.signaturePMSState.saveUsers();
+        window.signaturePMSState.setSession(window.signaturePMSState.currentUser);
+    }
+
+    try{ await hydrateSupabaseReservations(); }catch(err){
+        console.warn("Cloud reservations hydration failed after successful login:",err);
+    }
+    try{ await hydrateSupabaseRooms(); }catch(err){
+        console.warn("Cloud rooms hydration failed after successful login:",err);
+    }
+    supabaseCloudReady=true;
+    return true;
+}
+
+function showLoginView(){
+    const login=document.getElementById("loginView");
+    const recovery=document.getElementById("cloudRecoveryView");
+    const setup=document.getElementById("setupView");
+    if(login)login.style.display="block";
+    if(recovery)recovery.style.display="none";
+    if(setup)setup.style.display="none";
+    clearAuthError("recoveryError");
+}
+function showCloudRecoveryView(){
+    const login=document.getElementById("loginView");
+    const recovery=document.getElementById("cloudRecoveryView");
+    const setup=document.getElementById("setupView");
+    if(login)login.style.display="none";
+    if(recovery)recovery.style.display="block";
+    if(setup)setup.style.display="none";
+    clearAuthError("loginError");
+}
+async function startCloudPasswordRecovery(){
+    const client=initSupabaseClient();
+    if(!client){showAuthError("loginError","Supabase client is not available.");return;}
+    const email="thanayam@gmail.com";
+    const btn=document.querySelector('#cloudRecoveryLinkWrap button');
+    if(btn){btn.disabled=true;btn.textContent="Sending…";}
+    clearAuthError("loginError");
+    try{
+        const redirectTo=window.location.origin+window.location.pathname;
+        const {error}=await client.auth.resetPasswordForEmail(email,{redirectTo});
+        if(error)throw error;
+        showAuthError("loginError","Password recovery email sent to "+email+". Open the newest email and use its link.");
+    }catch(err){
+        console.error("Cloud password recovery request failed:",err);
+        showAuthError("loginError","Password recovery failed: "+(err?.message||err));
+    }finally{
+        if(btn){btn.disabled=false;btn.textContent="Forgot / Reset Cloud Password";}
+    }
+}
+async function completeCloudPasswordRecovery(){
+    const client=initSupabaseClient();
+    if(!client){showAuthError("recoveryError","Supabase client is not available.");return;}
+    const p1=document.getElementById("recoveryNewPassword")?.value||"";
+    const p2=document.getElementById("recoveryConfirmPassword")?.value||"";
+    clearAuthError("recoveryError");
+    if(p1.length<8){showAuthError("recoveryError","Password must be at least 8 characters.");return;}
+    if(p1!==p2){showAuthError("recoveryError","Passwords do not match.");return;}
+    const btn=document.querySelector('#cloudRecoveryView button[onclick*="completeCloudPasswordRecovery"]');
+    if(btn){btn.disabled=true;btn.textContent="Saving…";}
+    try{
+        const {data:{session}}=await client.auth.getSession();
+        if(!session?.user){throw new Error("Password recovery session is not available. Please open the newest recovery email again.");}
+        const {error}=await client.auth.updateUser({password:p1});
+        if(error)throw error;
+        clearAuthError("recoveryError");
+        alert("Cloud password updated successfully. Please sign in with username admin and your new password.");
+        document.getElementById("recoveryNewPassword").value="";
+        document.getElementById("recoveryConfirmPassword").value="";
+        await client.auth.signOut();
+        showLoginView();
+    }catch(err){
+        console.error("Cloud password update failed:",err);
+        showAuthError("recoveryError","Password update failed: "+(err?.message||err));
+    }finally{
+        if(btn){btn.disabled=false;btn.textContent="Save New Password";}
+    }
+}
+async function handleSupabaseRecoverySession(){
+    try{
+        const client=initSupabaseClient();
+        if(!client)return;
+        const {data:{session}}=await client.auth.getSession();
+        if(session?.user){
+            const type=new URLSearchParams(window.location.hash.replace(/^#/,'')).get("type");
+            const hasRecoveryHash=type==="recovery";
+            if(hasRecoveryHash){
+                showCloudRecoveryView();
+                return;
+            }
+        }
+        client.auth.onAuthStateChange((event,session)=>{
+            if(event==="PASSWORD_RECOVERY"&&session?.user)showCloudRecoveryView();
+        });
+    }catch(err){console.warn("Recovery session check failed:",err);}
+}
+
 async function login(){
     const username=document.getElementById("loginUsername")?.value.trim()||"";
     const password=document.getElementById("loginPassword")?.value||"";
@@ -3158,55 +3315,49 @@ async function login(){
     if(loginBtn){loginBtn.disabled=true;loginBtn.textContent="Connecting…";}
     try{
         users=getStoredUsers();
-        const user=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
-
-        // Existing local users are verified locally first, then their same
-        // username/password is connected to Supabase Auth. This one-time
-        // provisioning makes the account usable from other devices.
-        if(!String(username).includes("@") && user){
-            if(!user.active){
-                showAuthError("loginError","This user account is inactive. Please contact an Administrator.");
-                return;
-            }
-            const passwordHash=await hashPassword(password);
-            if(passwordHash!==user.passwordHash){
-                showAuthError("loginError","Invalid username or password.");
-                return;
-            }
+        // Master Admin: "admin" is the PMS username, while the real cloud
+        // authentication identity is the existing Supabase account
+        // thanayam@gmail.com. Try cloud authentication first.
+        if(username.toLowerCase()==="admin"){
             try{
-                const cloud=await ensureCloudAuthForLocalUser(username,password);
-                if(cloud.ok && cloud.session?.user){
-                    // Bind the existing PMS user to the real Supabase Auth UUID
-                    // and create/update its cloud profile, property assignment and permissions.
-                    user.id=cloud.session.user.id;
-                    user.authUserId=cloud.session.user.id;
-                    saveUsers();
-                    await syncCurrentUserToSupabaseCloud(user,password);
-                    const ok=await hydrateCloudAfterLocalLogin(username,password);
-                    if(ok){ showPMS(); return; }
-                }
-                console.warn("Cloud username provisioning/login failed:",cloud.reason);
-            }catch(cloudErr){ console.warn("Cloud username provisioning failed:",cloudErr); }
-            // Do not silently turn a cloud-managed login into a local-only login.
-            // Local fallback is retained only for users that have never been cloud-bound.
-            if(user.authUserId || (user.id && String(user.id).includes("-"))){
-                showAuthError("loginError","Cloud login failed: "+(user.cloudAuthError||"Please check the Supabase Auth account and Email confirmation setting."));
+                const cloudOk=await loginWithCloudUsername(username,password);
+                if(cloudOk){ showPMS(); return; }
+                showAuthError("loginError","Master Admin cloud login failed. See the exact Supabase error below.");
+                return;
+            }catch(cloudErr){
+                console.error("Master Admin cloud login failed:",cloudErr);
+                showAuthError("loginError","Master Admin cloud login failed: "+(cloudErr?.message||cloudErr));
                 return;
             }
-            currentUser=user;
-            setSession(user);
-            showPMS();
+        }
+        // Email accounts authenticate directly by Supabase.
+        if(String(username).includes("@")){
+            try{
+                const ok=await hydrateCloudAfterLocalLogin(username,password);
+                if(ok){
+                    showPMS();
+                    return;
+                }
+                showAuthError("loginError","Supabase login failed. Please check the email/password and try again.");
+                return;
+            }catch(cloudErr){
+                console.error("Supabase login failed:",cloudErr);
+                showAuthError("loginError","Supabase connection/login failed: "+(cloudErr?.message||cloudErr));
+                return;
+            }
+        }
+        const user=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
+        if(!user){
+            showAuthError("loginError","Invalid username or password.");
             return;
         }
-
-        // On a new device there is no local user record. Authenticate the
-        // username through its Supabase Auth identity instead of localStorage.
-        try{
-            const ok=await hydrateCloudAfterLocalLogin(username,password);
-            if(ok){ showPMS(); return; }
-        }catch(cloudErr){ console.error("Supabase login failed:",cloudErr); }
-        if(!user){
-            showAuthError("loginError","Invalid username or password, or this username has not yet been connected to PMS Cloud. Log in once on the original PMS computer to connect it.");
+        if(!user.active){
+            showAuthError("loginError","This user account is inactive. Please contact an Administrator.");
+            return;
+        }
+        const passwordHash=await hashPassword(password);
+        if(passwordHash!==user.passwordHash){
+            showAuthError("loginError","Invalid username or password.");
             return;
         }
         currentUser=user;
@@ -4022,20 +4173,10 @@ async function saveUser(){
 
         saveUsers();
 
-        // New PMS users are provisioned as Supabase Auth users immediately.
-        // No existing PMS data is deleted or recreated.
-        try{
-            const created=users.find(u=>String(u.username).toLowerCase()===username.toLowerCase());
-            const cloud=await ensureCloudAuthForLocalUser(username,password);
-            if(cloud.ok && cloud.session?.user && created){
-                created.id=cloud.session.user.id;
-                created.authUserId=cloud.session.user.id;
-                saveUsers();
-                await syncCurrentUserToSupabaseCloud(created,password);
-            }else if(!cloud.ok){
-                console.warn("Supabase user provisioning skipped:",cloud.reason);
-            }
-        }catch(cloudErr){ console.warn("Supabase user provisioning skipped",cloudErr); }
+        if(String(user.id||"").includes("-")){
+            try{ await syncCurrentUserToSupabaseCloud(user,password); }
+            catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
+        }
 
         closeUserModal();
 
@@ -15390,8 +15531,8 @@ window.signaturePMSState = {
    Scope: authentication bridge + users/properties/permissions sync.
    No service-role key is used in the browser.
 ========================================================= */
-const SUPABASE_URL="https://bobzipeevmfyeprtryds.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY="sb_publishable_x6-F6tq4VnsztERS4AbATw_GlPOY-Hp";
+const SUPABASE_URL="https://gpghedyiowenwxraklnu.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_jPdKMU6_yoXtdqkSiYAdXw_QvJryHyR";
 let supabaseClient=null;
 let supabaseCloudReady=false;
 
@@ -15574,67 +15715,20 @@ function applyCloudContext(ctx){
     state.updateCurrentUserDisplay();
     state.renderAll();
 }
-function cloudAuthEmailForUsername(username){
-    const raw=String(username||"").trim().toLowerCase();
-    if(!raw) return "";
-    // Signature PMS Master Admin is the existing Supabase Auth account.
-    // The PMS username remains "admin" while the cloud identity is the
-    // real Supabase email account used to connect the master tenant.
-    if(raw==="admin") return "thanayam@gmail.com";
-    if(raw.includes("@")) return raw;
-    return raw.replace(/[^a-z0-9._-]/g,"-")+"@auth.signaturepms.local";
-}
-async function ensureCloudAuthForLocalUser(username,password){
-    const client=initSupabaseClient();
-    if(!client) return {ok:false,reason:"Supabase client unavailable."};
-    const email=cloudAuthEmailForUsername(username);
-    try{
-        let result=await client.auth.signInWithPassword({email,password});
-        if(!result.error && result.data?.session) return {ok:true,session:result.data.session};
-        result=await client.auth.signUp({email,password});
-        if(result.error && !/already registered|already exists|user already/i.test(result.error.message||"")){
-            return {ok:false,reason:result.error.message||"Cloud account creation failed."};
-        }
-        if(result.data?.session) return {ok:true,session:result.data.session};
-        result=await client.auth.signInWithPassword({email,password});
-        if(!result.error && result.data?.session) return {ok:true,session:result.data.session};
-        return {ok:false,reason:result.error?.message||"Cloud account exists but is not ready for password login. Check Supabase Email confirmation settings."};
-    }catch(err){
-        return {ok:false,reason:err?.message||String(err)};
-    }
-}
 async function hydrateCloudAfterLocalLogin(username,password){
     const client=initSupabaseClient();
-    if(!client) return false;
-    const loginValue=String(username||"").trim();
+    if(!client || !String(username).includes("@"))return false;
     try{
-        const email=loginValue.includes("@")?loginValue:cloudAuthEmailForUsername(loginValue);
-        const {data,error}=await client.auth.signInWithPassword({email,password});
-        if(error||!data?.session){
-            setSupabaseCloudMessage("Supabase login failed: "+(error?.message||"No active session"),"error");
-            return false;
-        }
+        const {data,error}=await client.auth.signInWithPassword({email:username,password});
+        if(error||!data?.session) return false;
         const ctx=await fetchCloudContext();
-        if(!ctx.profile){
-            setSupabaseCloudMessage("Supabase Auth is valid, but the PMS cloud profile is missing for this user.","error");
-            return false;
-        }
-        if(String(ctx.profile.status||"").toLowerCase()!=="active") return false;
         applyCloudContext(ctx);
-        if(String(loginValue).toLowerCase()==="admin" && window.signaturePMSState?.currentUser){
-            window.signaturePMSState.currentUser.username="admin";
-            window.signaturePMSState.currentUser.name=ctx.profile.full_name||"Master Admin";
-            window.signaturePMSState.currentUser.fullName=ctx.profile.full_name||"Master Admin";
-            window.signaturePMSState.setSession(window.signaturePMSState.currentUser);
-        }
-        try{await hydrateSupabaseReservations();}catch(e){console.warn("Cloud reservations refresh skipped:",e);}
-        try{await hydrateSupabaseRooms();}catch(e){console.warn("Cloud rooms refresh skipped:",e);}
+        await hydrateSupabaseReservations();
+        await hydrateSupabaseRooms();
         supabaseCloudReady=true;
-        setSupabaseCloudBadge("Connected","green");
         return true;
     }catch(err){
-        console.warn("Supabase login bridge failed:",err);
-        setSupabaseCloudMessage("Supabase username login failed: "+(err?.message||err),"error");
+        console.warn("Supabase login bridge skipped:",err);
         return false;
     }
 }
@@ -15716,7 +15810,7 @@ async function syncCurrentUserToSupabaseCloud(user,password){
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
-    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"Active":"Inactive"},{onConflict:"id"});
+    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"active":"inactive"},{onConflict:"id"});
     if(profileError)throw profileError;
     const propertyId=user.propertyId&&user.propertyId!=="all"?user.propertyId:null;
     const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);if(dp)throw dp;
@@ -16089,6 +16183,13 @@ window.storesCloudRefreshClick = async function(btn){
     if(btn){ btn.disabled = false; btn.innerHTML = original; }
   }
 };
+</script>
+<script>
+/* v2.1.112 — Supabase password recovery bootstrap */
+(function(){
+  const boot=()=>{setTimeout(()=>{try{handleSupabaseRecoverySession();}catch(e){console.warn("Recovery bootstrap failed:",e);}},300);};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
 </script>
 </body></html>
 
