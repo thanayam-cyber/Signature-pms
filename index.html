@@ -246,8 +246,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <h2 class="auth-title">Staff Login</h2>
 <p class="auth-subtitle">Secure access to your hotel management and point-of-sale system.</p>
 <div class="form-group" style="margin-bottom:13px">
-<label>Username</label>
-<input autocomplete="username" id="loginUsername"/>
+<label>Username / Email</label>
+<input autocomplete="username" id="loginUsername" placeholder="admin or staff email"/>
 </div>
 <div class="form-group">
 <label>Password</label>
@@ -1883,6 +1883,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <input autocomplete="off" id="userUsername" placeholder="e.g. frontoffice"/>
 </div>
 <div class="form-group">
+<label>Email * <span style="font-size:11px;color:#6b7280">(for Supabase login)</span></label>
+<input autocomplete="email" id="userEmail" placeholder="staff@example.com" type="email"/>
+</div>
+<div class="form-group">
 <label>Role *</label>
 <select id="userRole" onchange="const g=document.getElementById('userDepartmentGroup'); if(g)g.style.display=this.value==='Department Supervisor'?'block':'none'; if(this.value==='Admin'){renderUserPermissionCheckboxes(PERMISSION_PAGES.map(x=&gt;x[0]));renderUserActionPermissionCheckboxes(ACTION_PERMISSION_KEYS);}">
 <option value="Admin">Admin</option>
@@ -3168,10 +3172,52 @@ function recoverAdminAccess(){
 }
 
 
-function masterAdminCloudEmail(username){
+function cloudAuthEmailForUsername(username){
     const u=String(username||"").trim().toLowerCase();
     if(u==="admin") return "thanayam@gmail.com";
-    return u.includes("@") ? u : "";
+    if(u.includes("@")) return u;
+    // Deterministic internal Auth email lets a username-only PMS login work
+    // from a new device without storing an email mapping in localStorage.
+    return u.replace(/[^a-z0-9._-]/g,"_")+"@signaturepms.local";
+}
+function masterAdminCloudEmail(username){ return cloudAuthEmailForUsername(username); }
+
+async function provisionSupabaseStaffUser(username,email,password,localUser){
+    const client=initSupabaseClient();
+    if(!client) throw new Error("Supabase client is unavailable.");
+
+    const {data:{session:adminSession},error:sessionError}=await client.auth.getSession();
+    if(sessionError) throw sessionError;
+    if(!adminSession?.user) throw new Error("The Admin Supabase session is missing. Please log in again as Admin.");
+
+    const authEmail=String(email||"").trim().toLowerCase();
+    if(!authEmail) throw new Error("A real email address is required for the staff Supabase account.");
+
+    let cloudPropertyId=null;
+    if(localUser?.propertyId && localUser.propertyId!=="all"){
+        cloudPropertyId=await resolveSupabasePropertyId(localUser.propertyId);
+        if(!cloudPropertyId) throw new Error("Could not resolve the selected property in Supabase.");
+    }
+
+    const {data,error}=await client.functions.invoke("create-pms-user",{
+        body:{
+            username,
+            email:authEmail,
+            password,
+            role:localUser.role,
+            propertyId:cloudPropertyId,
+            department:localUser.department||"",
+            fullName:localUser.fullName||localUser.name||username,
+            status:localUser.active?"active":"inactive",
+            permissions:localUser.permissions||{pages:[],actions:[],reports:[]}
+        }
+    });
+
+    if(error) throw new Error(error.message||"The create-pms-user Edge Function failed.");
+    if(!data?.success) throw new Error(data?.error||"The create-pms-user Edge Function did not create the user.");
+    if(!data?.userId) throw new Error("The Edge Function did not return the new Supabase user ID.");
+
+    return {id:data.userId,email:authEmail};
 }
 
 async function loginWithCloudUsername(username,password){
@@ -3200,9 +3246,6 @@ async function loginWithCloudUsername(username,password){
     if(email==="thanayam@gmail.com") ctx.profile.username="admin";
     applyCloudContext(ctx);
     if(window.signaturePMSState?.currentUser){
-        window.signaturePMSState.currentUser.username="admin";
-        window.signaturePMSState.currentUser.role="Admin";
-        window.signaturePMSState.currentUser.propertyId="all";
         window.signaturePMSState.currentUser.cloudManaged=true;
         window.signaturePMSState.saveUsers();
         window.signaturePMSState.setSession(window.signaturePMSState.currentUser);
@@ -3876,6 +3919,7 @@ function openUserModal(userId=null){
 
         document.getElementById("userUsername")
             .value=user.username;
+        document.getElementById("userEmail").value=user.authEmail||user.email||"";
 
         document.getElementById("userRole")
             .value=user.role;
@@ -3904,6 +3948,7 @@ function openUserModal(userId=null){
             .textContent="Create User";
 
         document.getElementById("userUsername").value="";
+        document.getElementById("userEmail").value="";
         document.getElementById("userRole").value="Front Office";
         document.getElementById("userProperty").value=currentPropertyId || "all";
         if(document.getElementById("userDepartment")) document.getElementById("userDepartment").value="";
@@ -4052,6 +4097,9 @@ async function saveUser(){
     const username=
         document.getElementById("userUsername")
         .value.trim();
+    const email=
+        document.getElementById("userEmail")
+        .value.trim().toLowerCase();
 
     const role=
         document.getElementById("userRole")
@@ -4096,6 +4144,16 @@ async function saveUser(){
 
     }
 
+    if(!editingUserId && !email){
+        showUserError("Email is required for a cloud staff account.");
+        return;
+    }
+
+    if(!editingUserId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+        showUserError("Please enter a valid staff email address.");
+        return;
+    }
+
 
     if(!USER_ROLES.includes(role)){
 
@@ -4132,6 +4190,11 @@ async function saveUser(){
 
     }
 
+    if(!editingUserId && users.some(u=>String(u.authEmail||u.email||"").toLowerCase()===email)){
+        showUserError("That email is already assigned to another PMS user.");
+        return;
+    }
+
 
     if(!editingUserId){
 
@@ -4150,35 +4213,36 @@ async function saveUser(){
             await hashPassword(password);
 
 
-        users.push({
-
-            id:"u_"+Date.now()+"_"+Math.random()
-                .toString(36).slice(2,8),
-
+        const localUser={
+            id:"u_"+Date.now()+"_"+Math.random().toString(36).slice(2,8),
             username,
-
+            email,
             passwordHash,
-
             role,
             propertyId:role==="Admin" ? (propertyId||"all") : propertyId,
             department:role==="Department Supervisor" ? department : "",
-
             active:status==="active",
             permissions,
-
             createdAt:localDateTime(),
-
             updatedAt:localDateTime()
+        };
 
-        });
-
-
-        saveUsers();
-
-        if(String(user.id||"").includes("-")){
-            try{ await syncCurrentUserToSupabaseCloud(user,password); }
-            catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
+        // New staff accounts are provisioned server-side through the Supabase Edge
+        // Function. The Admin browser session is never replaced by the new user.
+        try{
+            const provisioned=await provisionSupabaseStaffUser(username,email,password,localUser);
+            if(!provisioned?.id) throw new Error("Supabase did not return a user ID.");
+            localUser.id=provisioned.id;
+            localUser.authUserId=provisioned.id;
+            localUser.authEmail=provisioned.email||email;
+            localUser.cloudManaged=true;
+        }catch(cloudErr){
+            showUserError("Cloud user creation failed: "+(cloudErr?.message||cloudErr));
+            return;
         }
+
+        users.push(localUser);
+        saveUsers();
 
         closeUserModal();
 
@@ -4277,6 +4341,8 @@ async function saveUser(){
         return;
     }
     user.username=username;
+    if(email) user.email=email;
+    if(email) user.authEmail=email;
     user.role=role;
     user.department=role==="Department Supervisor" ? department : "";
     user.propertyId=role==="Admin" ? (propertyId||"all") : propertyId;
