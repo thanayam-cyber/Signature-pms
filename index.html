@@ -4002,9 +4002,8 @@ async function saveUser(){
 
         saveUsers();
 
-        const createdUser=users[users.length-1];
-        if(String(createdUser?.id||"").includes("-")){
-            try{ await syncCurrentUserToSupabaseCloud(createdUser,password); }
+        if(String(user.id||"").includes("-")){
+            try{ await syncCurrentUserToSupabaseCloud(user,password); }
             catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
         }
 
@@ -15640,59 +15639,17 @@ async function syncCurrentUserToSupabaseCloud(user,password){
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
-
-    // Keep authentication completely separate from User Rights saving.
-    // This function only synchronizes the selected profile/property/rights.
-    const {error:profileError}=await client.from("profiles").upsert({
-        id:user.id,
-        username:user.username,
-        full_name:user.name||user.fullName||user.username,
-        role:user.role,
-        department:user.department||null,
-        status:user.active?"active":"inactive"
-    },{onConflict:"id"});
+    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"active":"inactive"},{onConflict:"id"});
     if(profileError)throw profileError;
-
-    // Convert a legacy/local property ID to the real Supabase property UUID.
-    let propertyId=null;
-    if(user.propertyId && user.propertyId!=="all") propertyId=await resolveSupabasePropertyId(user.propertyId);
-
-    // Replace only this user's property assignment.
-    const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);
-    if(dp)throw dp;
-    if(propertyId){
-        const {error:e}=await client.from("user_properties").insert({user_id:user.id,property_id:propertyId,is_primary:true});
-        if(e)throw e;
-    }
-
-    // Replace this user's permission rows with the exact selections from the UI.
-    const {error:du}=await client.from("user_permissions").delete().eq("user_id",user.id);
-    if(du)throw du;
-
+    const propertyId=user.propertyId&&user.propertyId!=="all"?user.propertyId:null;
+    const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);if(dp)throw dp;
+    if(propertyId){const {error:e}=await client.from("user_properties").insert({user_id:user.id,property_id:propertyId,is_primary:true});if(e)throw e;}
+    const {error:du}=await client.from("user_permissions").delete().eq("user_id",user.id);if(du)throw du;
     const rows=[];
-    if(propertyId){
-        (user.permissions?.actions||[]).forEach(k=>{
-            const key=String(k), i=key.indexOf(".");
-            if(i>0) rows.push({user_id:user.id,property_id:propertyId,module:key.slice(0,i),action:key.slice(i+1),allowed:true});
-        });
-        (user.permissions?.pages||[]).forEach(pg=>rows.push({user_id:user.id,property_id:propertyId,module:"page",action:String(pg),allowed:true}));
-        (user.permissions?.reports||[]).forEach(rp=>rows.push({user_id:user.id,property_id:propertyId,module:"report",action:String(rp),allowed:true}));
-    }
-    if(rows.length){
-        const {error:e}=await client.from("user_permissions").insert(rows);
-        if(e)throw e;
-    }
-
-    // Read back what Supabase actually stored so a save cannot silently succeed.
-    if(propertyId){
-        const {data:check,error:checkErr}=await client.from("user_permissions")
-            .select("module,action,allowed")
-            .eq("user_id",user.id).eq("property_id",propertyId).eq("allowed",true);
-        if(checkErr)throw checkErr;
-        if((check||[]).length!==rows.length){
-            throw new Error("Supabase permission verification failed: saved "+rows.length+" rows but read back "+(check||[]).length+" rows.");
-        }
-    }
+    (user.permissions?.actions||[]).forEach(k=>{const i=String(k).indexOf(".");if(i>0)rows.push({user_id:user.id,property_id:propertyId,module:String(k).slice(0,i),action:String(k).slice(i+1),allowed:true});});
+    (user.permissions?.pages||[]).forEach(pg=>rows.push({user_id:user.id,property_id:propertyId,module:"page",action:String(pg),allowed:true}));
+    (user.permissions?.reports||[]).forEach(rp=>rows.push({user_id:user.id,property_id:propertyId,module:"report",action:String(rp),allowed:true}));
+    if(rows.length){const {error:e}=await client.from("user_permissions").insert(rows);if(e)throw e;}
     return true;
 }
 
