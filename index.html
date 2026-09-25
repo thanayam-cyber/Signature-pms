@@ -9557,6 +9557,22 @@ function fnbVoidInvoice(saleId){
     }
     sale.voided=true;sale.isVoided=true;sale.status="Voided";sale.voidReason=String(reason).trim();sale.voidedBy=currentUser?.username||"Manager";sale.voidedAt=localDateTime();sale.fnbVoidReversed=true;
     saveData();
+    /* v2.1.142 — a void/refund is a cloud transaction, not only a local POS edit.
+       Immediately publish the updated reservation snapshot so another device
+       cannot hydrate the older non-voided sale and lose the refund movement. */
+    if(sale.reservationId && typeof syncReservationToSupabase==='function'){
+      const reservationAfterVoid=(reservations||[]).find(r=>String(r.id)===String(sale.reservationId));
+      if(reservationAfterVoid){
+        Promise.resolve().then(()=>syncReservationToSupabase(reservationAfterVoid)).then(ok=>{
+          if(ok){
+            console.log("F&B void/refund cloud sync completed:",sale.invoiceNo||sale.id);
+            setSupabaseCloudMessage("F&B void/refund synced to cloud.","success");
+          }else{
+            console.warn("F&B void/refund cloud sync returned false:",sale.invoiceNo||sale.id);
+          }
+        }).catch(e=>console.warn("F&B void/refund cloud sync failed:",e));
+      }
+    }
     logAudit("FNB_VOID_REFUND",sale.id,"F&B invoice void / refund ["+(sale.invoiceNo||sale.id)+"] — "+String(reason).trim(),currentPropertyId);
     try{renderAll();}catch(e){}
     alert("F&B invoice void / refund completed successfully.\nInvoice: "+(sale.invoiceNo||sale.id));
@@ -16253,13 +16269,52 @@ async function hydrateSupabaseReservations(){
             bookingNo:r.booking_no||r.reservation_data?.bookingNo||"",
             status:r.status||r.reservation_data?.status||"Reserved"
         }));
-        reservations=cloudReservations;
-        // Restore cloud-synchronised guest folio / restaurant transactions into
-        // the local operational arrays so every logged-in device sees the same
-        // POS posting. The reservation remains the cloud source-of-truth record.
-        const cloudFolios=cloudReservations.map(r=>r.__cloudFolio).filter(Boolean);
-        const cloudSales=cloudReservations.flatMap(r=>Array.isArray(r.__cloudSales)?r.__cloudSales:[]);
-        const cloudPayments=cloudReservations.flatMap(r=>Array.isArray(r.__cloudPayments)?r.__cloudPayments:[]);
+
+        /* v2.1.142 — preserve a local POS void/refund that was completed on this
+           browser before a stale cloud snapshot was hydrated. Without this merge,
+           the older cloud reservation could overwrite the Voided sale and refund. */
+        const localReservations=Array.isArray(reservations)?reservations.slice():[];
+        const localFolios=Array.isArray(folios)?folios.slice():[];
+        const localSales=Array.isArray(sales)?sales.slice():[];
+        const localPayments=Array.isArray(payments)?payments.slice():[];
+        const cloudSaleMap=new Map();
+        cloudReservations.forEach(r=>(Array.isArray(r.__cloudSales)?r.__cloudSales:[]).forEach(x=>cloudSaleMap.set(String(x.id),x)));
+        const cloudPaymentMap=new Map();
+        cloudReservations.forEach(r=>(Array.isArray(r.__cloudPayments)?r.__cloudPayments:[]).forEach(x=>cloudPaymentMap.set(String(x.id),x)));
+        const cloudFolioMap=new Map();
+        cloudReservations.forEach(r=>{if(r.__cloudFolio)cloudFolioMap.set(String(r.__cloudFolio.id),r.__cloudFolio);});
+
+        const localVoidedSales=localSales.filter(x=>
+            (x?.voided||x?.isVoided||x?.status==='Voided') && x?.reservationId &&
+            String(x.propertyId||currentPropertyId)===String(currentPropertyId)
+        );
+        const localRefunds=localPayments.filter(x=>
+            paymentIsRefund(x) && x?.refundOf && x?.reservationId &&
+            String(x.propertyId||currentPropertyId)===String(currentPropertyId)
+        );
+        localVoidedSales.forEach(x=>cloudSaleMap.set(String(x.id),x));
+        localRefunds.forEach(x=>cloudPaymentMap.set(String(x.id),x));
+        localFolios.filter(x=>x?.reservationId).forEach(x=>{
+            const cloud=cloudFolioMap.get(String(x.id));
+            if(!cloud || Number(x.total||0)!==Number(cloud.total||0))cloudFolioMap.set(String(x.id),x);
+        });
+
+        const mergedReservations=cloudReservations.map(r=>{
+            const rid=String(r.id);
+            const cloudSalesFor=Array.from(cloudSaleMap.values()).filter(x=>String(x.reservationId||'')===rid);
+            const cloudPaymentsFor=Array.from(cloudPaymentMap.values()).filter(x=>String(x.reservationId||'')===rid);
+            const cloudFolio=cloudFolioMap.get(String(r.__cloudFolio?.id||'')) || r.__cloudFolio || null;
+            return {...r,
+                __cloudFolio:cloudFolio,
+                __cloudSales:cloudSalesFor,
+                __cloudPayments:cloudPaymentsFor
+            };
+        });
+        reservations=mergedReservations;
+
+        const cloudFolios=mergedReservations.map(r=>r.__cloudFolio).filter(Boolean);
+        const cloudSales=mergedReservations.flatMap(r=>Array.isArray(r.__cloudSales)?r.__cloudSales:[]);
+        const cloudPayments=mergedReservations.flatMap(r=>Array.isArray(r.__cloudPayments)?r.__cloudPayments:[]);
         if(cloudFolios.length){
             const byId=new Map(cloudFolios.map(f=>[String(f.id),f]));
             folios=folios.filter(f=>!byId.has(String(f.id))).concat(cloudFolios);
@@ -16273,6 +16328,17 @@ async function hydrateSupabaseReservations(){
             payments=payments.filter(x=>!byId.has(String(x.id))).concat(cloudPayments);
         }
         saveData();
+
+        /* If a local void/refund repaired a stale cloud snapshot, publish the
+           merged reservation now. This turns the local recovery into the shared
+           cloud source of truth for Admin and Reception on every device. */
+        for(const r of mergedReservations){
+            const hasLocalVoid=localVoidedSales.some(x=>String(x.reservationId)===String(r.id));
+            const hasLocalRefund=localRefunds.some(x=>String(x.reservationId)===String(r.id));
+            if(hasLocalVoid||hasLocalRefund){
+                try{await syncReservationToSupabase(r);}catch(e){console.warn('Merged POS void/refund cloud sync failed:',e);}
+            }
+        }
         renderAll();
         setSupabaseCloudMessage("Cloud reservations refreshed successfully.","success");
         return true;
