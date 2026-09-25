@@ -2570,6 +2570,7 @@ function loadCurrentPropertyData(){
     }
 
     settings={...property};
+    normalizeBusinessDateOnLoad();
     // Preserve both the newer multi-outlet structure and legacy property.posMenu.
     settings.restaurants=normalizePOSOutlets(settings.restaurants,settings.posMenu);
     POS_OUTLET_ID=settings.restaurants.find(x=>x.active!==false)?.id||settings.restaurants[0]?.id||"";
@@ -3857,6 +3858,7 @@ function renderUsers(){
 
 const USER_MODULE_ACTION_GROUPS={
   reservations:{title:"Reservations Action Rights",items:ACTION_PERMISSION_GROUPS["Front Office / Reservations"]||[]},
+  pos:{title:"Restaurant POS Action Rights",items:ACTION_PERMISSION_GROUPS["POS / Outlet"]||[]},
   purchasing:{title:"Purchasing Action Rights",items:[
     ["purchasing.po","Purchase Order"],["purchasing.ap","Supplier Payment"],["purchasing.grn","GRN"],
     ["purchasing.suppliers","Suppliers"],["purchasing.articles","Articles"],["purchasing.request","Purchase Request"],["purchasing.refresh","Refresh"]
@@ -9439,14 +9441,20 @@ function nextPOSInvoiceNo(){
     const year=String(cashierBusinessDate()||localDateString()).slice(0,4);
     const prefix="RINV-"+year+"-";
     let max=0;
+    const seen=new Set();
     const scan=list=>(list||[]).forEach(x=>{
         if(String(x.propertyId||currentPropertyId)!==String(currentPropertyId))return;
         const v=String(x.invoiceNo||"");
-        if(v.startsWith(prefix)){const n=parseInt(v.slice(prefix.length),10);if(n>max)max=n;}
+        if(v.startsWith(prefix)){
+            const n=parseInt(v.slice(prefix.length),10);
+            if(Number.isFinite(n)){seen.add(n);if(n>max)max=n;}
+        }
     });
     scan(sales);
     try{scan(readArray(STORAGE.sales));}catch(e){}
-    return prefix+String(max+1).padStart(6,"0");
+    let next=max+1;
+    while(seen.has(next))next++;
+    return prefix+String(next).padStart(6,"0");
 }
 function printPOSInvoice(saleId){
     const sale=(sales||[]).find(x=>x.id===saleId);
@@ -9499,11 +9507,16 @@ function renderPOSInvoices(){
 function fnbVoidInvoice(saleId){
   /* Local rounding helper: this function lives in the main script, while the Stores module is an IIFE. */
   const round2=v=>{const n=Number(v);return Number.isFinite(n)?Math.round((n+Number.EPSILON)*100)/100:0;};
-  if(!requireRole("Admin","Manager"))return;
+  /* v2.1.135 — Void / Refund follows the granular POS permission.
+     Reception / Front Office users may perform it when pos.void is assigned. */
+  if(!hasActionPermission("pos.void")) {
+    alert("Access denied. Void / Refund has not been assigned to your user account.");
+    return;
+  }
   const sale=(sales||[]).find(x=>String(x.id)===String(saleId));
   if(!sale){alert("Restaurant invoice not found.");return;}
   if(sale.voided||sale.isVoided||sale.status==="Voided"){alert("This restaurant invoice is already voided.");return;}
-  const reason=prompt("Manager authorization required.\n\nEnter the reason for void / refund:");
+  const reason=prompt("Enter the reason for void / refund:");
   if(reason===null)return;
   if(!String(reason).trim()){alert("Void / refund reason is required.");return;}
   if(!confirm("Void / refund invoice "+(sale.invoiceNo||sale.id)+" for "+money(Number(sale.total||0))+"?\n\nThis will reverse the restaurant sale and restore recipe stock."))return;
@@ -9604,15 +9617,57 @@ function saveStandalonePayment(){if(!requireActionPermission('payments.deposit')
 function openRefundModal(reservationId,paymentId){if(!requireActionPermission('payments.refund'))return;const p=payments.find(x=>x.id===paymentId),r=reservations.find(x=>x.id===reservationId);if(!p||!r)return;if(!paymentIsReceived(p)||paymentIsRefund(p)){alert('Only settled received payments can be refunded.');return;}const already=payments.filter(x=>x.refundOf===paymentId).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(p.amount||0))-already);document.getElementById('refundInfo').innerHTML=`<strong>${escapeHtml(r.guestName)}</strong><div style="font-size:12px;color:#6b7280">${escapeHtml(r.bookingNo)} · Original ${money(Math.abs(p.amount))} · Refundable ${money(refundable)}</div>`;document.getElementById('refundAmount').value=refundable.toFixed(2);document.getElementById('refundAmount').max=refundable;document.getElementById('refundReference').value='REF-'+Date.now();document.getElementById('refundReason').value='';document.getElementById('refundModal').dataset.reservationId=reservationId;document.getElementById('refundModal').dataset.paymentId=paymentId;document.getElementById('refundModal').classList.add('show');}
 function closeRefundModal(){document.getElementById('refundModal')?.classList.remove('show');}
 function saveRefund(){if(!requireActionPermission('payments.refund'))return;const m=document.getElementById('refundModal'),rid=m.dataset.reservationId,pid=m.dataset.paymentId,a=Number(document.getElementById('refundAmount').value||0),reason=document.getElementById('refundReason').value.trim(),err=document.getElementById('refundError'),orig=payments.find(x=>x.id===pid),r=reservations.find(x=>x.id===rid)||{};if(!orig){err.textContent='Original payment not found.';return;}const refunded=payments.filter(x=>x.refundOf===pid).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(orig.amount||0))-refunded);if(a<=0||a>refundable+0.01){err.textContent='Refund amount exceeds the refundable amount.';return;}if(!reason){err.textContent='Refund reason is required.';return;}const ref=document.getElementById('refundReference').value.trim()||'REF-'+Date.now();payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:rid,date:localDateTime(),reference:ref,type:'Refund',method:document.getElementById('refundMethod').value,amount:-a,status:'Received',receivedBy:currentUser?.username||'Manager',notes:reason,refundOf:pid,propertyId:currentPropertyId,businessDate:cashierBusinessDate(),guestName:r.guestName||'',roomId:r.roomId||null,cashier:currentUser?.username||'Manager',shiftId:currentCashierShift()?.id||null});saveData();closeRefundModal();renderAll();logAudit('PAYMENT_REFUND',ref,'Refund recorded: '+a,currentPropertyId);alert('Refund recorded successfully.');}
-function cashierBusinessDate(){return (typeof settings!=='undefined'&&settings?.businessDate) ? settings.businessDate : localDateString();}
+function normalizeBusinessDateOnLoad(){
+  try{
+    if(!settings||!currentPropertyId)return;
+    const today=localDateString();
+    const current=String(settings.businessDate||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(current)||current>=today)return;
+    /*
+      Controlled recovery for test/demo properties: only advance a stale business
+      date when there is no open cashier shift and no closing recorded for that
+      stale date. An active/closed cashier day is never silently moved.
+    */
+    const hasOpen=readArray('signature_pms_cashier_shifts_v184').some(x=>
+      String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&
+      String(x.businessDate||'').slice(0,10)===current&&String(x.status||'')==='Open'
+    );
+    const hasClosed=readArray(STORAGE.cashierClosings).some(x=>
+      String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&
+      String(x.date||'').slice(0,10)===current
+    );
+    if(!hasOpen&&!hasClosed){
+      settings.businessDate=today;
+      const idx=properties.findIndex(p=>String(p.id)===String(currentPropertyId));
+      if(idx>=0){properties[idx]={...properties[idx],businessDate:today};saveProperties();}
+      console.info('Signature PMS: stale business date auto-recovered from',current,'to',today);
+    }
+  }catch(e){console.warn('Business date recovery skipped:',e);}
+}
+function cashierBusinessDate(){
+  const configured=(typeof settings!=='undefined'&&settings?.businessDate) ? String(settings.businessDate).slice(0,10) : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : localDateString();
+}
 function getTodayCashierPayments(){
   const d=String(cashierBusinessDate()||'');
   return payments.filter(p=>{
     if(String(p.propertyId||currentPropertyId)!==String(currentPropertyId)) return false;
     const bd=String(p.businessDate||'').slice(0,10);
     const pd=String(paymentDateOnly(p)||'');
-    /* A recorded business date is authoritative. Only legacy payments without one use payment date. */
-    return bd ? bd===d : pd===d;
+    if(bd===d) return true;
+    if(!bd&&pd===d) return true;
+    /*
+      Refunds created during an invoice void can carry the original sale's
+      business date while their transaction timestamp is later. If the refund
+      links to a payment in this cashier day, include it in the same day so
+      Cash Refunds and Expected Cash reconcile correctly.
+    */
+    if(paymentIsRefund(p)){
+      const original=(payments||[]).find(x=>String(x.id||'')===String(p.refundOf||''));
+      const originalBd=String(original?.businessDate||'').slice(0,10);
+      return originalBd===d;
+    }
+    return false;
   });
 }
 function cashierShiftRows(){try{return readArray('signature_pms_cashier_shifts_v184')}catch(e){return []}}
