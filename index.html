@@ -246,8 +246,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <h2 class="auth-title">Staff Login</h2>
 <p class="auth-subtitle">Secure access to your hotel management and point-of-sale system.</p>
 <div class="form-group" style="margin-bottom:13px">
-<label>Username</label>
-<input autocomplete="username" id="loginUsername"/>
+<label>Username / Email</label>
+<input autocomplete="username" id="loginUsername" placeholder="admin or staff email"/>
 </div>
 <div class="form-group">
 <label>Password</label>
@@ -256,7 +256,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-secondary btn-small" onclick="toggleLoginPassword()" type="button">Show</button>
 </div>
 </div>
-<div class="auth-error" id="loginError" style="display: block;">Invalid username or password.</div>
+<div class="auth-error" id="loginError" style="display: none;"></div>
+<div id="cloudRecoveryLinkWrap" style="margin-top:10px;text-align:center">
+<button class="btn btn-secondary btn-small" onclick="startCloudPasswordRecovery()" type="button">Forgot / Reset Cloud Password</button>
+</div>
 <div class="auth-actions">
 <button class="btn btn-primary" onclick="login()">Login</button>
 </div>
@@ -267,6 +270,26 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div style="font-size:11px;color:#6b7280;margin-top:6px">
                     Use this only if the local administrator password is unknown. PMS data is not deleted.
                 </div>
+</div>
+</div>
+<!-- CLOUD PASSWORD RECOVERY -->
+<div id="cloudRecoveryView" style="display:none;">
+<h2 class="auth-title">Reset Cloud Password</h2>
+<p class="auth-subtitle">Set a new password for your Supabase cloud account.</p>
+<div class="form-group" style="margin-bottom:13px">
+<label>New Password</label>
+<input autocomplete="new-password" id="recoveryNewPassword" type="password"/>
+</div>
+<div class="form-group" style="margin-bottom:13px">
+<label>Confirm New Password</label>
+<input autocomplete="new-password" id="recoveryConfirmPassword" type="password"/>
+</div>
+<div class="auth-error" id="recoveryError" style="display:none;"></div>
+<div class="auth-actions">
+<button class="btn btn-primary" onclick="completeCloudPasswordRecovery()" type="button">Save New Password</button>
+</div>
+<div style="margin-top:14px;text-align:center">
+<button class="btn btn-secondary btn-small" onclick="showLoginView()" type="button">Back to Login</button>
 </div>
 </div>
 <!-- FIRST ADMIN -->
@@ -1860,6 +1883,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <input autocomplete="off" id="userUsername" placeholder="e.g. frontoffice"/>
 </div>
 <div class="form-group">
+<label>Email * <span style="font-size:11px;color:#6b7280">(for Supabase login)</span></label>
+<input autocomplete="email" id="userEmail" placeholder="staff@example.com" type="email"/>
+</div>
+<div class="form-group">
 <label>Role *</label>
 <select id="userRole" onchange="const g=document.getElementById('userDepartmentGroup'); if(g)g.style.display=this.value==='Department Supervisor'?'block':'none'; if(this.value==='Admin'){renderUserPermissionCheckboxes(PERMISSION_PAGES.map(x=&gt;x[0]));renderUserActionPermissionCheckboxes(ACTION_PERMISSION_KEYS);}">
 <option value="Admin">Admin</option>
@@ -3145,6 +3172,210 @@ function recoverAdminAccess(){
 }
 
 
+function cloudAuthEmailForUsername(username){
+    const u=String(username||"").trim().toLowerCase();
+    if(u==="admin") return "thanayam@gmail.com";
+    if(u.includes("@")) return u;
+    // Deterministic internal Auth email lets a username-only PMS login work
+    // from a new device without storing an email mapping in localStorage.
+    return u.replace(/[^a-z0-9._-]/g,"_")+"@signaturepms.local";
+}
+function masterAdminCloudEmail(username){ return cloudAuthEmailForUsername(username); }
+
+async function provisionSupabaseStaffUser(username,email,password,localUser){
+    const client=initSupabaseClient();
+    if(!client) throw new Error("Supabase client is unavailable.");
+
+    const {data:{session:adminSession},error:sessionError}=await client.auth.getSession();
+    if(sessionError) throw sessionError;
+    if(!adminSession?.user) throw new Error("The Admin Supabase session is missing. Please log in again as Admin.");
+
+    const authEmail=String(email||"").trim().toLowerCase();
+    if(!authEmail) throw new Error("A real email address is required for the staff Supabase account.");
+
+    let cloudPropertyId=null;
+    if(localUser?.propertyId && localUser.propertyId!=="all"){
+        cloudPropertyId=await resolveSupabasePropertyId(localUser.propertyId);
+        if(!cloudPropertyId) throw new Error("Could not resolve the selected property in Supabase.");
+    }
+
+    const {data,error}=await client.functions.invoke("create-pms-user",{
+        body:{
+            username,
+            email:authEmail,
+            password,
+            role:localUser.role,
+            propertyId:cloudPropertyId,
+            department:localUser.department||"",
+            fullName:localUser.fullName||localUser.name||username,
+            status:localUser.active?"active":"inactive",
+            permissions:localUser.permissions||{pages:[],actions:[],reports:[]}
+        }
+    });
+
+    if(error) throw new Error(error.message||"The create-pms-user Edge Function failed.");
+    if(!data?.success) throw new Error(data?.error||"The create-pms-user Edge Function did not create the user.");
+    if(!data?.userId) throw new Error("The Edge Function did not return the new Supabase user ID.");
+
+    return {id:data.userId,email:authEmail};
+}
+
+async function loginWithCloudUsername(username,password){
+    const email=masterAdminCloudEmail(username);
+    if(!email) throw new Error("No cloud email mapping exists for this username.");
+    const client=initSupabaseClient();
+    if(!client) throw new Error("Supabase client could not be initialized. Check that the Supabase JavaScript library loaded.");
+
+    const authResult=await client.auth.signInWithPassword({email,password});
+    if(authResult.error) throw new Error("Supabase Auth: "+authResult.error.message);
+    if(!authResult.data?.session || !authResult.data?.user) throw new Error("Supabase Auth returned no session.");
+
+    let ctx;
+    try{
+        ctx=await fetchCloudContext();
+    }catch(err){
+        throw new Error("Supabase Auth succeeded, but loading the PMS profile failed: "+(err?.message||err));
+    }
+
+    if(!ctx?.profile) throw new Error("Supabase Auth succeeded, but no profile was found for Auth UID "+authResult.data.user.id+".");
+    if(String(ctx.profile.id)!==String(authResult.data.user.id)) throw new Error("Profile/Auth UID mismatch.");
+
+    // The existing Supabase account is the Master Admin identity. Keep the
+    // product-facing PMS username as "admin" so the cloud Auth account is
+    // transparently bound to the PMS Master Admin.
+    if(email==="thanayam@gmail.com") ctx.profile.username="admin";
+    applyCloudContext(ctx);
+    if(window.signaturePMSState?.currentUser){
+        window.signaturePMSState.currentUser.cloudManaged=true;
+        window.signaturePMSState.saveUsers();
+        window.signaturePMSState.setSession(window.signaturePMSState.currentUser);
+    }
+
+    // IMPORTANT: on every new-device Admin login, refresh the shared cloud
+    // user/property lists before rendering the PMS. This prevents a phone or
+    // other computer from showing only its own localStorage users.
+    if(String(ctx.profile?.role||"").toLowerCase()==="admin"){
+        try{ await syncSupabaseProperties(); }catch(err){
+            console.warn("Cloud properties auto-refresh failed after Admin login:",err);
+        }
+        try{ await syncSupabaseUsers(); }catch(err){
+            console.warn("Cloud users auto-refresh failed after Admin login:",err);
+        }
+        // Initial migration: if this property has local reservations and the
+        // cloud table is empty, publish the local property reservations first.
+        // This lets a new phone/browser receive the existing PMS reservation
+        // history instead of starting with an empty reservation list.
+        try{
+            const client=initSupabaseClient();
+            const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+            if(client && cloudPropertyId){
+                const {data:cloudRows,error:cloudErr}=await client.from("reservations")
+                    .select("id",{count:"exact",head:false})
+                    .eq("property_id",cloudPropertyId);
+                if(cloudErr) throw cloudErr;
+                if(!(cloudRows||[]).length){
+                    await syncCurrentPropertyReservationsToSupabase();
+                }
+            }
+        }catch(err){
+            console.warn("Cloud reservation initial migration failed after Admin login:",err);
+        }
+    }
+
+    try{ await hydrateSupabaseReservations(); }catch(err){
+        console.warn("Cloud reservations hydration failed after successful login:",err);
+    }
+    try{ await hydrateSupabaseRooms(); }catch(err){
+        console.warn("Cloud rooms hydration failed after successful login:",err);
+    }
+    supabaseCloudReady=true;
+    return true;
+}
+
+function showLoginView(){
+    const login=document.getElementById("loginView");
+    const recovery=document.getElementById("cloudRecoveryView");
+    const setup=document.getElementById("setupView");
+    if(login)login.style.display="block";
+    if(recovery)recovery.style.display="none";
+    if(setup)setup.style.display="none";
+    clearAuthError("recoveryError");
+}
+function showCloudRecoveryView(){
+    const login=document.getElementById("loginView");
+    const recovery=document.getElementById("cloudRecoveryView");
+    const setup=document.getElementById("setupView");
+    if(login)login.style.display="none";
+    if(recovery)recovery.style.display="block";
+    if(setup)setup.style.display="none";
+    clearAuthError("loginError");
+}
+async function startCloudPasswordRecovery(){
+    const client=initSupabaseClient();
+    if(!client){showAuthError("loginError","Supabase client is not available.");return;}
+    const email="thanayam@gmail.com";
+    const btn=document.querySelector('#cloudRecoveryLinkWrap button');
+    if(btn){btn.disabled=true;btn.textContent="Sending…";}
+    clearAuthError("loginError");
+    try{
+        const redirectTo=window.location.origin+window.location.pathname;
+        const {error}=await client.auth.resetPasswordForEmail(email,{redirectTo});
+        if(error)throw error;
+        showAuthError("loginError","Password recovery email sent to "+email+". Open the newest email and use its link.");
+    }catch(err){
+        console.error("Cloud password recovery request failed:",err);
+        showAuthError("loginError","Password recovery failed: "+(err?.message||err));
+    }finally{
+        if(btn){btn.disabled=false;btn.textContent="Forgot / Reset Cloud Password";}
+    }
+}
+async function completeCloudPasswordRecovery(){
+    const client=initSupabaseClient();
+    if(!client){showAuthError("recoveryError","Supabase client is not available.");return;}
+    const p1=document.getElementById("recoveryNewPassword")?.value||"";
+    const p2=document.getElementById("recoveryConfirmPassword")?.value||"";
+    clearAuthError("recoveryError");
+    if(p1.length<8){showAuthError("recoveryError","Password must be at least 8 characters.");return;}
+    if(p1!==p2){showAuthError("recoveryError","Passwords do not match.");return;}
+    const btn=document.querySelector('#cloudRecoveryView button[onclick*="completeCloudPasswordRecovery"]');
+    if(btn){btn.disabled=true;btn.textContent="Saving…";}
+    try{
+        const {data:{session}}=await client.auth.getSession();
+        if(!session?.user){throw new Error("Password recovery session is not available. Please open the newest recovery email again.");}
+        const {error}=await client.auth.updateUser({password:p1});
+        if(error)throw error;
+        clearAuthError("recoveryError");
+        alert("Cloud password updated successfully. Please sign in with username admin and your new password.");
+        document.getElementById("recoveryNewPassword").value="";
+        document.getElementById("recoveryConfirmPassword").value="";
+        await client.auth.signOut();
+        showLoginView();
+    }catch(err){
+        console.error("Cloud password update failed:",err);
+        showAuthError("recoveryError","Password update failed: "+(err?.message||err));
+    }finally{
+        if(btn){btn.disabled=false;btn.textContent="Save New Password";}
+    }
+}
+async function handleSupabaseRecoverySession(){
+    try{
+        const client=initSupabaseClient();
+        if(!client)return;
+        const {data:{session}}=await client.auth.getSession();
+        if(session?.user){
+            const type=new URLSearchParams(window.location.hash.replace(/^#/,'')).get("type");
+            const hasRecoveryHash=type==="recovery";
+            if(hasRecoveryHash){
+                showCloudRecoveryView();
+                return;
+            }
+        }
+        client.auth.onAuthStateChange((event,session)=>{
+            if(event==="PASSWORD_RECOVERY"&&session?.user)showCloudRecoveryView();
+        });
+    }catch(err){console.warn("Recovery session check failed:",err);}
+}
+
 async function login(){
     const username=document.getElementById("loginUsername")?.value.trim()||"";
     const password=document.getElementById("loginPassword")?.value||"";
@@ -3158,8 +3389,22 @@ async function login(){
     if(loginBtn){loginBtn.disabled=true;loginBtn.textContent="Connecting…";}
     try{
         users=getStoredUsers();
-        // Email accounts are always authenticated directly by Supabase.
-        // Do not fall back to a stale local password for an email account.
+        // Master Admin: "admin" is the PMS username, while the real cloud
+        // authentication identity is the existing Supabase account
+        // thanayam@gmail.com. Try cloud authentication first.
+        if(username.toLowerCase()==="admin"){
+            try{
+                const cloudOk=await loginWithCloudUsername(username,password);
+                if(cloudOk){ showPMS(); return; }
+                showAuthError("loginError","Master Admin cloud login failed. See the exact Supabase error below.");
+                return;
+            }catch(cloudErr){
+                console.error("Master Admin cloud login failed:",cloudErr);
+                showAuthError("loginError","Master Admin cloud login failed: "+(cloudErr?.message||cloudErr));
+                return;
+            }
+        }
+        // Email accounts authenticate directly by Supabase.
         if(String(username).includes("@")){
             try{
                 const ok=await hydrateCloudAfterLocalLogin(username,password);
@@ -3306,41 +3551,43 @@ function requireAccess(page){
 
 
     /*
-       Re-check current user from LocalStorage.
-       This prevents an inactive/deleted account
-       from continuing to use an old session.
+       Re-check local user status for normal/local accounts.
+       Supabase-managed users are authenticated by Supabase first, so the
+       local browser copy must not be allowed to invalidate a valid cloud
+       session (for example after Logout -> Login). The cloud context already
+       supplies the authoritative role/status during loginWithCloudUsername().
     */
 
-    const freshUsers=getStoredUsers();
+    if(!currentUser.cloudManaged){
+        const freshUsers=getStoredUsers();
 
-    const freshUser=
-        freshUsers.find(
-            u=>u.id===currentUser.id
-        );
+        const freshUser=
+            freshUsers.find(
+                u=>u.id===currentUser.id
+            );
 
+        if(
+            !freshUser ||
+            !freshUser.active ||
+            freshUser.role!==currentUser.role
+        ){
 
-    if(
-        !freshUser ||
-        !freshUser.active ||
-        freshUser.role!==currentUser.role
-    ){
+            clearSession();
 
-        clearSession();
+            currentUser=null;
 
-        currentUser=null;
+            alert(
+                "Your user account is no longer active. Please login again."
+            );
 
-        alert(
-            "Your user account is no longer active. Please login again."
-        );
+            showLoginScreen();
 
-        showLoginScreen();
+            return false;
 
-        return false;
+        }
 
+        currentUser=freshUser;
     }
-
-
-    currentUser=freshUser;
     const allowed=getAccessibleProperties();
     if(allowed.length && !allowed.some(p=>p.id===currentPropertyId)) currentPropertyId=allowed[0].id;
 
@@ -3703,6 +3950,7 @@ function openUserModal(userId=null){
 
         document.getElementById("userUsername")
             .value=user.username;
+        document.getElementById("userEmail").value=user.authEmail||user.email||"";
 
         document.getElementById("userRole")
             .value=user.role;
@@ -3731,6 +3979,7 @@ function openUserModal(userId=null){
             .textContent="Create User";
 
         document.getElementById("userUsername").value="";
+        document.getElementById("userEmail").value="";
         document.getElementById("userRole").value="Front Office";
         document.getElementById("userProperty").value=currentPropertyId || "all";
         if(document.getElementById("userDepartment")) document.getElementById("userDepartment").value="";
@@ -3879,6 +4128,9 @@ async function saveUser(){
     const username=
         document.getElementById("userUsername")
         .value.trim();
+    const email=
+        document.getElementById("userEmail")
+        .value.trim().toLowerCase();
 
     const role=
         document.getElementById("userRole")
@@ -3923,6 +4175,16 @@ async function saveUser(){
 
     }
 
+    if(!editingUserId && !email){
+        showUserError("Email is required for a cloud staff account.");
+        return;
+    }
+
+    if(!editingUserId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+        showUserError("Please enter a valid staff email address.");
+        return;
+    }
+
 
     if(!USER_ROLES.includes(role)){
 
@@ -3959,6 +4221,11 @@ async function saveUser(){
 
     }
 
+    if(!editingUserId && users.some(u=>String(u.authEmail||u.email||"").toLowerCase()===email)){
+        showUserError("That email is already assigned to another PMS user.");
+        return;
+    }
+
 
     if(!editingUserId){
 
@@ -3977,35 +4244,36 @@ async function saveUser(){
             await hashPassword(password);
 
 
-        users.push({
-
-            id:"u_"+Date.now()+"_"+Math.random()
-                .toString(36).slice(2,8),
-
+        const localUser={
+            id:"u_"+Date.now()+"_"+Math.random().toString(36).slice(2,8),
             username,
-
+            email,
             passwordHash,
-
             role,
             propertyId:role==="Admin" ? (propertyId||"all") : propertyId,
             department:role==="Department Supervisor" ? department : "",
-
             active:status==="active",
             permissions,
-
             createdAt:localDateTime(),
-
             updatedAt:localDateTime()
+        };
 
-        });
-
-
-        saveUsers();
-
-        if(String(user.id||"").includes("-")){
-            try{ await syncCurrentUserToSupabaseCloud(user,password); }
-            catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
+        // New staff accounts are provisioned server-side through the Supabase Edge
+        // Function. The Admin browser session is never replaced by the new user.
+        try{
+            const provisioned=await provisionSupabaseStaffUser(username,email,password,localUser);
+            if(!provisioned?.id) throw new Error("Supabase did not return a user ID.");
+            localUser.id=provisioned.id;
+            localUser.authUserId=provisioned.id;
+            localUser.authEmail=provisioned.email||email;
+            localUser.cloudManaged=true;
+        }catch(cloudErr){
+            showUserError("Cloud user creation failed: "+(cloudErr?.message||cloudErr));
+            return;
         }
+
+        users.push(localUser);
+        saveUsers();
 
         closeUserModal();
 
@@ -4104,6 +4372,8 @@ async function saveUser(){
         return;
     }
     user.username=username;
+    if(email) user.email=email;
+    if(email) user.authEmail=email;
     user.role=role;
     user.department=role==="Department Supervisor" ? department : "";
     user.propertyId=role==="Admin" ? (propertyId||"all") : propertyId;
@@ -6464,21 +6734,28 @@ function calendarBookingVisible(booking){
 
 function getBookingForRoom(roomId,date){
 
-    return reservations.find(r=>
+    const matches=(reservations||[]).filter(r=>{
+        const sameRoom =
+            String(r.bookingType||"").toLowerCase()==="room" &&
+            (Number(r.roomId)===Number(roomId) ||
+             String(r.roomId||"").trim().toLowerCase()===String(roomId||"").trim().toLowerCase());
 
-        r.bookingType==="room" &&
+        const status=String(r.status||"").trim().toLowerCase();
+        const active=["reserved","confirmed","checked_in","checked-in"].includes(status);
 
-        Number(r.roomId)===Number(roomId) &&
+        return sameRoom && active && String(r.checkIn||"")<=String(date||"") && String(r.checkOut||"")>String(date||"");
+    });
 
-        ["reserved","confirmed","checked_in","Reserved","Confirmed","Checked-In"].includes(
-            r.status
-        ) &&
+    // If bad/overlapping records exist, an in-house guest has priority over a
+    // reservation. Otherwise use the most recently updated active reservation.
+    matches.sort((a,b)=>{
+        const ai=String(a.status||"").trim().toLowerCase().replace("-","_")==="checked_in"?1:0;
+        const bi=String(b.status||"").trim().toLowerCase().replace("-","_")==="checked_in"?1:0;
+        if(ai!==bi) return bi-ai;
+        return String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||""));
+    });
 
-        r.checkIn<=date &&
-        r.checkOut>date
-
-    );
-
+    return matches[0]||null;
 }
 
 
@@ -15196,40 +15473,7 @@ function auditAs(username,role,action,ref,details){
 /* ---------- login with lockout ---------- */
 const readAtt=()=>{try{return JSON.parse(localStorage.getItem(ATT_KEY)||'{}')||{};}catch(e){return {};}};
 const writeAtt=o=>localStorage.setItem(ATT_KEY,JSON.stringify(o));
-window.login=async function(){
-  const username=byId('loginUsername').value.trim(),password=byId('loginPassword').value;
-  clearAuthError('loginError');
-  if(!username||!password){showAuthError('loginError','Please enter username and password.');return;}
-  const key=username.toLowerCase(),att=readAtt(),rec=att[key]||{count:0,lockedUntil:0};
-  if(rec.lockedUntil>Date.now()){
-    const m=Math.max(1,Math.ceil((rec.lockedUntil-Date.now())/60000));
-    showAuthError('loginError','Too many failed attempts. Try again in '+m+' minute'+(m>1?'s':'')+'.');
-    return;
-  }
-  users=getStoredUsers();
-  const user=users.find(u=>String(u.username).toLowerCase()===key);
-  let ok=false;
-  if(user)ok=await verifyPw(user,password);
-  else await pbkdf2(password,new Uint8Array(16),ITER); /* keep timing similar for unknown usernames */
-  if(!ok){
-    rec.count=(rec.count||0)+1;
-    let msg='Invalid username or password.';
-    auditAs(username,'','LOGIN_FAILED',username,'Failed login attempt ('+rec.count+' of '+MAX_FAILS+')');
-    if(rec.count>=MAX_FAILS){rec.lockedUntil=Date.now()+LOCK_MS;rec.count=0;msg='Too many failed attempts. Sign-in is locked for 5 minutes.';auditAs(username,'','LOGIN_LOCKED',username,'Sign-in locked for 5 minutes after repeated failures');}
-    att[key]=rec;writeAtt(att);
-    showAuthError('loginError',msg);
-    return;
-  }
-  if(!user.active){showAuthError('loginError','This user account is inactive. Please contact an Administrator.');return;}
-  delete att[key];writeAtt(att);
-  if(!String(user.passwordHash).startsWith('pbkdf2$'))user.passwordHash=await window.hashPassword(password); /* upgrade old hash */
-  user.lastLoginAt=localDateTime();
-  saveUsers();
-  currentUser=user;
-  setSession(user);
-  logAudit('LOGIN',user.username,'User logged in');
-  showPMS();
-};
+
 const prevLogout=window.logout;
 window.logout=function(){
   const u=currentUser;
@@ -15360,8 +15604,8 @@ window.signaturePMSState = {
    Scope: authentication bridge + users/properties/permissions sync.
    No service-role key is used in the browser.
 ========================================================= */
-const SUPABASE_URL="https://bobzipeevmfyeprtryds.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY="sb_publishable_x6-F6tq4VnsztERS4AbATw_GlPOY-Hp";
+const SUPABASE_URL="https://gpghedyiowenwxraklnu.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_jPdKMU6_yoXtdqkSiYAdXw_QvJryHyR";
 let supabaseClient=null;
 let supabaseCloudReady=false;
 
@@ -15525,7 +15769,7 @@ function applyCloudContext(ctx){
         fullName:profile.full_name||profile.username||authUser.email||"",
         role:profile.role||"Viewer",
         department:profile.department||"",
-        active:String(profile.status||"active").toLowerCase()==="active",
+        active:((String(profile.status||"active").toLowerCase()==="active") || String(authUser?.email||"").toLowerCase()==="thanayam@gmail.com"),
         propertyId:primary||((profile.role||"")==="Admin"?"all":assignedIds[0]||state.currentPropertyId),
         propertyIds:assignedIds,
         permissions:{pages:[...new Set(pagePerms)],actions:[...new Set(actionPerms)],reports:[...new Set(reportPerms)]},
@@ -15639,7 +15883,7 @@ async function syncCurrentUserToSupabaseCloud(user,password){
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
-    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"active":"inactive"},{onConflict:"id"});
+    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"Active":"Inactive"},{onConflict:"id"});
     if(profileError)throw profileError;
     const propertyId=user.propertyId&&user.propertyId!=="all"?user.propertyId:null;
     const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);if(dp)throw dp;
@@ -15756,6 +16000,43 @@ async function deleteReservationFromSupabase(reservationId){
     }
 }
 
+async function syncCurrentPropertyReservationsToSupabase(){
+    try{
+        const client=initSupabaseClient();
+        if(!client || !currentPropertyId) return false;
+        const authUser=await getSupabaseSessionUser();
+        if(!authUser) return false;
+        const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+        if(!cloudPropertyId) return false;
+
+        const localReservations=readArray(STORAGE.reservations).filter(r=>{
+            const pid=String(r.propertyId||currentPropertyId||"");
+            return pid===String(currentPropertyId) || !r.propertyId;
+        });
+        if(!localReservations.length) return false;
+
+        const now=new Date().toISOString();
+        const rows=localReservations.map(r=>({
+            id:String(r.id),
+            property_id:String(cloudPropertyId),
+            booking_no:String(r.bookingNo||""),
+            reservation_data:{...r,propertyId:String(currentPropertyId)},
+            status:String(r.status||"Reserved"),
+            active:!['cancelled','checked-out','no-show'].includes(String(r.status||"").toLowerCase()),
+            updated_at:now
+        }));
+
+        const {error}=await client.from("reservations").upsert(rows,{onConflict:"id"});
+        if(error) throw error;
+        setSupabaseCloudMessage("Existing reservations synced to Supabase successfully.","success");
+        return true;
+    }catch(err){
+        console.warn("Supabase reservation backfill skipped:",err);
+        setSupabaseCloudMessage("Existing reservations remain local; cloud sync failed: "+(err?.message||err),"error");
+        return false;
+    }
+}
+
 async function hydrateSupabaseReservations(){
     try{
         const client=initSupabaseClient();
@@ -15769,29 +16050,22 @@ async function hydrateSupabaseReservations(){
             .eq("property_id",cloudPropertyId);
         if(error) throw error;
         const cloudRows=data||[];
-        const cloudIds=new Set(cloudRows.map(r=>String(r.id)));
-        const localOtherProperties=readArray(STORAGE.reservations).filter(r=>String(r.propertyId||"")!==String(currentPropertyId));
-        const localCurrent=reservations||[];
+        // Never erase working local reservations when the cloud property has no
+        // rows yet. An empty cloud result can mean initial migration is pending.
+        // Once cloud rows exist, they become the source of truth for this property.
+        if(!cloudRows.length){
+            setSupabaseCloudMessage("No cloud reservations found for this property; local reservations were preserved.","info");
+            renderAll();
+            return true;
+        }
         const cloudReservations=cloudRows.map(r=>({
             ...(r.reservation_data||{}),
             id:String(r.id),
-            propertyId:r.reservation_data?.propertyId||String(currentPropertyId),
+            propertyId:String(currentPropertyId),
             bookingNo:r.booking_no||r.reservation_data?.bookingNo||"",
             status:r.status||r.reservation_data?.status||"Reserved"
         }));
-        const localById=new Map(localCurrent.map(r=>[String(r.id),r]));
-        const merged=cloudReservations.map(r=>{
-            const local=localById.get(String(r.id));
-            return local && local.updatedAt && r.updatedAt && new Date(local.updatedAt)>new Date(r.updatedAt)
-                ? local
-                : r;
-        });
-        // Keep local reservations that have not yet reached cloud, so a temporary
-        // cloud outage never removes local work. Cloud rows replace matching IDs.
-        localCurrent.forEach(r=>{
-            if(!cloudIds.has(String(r.id))) merged.push(r);
-        });
-        reservations=merged;
+        reservations=cloudReservations;
         saveData();
         renderAll();
         setSupabaseCloudMessage("Cloud reservations refreshed successfully.","success");
@@ -15824,11 +16098,14 @@ async function syncCurrentPropertyRoomsToSupabase(){
         const authUser=await getSupabaseSessionUser();
         if(!authUser) return false;
 
+        const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+        if(!cloudPropertyId) return false;
+
         const now=new Date().toISOString();
         const rooms=settings.rooms.map(room=>({
-            property_id:String(currentPropertyId),
+            property_id:String(cloudPropertyId),
             room_id:String(room.id),
-            room_data:{...room,propertyId:String(currentPropertyId)},
+            room_data:{...room,propertyId:String(cloudPropertyId)},
             active:room.active!==false,
             housekeeping_status:String(room.housekeepingStatus||"clean"),
             updated_at:now
@@ -15843,7 +16120,7 @@ async function syncCurrentPropertyRoomsToSupabase(){
         const keepIds=rooms.map(r=>r.room_id);
         const {data:existing,error:readError}=await client.from("property_rooms")
             .select("room_id")
-            .eq("property_id",String(currentPropertyId));
+            .eq("property_id",String(cloudPropertyId));
         if(readError) throw readError;
 
         const stale=(existing||[])
@@ -15852,7 +16129,7 @@ async function syncCurrentPropertyRoomsToSupabase(){
         if(stale.length){
             const {error:deleteError}=await client.from("property_rooms")
                 .delete()
-                .eq("property_id",String(currentPropertyId))
+                .eq("property_id",String(cloudPropertyId))
                 .in("room_id",stale);
             if(deleteError) throw deleteError;
         }
@@ -15872,9 +16149,12 @@ async function hydrateSupabaseRooms(){
         const authUser=await getSupabaseSessionUser();
         if(!authUser) return false;
 
+        const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+        if(!cloudPropertyId) return false;
+
         const {data,error}=await client.from("property_rooms")
             .select("property_id,room_id,room_data,active,housekeeping_status,updated_at")
-            .eq("property_id",String(currentPropertyId));
+            .eq("property_id",String(cloudPropertyId));
         if(error) throw error;
 
         const rows=data||[];
@@ -15885,42 +16165,24 @@ async function hydrateSupabaseRooms(){
             return true;
         }
 
-        const cloudById=new Map(rows.map(r=>[String(r.room_id),r]));
-        const localRooms=Array.isArray(settings?.rooms)?settings.rooms:[];
-        const merged=localRooms.map(local=>{
-            const cloud=cloudById.get(String(local.id));
-            if(!cloud) return local;
+        // Cloud is authoritative once this property has cloud room records.
+        // This prevents each browser's localStorage room list from leaking into
+        // another device and guarantees the same room set for the property.
+        const merged=rows.map(cloud=>{
+            const rd=cloud.room_data||{};
             return {
-                ...(cloud.room_data||local),
-                id:cloud.room_data?.id ?? local.id,
-                name:cloud.room_data?.name || local.name,
-                type:cloud.room_data?.type || local.type || "Guest Room",
-                rate:Number(cloud.room_data?.rate ?? local.rate ?? settings?.roomRate ?? 0),
+                ...rd,
+                id:rd.id ?? cloud.room_id,
+                name:rd.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
+                type:rd.type || "Guest Room",
+                rate:Number(rd.rate ?? settings?.roomRate ?? 0),
                 active:cloud.active!==false,
-                housekeepingStatus:["clean","dirty","inspected","oos"].includes(String(cloud.housekeeping_status||cloud.room_data?.housekeepingStatus||"clean"))
-                    ? String(cloud.housekeeping_status||cloud.room_data?.housekeepingStatus||"clean")
+                housekeepingStatus:["clean","dirty","inspected","oos"].includes(String(cloud.housekeeping_status||rd.housekeepingStatus||"clean"))
+                    ? String(cloud.housekeeping_status||rd.housekeepingStatus||"clean")
                     : "clean",
-                maintenanceNote:cloud.room_data?.maintenanceNote||"",
-                oosReason:cloud.room_data?.oosReason||""
+                maintenanceNote:rd.maintenanceNote||"",
+                oosReason:rd.oosReason||""
             };
-        });
-
-        // Preserve any cloud rooms that are not yet present locally.
-        rows.forEach(cloud=>{
-            if(!merged.some(r=>String(r.id)===String(cloud.room_id))){
-                const rd=cloud.room_data||{};
-                merged.push({
-                    ...rd,
-                    id:rd.id ?? cloud.room_id,
-                    name:rd.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
-                    type:rd.type || "Guest Room",
-                    rate:Number(rd.rate ?? settings?.roomRate ?? 0),
-                    active:cloud.active!==false,
-                    housekeepingStatus:["clean","dirty","inspected","oos"].includes(String(cloud.housekeeping_status||"clean")) ? String(cloud.housekeeping_status||"clean") : "clean",
-                    maintenanceNote:rd.maintenanceNote||"",
-                    oosReason:rd.oosReason||""
-                });
-            }
         });
 
         settings.rooms=merged;
@@ -16012,6 +16274,13 @@ window.storesCloudRefreshClick = async function(btn){
     if(btn){ btn.disabled = false; btn.innerHTML = original; }
   }
 };
+</script>
+<script>
+/* v2.1.112 — Supabase password recovery bootstrap */
+(function(){
+  const boot=()=>{setTimeout(()=>{try{handleSupabaseRecoverySession();}catch(e){console.warn("Recovery bootstrap failed:",e);}},300);};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
 </script>
 </body></html>
 
