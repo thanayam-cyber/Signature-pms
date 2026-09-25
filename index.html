@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.149 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.150 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9962,20 +9962,28 @@ function closeCashierDay(){
         }
         return;
     }
-    // A business date can only be closed after every cashier shift for that
-    // property/date has been closed. This prevents one cashier from closing
-    // the day while another cashier is still working.
-    const otherOpen=otherOpenCashierShifts();
-    if(otherOpen.length){
-        alert('The business date cannot be closed while another cashier shift is open: '+otherOpen.map(x=>x.cashier||'another cashier').join(', ')+'. Close those cashier shifts first.');
-        return;
-    }
+    // Each cashier must be able to close their own shift independently.
+    // The final business-day close is blocked separately while any other
+    // cashier remains open. Do not let another cashier's shift prevent this
+    // cashier from completing their own cash reconciliation.
     const actualEl=cashierActualEl(); if(!actualEl||actualEl.value===''){alert('Enter the actual cash counted before closing.');return;}
     if(cashierClosingForBusinessDate()){alert('The cashier day is already closed for '+formatDate(cashierBusinessDate())+'.');return;}
     const result=calculateCashierVariance(); const d=cashierBusinessDate();
-    const record={id:'CC_'+Date.now(),propertyId:currentPropertyId,date:d,closedAt:localDateTime(),closedBy:currentUser?.username||'Cashier',openingFloat:Number(sh.openingFloat||0),cashReceived:paymentSummary(getTodayCashierPayments()).cash,cashRefunds:paymentSummary(getTodayCashierPayments()).cashRefunds,expectedCash:result.expected,actualCash:result.actual,variance:result.variance};
+    const now=localDateTime();
+    const rows=cashierShiftRows();
+    const updatedRows=rows.map(x=>x.id===sh.id?({...x,status:'Closed',closedAt:now}):x);
+    saveCashierShiftRows(updatedRows);
+    const remaining=updatedRows.filter(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.businessDate||'')===String(d)&&String(x.status||'').toLowerCase()==='open');
+    if(remaining.length){
+        logAudit('CASHIER_SHIFT_CLOSED','CS_'+sh.id,'Cashier shift closed. Expected '+result.expected+', actual '+result.actual+', variance '+result.variance,currentPropertyId);
+        cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender();
+        alert('Cashier shift closed successfully. Variance: '+money(result.variance)+'\n\nOther cashier shift(s) remain open: '+remaining.map(x=>x.cashier||'another cashier').join(', ')+'. The business date remains open.');
+        return;
+    }
+    // This was the last open shift, so now the cashier day can be closed.
+    const record={id:'CC_'+Date.now(),propertyId:currentPropertyId,date:d,closedAt:now,closedBy:currentUser?.username||'Cashier',openingFloat:Number(sh.openingFloat||0),cashReceived:paymentSummary(getTodayCashierPayments()).cash,cashRefunds:paymentSummary(getTodayCashierPayments()).cashRefunds,expectedCash:result.expected,actualCash:result.actual,variance:result.variance};
     const closings=readArray(STORAGE.cashierClosings); closings.push(record); localStorage.setItem(STORAGE.cashierClosings,JSON.stringify(closings));
-    const rows=cashierShiftRows().map(x=>x.id===sh.id?({...x,status:'Closed',closedAt:record.closedAt,closingId:record.id}):x); saveCashierShiftRows(rows);
+    const finalRows=updatedRows.map(x=>x.id===sh.id?({...x,closingId:record.id}):x); saveCashierShiftRows(finalRows);
     logAudit('CASHIER_DAY_CLOSED','CC_'+d,'Cashier closing. Expected '+result.expected+', actual '+result.actual+', variance '+result.variance,currentPropertyId);
     cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender(); alert('Cashier day closed successfully. Variance: '+money(result.variance));
 }
