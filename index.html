@@ -5296,6 +5296,11 @@ function saveRoomConfiguration(){
     renderAll();
     setTimeout(renderRoomConfiguration,0);
     logAudit("ROOM_CONFIGURATION_UPDATED",p.id,"Room / unit configuration updated",p.id);
+    if(typeof syncCurrentPropertyRoomsToSupabase==="function"){
+        syncCurrentPropertyRoomsToSupabase().then(ok=>{
+            if(!ok) console.warn("Room configuration saved locally but cloud room sync did not complete.");
+        }).catch(err=>console.warn("Room configuration cloud sync skipped:",err));
+    }
     alert("Room / unit configuration saved successfully.");
 }
 
@@ -6153,7 +6158,7 @@ function openReservationModal(roomId=null,startDate=null,reservationId=null){
         document.getElementById("bookingType").value=existing.bookingType || "room";
         updateReservationForm();
         document.getElementById("guestType").value=existing.guestType || "foreign";
-        document.getElementById("roomSelect").value=existing.roomId ?? "";
+        document.getElementById("roomSelect").value=existing.roomId != null ? String(existing.roomId) : "";
         document.getElementById("checkIn").value=existing.checkIn || localDateString();
         document.getElementById("checkOut").value=existing.checkOut || localDateString();
     }else{
@@ -6193,7 +6198,7 @@ function updateReservationForm(){
     if(roomSelect){
         const currentRoom=roomSelect.value;
         roomSelect.innerHTML=(settings?.rooms||[]).filter(r=>r.active!==false).map(r=>
-            `<option value="${Number(r.id)}">${escapeHtml(r.name||("Room "+String(r.id).padStart(2,"0")))}</option>`
+            `<option value="${escapeHtml(String(r.id))}">${escapeHtml(r.name||("Room "+String(r.id).padStart(2,"0")))}</option>`
         ).join("");
         if(currentRoom && [...roomSelect.options].some(o=>o.value===currentRoom)) roomSelect.value=currentRoom;
     }
@@ -6291,7 +6296,7 @@ function saveReservation(){
     const selectedGuestId=document.getElementById("reservationGuestProfile")?.value || "";
     const bookingType=document.getElementById("bookingType").value;
     const guestType=document.getElementById("guestType").value;
-    const roomId=Number(document.getElementById("roomSelect").value);
+    const roomId=String(document.getElementById("roomSelect").value||"").trim();
     const checkIn=document.getElementById("checkIn").value;
     const checkOut=document.getElementById("checkOut").value;
     const adults=Math.max(1,Number(document.getElementById("adults").value||1));
