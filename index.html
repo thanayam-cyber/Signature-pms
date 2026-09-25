@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.0 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.139 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9683,18 +9683,20 @@ function getTodayCashierPayments(){
     if(String(p.propertyId||currentPropertyId)!==String(currentPropertyId)) return false;
     const bd=String(p.businessDate||'').slice(0,10);
     const pd=String(paymentDateOnly(p)||'');
-    /* Primary rule: business date controls cashier-day membership. */
+
+    /* Refunds are cashier movements on the day they are actually posted.
+       This is important when a guest is refunded today for a payment made on
+       an earlier business date: the refund must appear in today's cashier
+       reconciliation rather than disappearing into the original sale day. */
+    if(paymentIsRefund(p)){
+      return pd===d || bd===d;
+    }
+
+    /* Normal settled/pending payment membership is controlled by businessDate. */
     if(bd===d) return true;
+
     /* Legacy records without a businessDate fall back to transaction date. */
     if(!bd&&pd===d) return true;
-    /* A refund belongs with the cashier day of its original payment when the
-       refund was posted later, while still requiring the same property. */
-    if(paymentIsRefund(p)){
-      const original=(payments||[]).find(x=>String(x.id||'')===String(p.refundOf||''));
-      const originalBd=String(original?.businessDate||'').slice(0,10);
-      const originalPd=String(paymentDateOnly(original)||'');
-      return originalBd===d || (!originalBd&&originalPd===d);
-    }
     return false;
   });
 }
