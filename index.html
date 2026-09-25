@@ -5298,10 +5298,16 @@ function saveRoomConfiguration(){
     logAudit("ROOM_CONFIGURATION_UPDATED",p.id,"Room / unit configuration updated",p.id);
     if(typeof syncCurrentPropertyRoomsToSupabase==="function"){
         syncCurrentPropertyRoomsToSupabase().then(ok=>{
-            if(!ok) console.warn("Room configuration saved locally but cloud room sync did not complete.");
-        }).catch(err=>console.warn("Room configuration cloud sync skipped:",err));
+            if(!ok){
+                console.warn("Room configuration saved locally but cloud room sync did not complete.");
+                setSupabaseCloudMessage("Room configuration saved locally, but the cloud room configuration could not be updated. Check Supabase property_rooms permissions.","error");
+            }
+        }).catch(err=>{
+            console.warn("Room configuration cloud sync skipped:",err);
+            setSupabaseCloudMessage("Room configuration saved locally, but cloud sync failed: "+(err?.message||err),"error");
+        });
     }
-    alert("Room / unit configuration saved successfully.");
+    alert("Room / unit configuration saved successfully. Individual room rates were preserved.");
 }
 
 function editProperty(id){
@@ -5982,7 +5988,13 @@ function saveSettings(){
             .value||0
         );
 
-    settings.rooms=(settings.rooms||[]).map(r=>({...r,rate:Number(settings.roomRate||0)}));
+    // IMPORTANT: Do not overwrite individually configured room rates when
+    // saving general property settings. The global roomRate is only a
+    // fallback/default; each room may have its own configured rate.
+    settings.rooms=(settings.rooms||[]).map(r=>({
+        ...r,
+        rate:Number.isFinite(Number(r?.rate)) ? Math.max(0,Number(r.rate)) : Math.max(0,Number(settings.roomRate||0))
+    }));
     settings.rateMatrix=normalizeRateMatrix(settings.rateMatrix);
 
     saveData();
