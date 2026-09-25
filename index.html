@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.148 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.149 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9820,7 +9820,17 @@ function currentCashierShift(){
         return xp===prop && xd===bd && String(x.status||'').toLowerCase()==='open' && xc===user;
     }) || null;
 }
-function anyCashierShift(){return cashierShiftRows().find(x=>x.propertyId===currentPropertyId&&x.businessDate===cashierBusinessDate()&&x.status==='Open');}
+function anyCashierShift(){
+    const bd=String(cashierBusinessDate()||'');
+    const prop=String(currentPropertyId||'');
+    return cashierShiftRows().find(x=>String(x.propertyId??'')===prop && String(x.businessDate||'')===bd && String(x.status||'').toLowerCase()==='open') || null;
+}
+function otherOpenCashierShifts(){
+    const bd=String(cashierBusinessDate()||'');
+    const prop=String(currentPropertyId||'');
+    const user=String(currentUser?.username||'Cashier').trim().toLowerCase();
+    return cashierShiftRows().filter(x=>String(x.propertyId??'')===prop && String(x.businessDate||'')===bd && String(x.status||'').toLowerCase()==='open' && String(x.cashier||'').trim().toLowerCase()!==user);
+}
 function cashierClosingForBusinessDate(){
     const bd=String(cashierBusinessDate()||'');
     return readArray(STORAGE.cashierClosings).find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.date||'')===bd)||null;
@@ -9831,7 +9841,11 @@ function openCashierShift(){
     const closed=cashierClosingForBusinessDate();
     if(closed){alert('The cashier day is already closed for '+formatDate(bd)+'. A new cashier shift can only be opened for the next business date.');return;}
     const rows=cashierShiftRows();
-    const openForDate=rows.find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.businessDate||'')===bd&&String(x.status||'Open')==='Open');
+    const cashier=String(currentUser?.username||'Cashier').trim().toLowerCase();
+    // Each cashier may have one open shift for the business date. A different
+    // cashier's open shift must not make this user's shift appear open or block
+    // this user from opening their own shift.
+    const openForDate=rows.find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.businessDate||'')===bd&&String(x.status||'').toLowerCase()==='open'&&String(x.cashier||'').trim().toLowerCase()===cashier);
     const f=Number(document.getElementById('csOpeningFloat')?.value||document.getElementById('cashierOpeningFloat')?.value||0);
     if(openForDate){
         if(!Number.isFinite(f)||f<0){alert('Opening float cannot be negative.');return;}
@@ -9848,7 +9862,6 @@ function openCashierShift(){
         alert('A cashier shift is already open for '+formatDate(bd)+'.');return;
     }
     if(!Number.isFinite(f)||f<0){alert('Opening float cannot be negative.');return;}
-    const cashier=currentUser?.username||'Cashier';
     rows.push({id:'CS_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,businessDate:bd,cashier,openingFloat:f,openedAt:localDateTime(),status:'Open'});
     saveCashierShiftRows(rows);
     document.getElementById('cashierOpeningFloat') && (document.getElementById('cashierOpeningFloat').value=f);
@@ -9943,10 +9956,18 @@ function closeCashierDay(){
     if(!sh){
         const other=anyCashierShift();
         if(other){
-            alert('A cashier shift is already open for '+formatDate(cashierBusinessDate())+' under '+(other.cashier||'another cashier')+'. Close it using that cashier account.');
+            alert('No open cashier shift was found for '+(currentUser?.username||'this cashier')+'. An open shift exists under '+(other.cashier||'another cashier')+'. Open your own cashier shift first.');
         }else{
             alert('Open a cashier shift before closing the cashier day.');
         }
+        return;
+    }
+    // A business date can only be closed after every cashier shift for that
+    // property/date has been closed. This prevents one cashier from closing
+    // the day while another cashier is still working.
+    const otherOpen=otherOpenCashierShifts();
+    if(otherOpen.length){
+        alert('The business date cannot be closed while another cashier shift is open: '+otherOpen.map(x=>x.cashier||'another cashier').join(', ')+'. Close those cashier shifts first.');
         return;
     }
     const actualEl=cashierActualEl(); if(!actualEl||actualEl.value===''){alert('Enter the actual cash counted before closing.');return;}
@@ -9984,7 +10005,7 @@ window.reopenCashierDay=reopenCashierDay;
 function cashierShiftRefresh(){
     const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=paymentSummary(list),sh=currentCashierShift(),cl=cashierClosingForBusinessDate();
     const expected=Number((sh||cl)?.openingFloat||0)+sum.cash-sum.cashRefunds; const actualInput=cashierActualEl(); const rawActual=actualInput?String(actualInput.value??'').trim():''; const hasActual=rawActual!==''&&Number.isFinite(Number(rawActual)); const actual=cl ? Number(cl.actualCash||0) : (sh&&hasActual ? Number(rawActual) : 0); const variance=cl ? Number(cl.variance||0) : (sh&&hasActual ? actual-expected : 0);
-    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v}; set('csBusinessDate',formatDate(d));set('csCashier',currentUser?.username||'Cashier');set('csCashierName',currentUser?.username||'Cashier');set('csShiftStatus',cl?'Closed':(sh?'Open':(anyCashierShift()?'Open':'Not Open')));set('csVarianceTop',money(variance));
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v}; set('csBusinessDate',formatDate(d));set('csCashier',currentUser?.username||'Cashier');set('csCashierName',currentUser?.username||'Cashier');set('csShiftStatus',cl?'Closed':(sh?'Open':(anyCashierShift()?'Another Cashier Open':'Not Open')));set('csVarianceTop',money(variance));
     set('csGross',money(sum.gross));set('csCash',money(sum.cash));set('csCard',money(sum.card));set('csBank',money(sum.bank));set('csRefunds',money(sum.refunds));set('csNet',money(sum.net));
     const of=document.getElementById('csOpeningFloat');if(of)of.value=String(Number((sh||cl)?.openingFloat||0));
     const legacyOf=document.getElementById('cashierOpeningFloat');if(legacyOf)legacyOf.value=String(Number((sh||cl)?.openingFloat||0));
