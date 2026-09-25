@@ -2652,13 +2652,12 @@ function saveData(){
             properties[index]={...properties[index],...settings};
             saveProperties();
         }
-        // Room configuration / housekeeping state is mirrored to Supabase
-        // when a cloud session is available. Local PMS data remains primary
-        // if the cloud is temporarily unavailable.
-        try{
-            if(typeof syncCurrentPropertyRoomsToSupabase==='function')
-                syncCurrentPropertyRoomsToSupabase();
-        }catch(e){ console.warn("Room cloud sync skipped:",e); }
+        // v2.1.134: Do not automatically upsert property_rooms from every saveData().
+        // property_rooms is currently cloud-authoritative/read-only for normal
+        // browser saves, and its RLS policy intentionally rejects these writes.
+        // This prevents repeated 403 noise during reservation/POS realtime refreshes.
+        // Room configuration changes can be given a dedicated, policy-aware
+        // cloud save flow later without affecting normal transactional saves.
     }
 }
 
@@ -16252,9 +16251,11 @@ async function hydrateSupabaseRooms(){
 
         const rows=data||[];
         if(!rows.length){
-            // First cloud hydration for this property: publish the existing
-            // local room configuration rather than replacing it with nothing.
-            await syncCurrentPropertyRoomsToSupabase();
+            // v2.1.134: Never attempt an automatic client-side upsert here.
+            // If the cloud room set is empty, leave the local room configuration
+            // intact; a dedicated room-setup save flow can publish it later with
+            // the correct RLS policy.
+            console.warn("Supabase rooms: cloud room set is empty; keeping local rooms without client upsert.");
             return true;
         }
 
