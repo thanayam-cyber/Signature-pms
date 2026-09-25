@@ -9637,10 +9637,39 @@ function normalizeBusinessDateOnLoad(){
       String(x.date||'').slice(0,10)===current
     );
     if(!hasOpen&&!hasClosed){
+      /*
+        The demo/test property may have accumulated transactions today while the
+        stored PMS business date was stale. Those transactions belong to today's
+        operational day even though their old businessDate was the stale date.
+        Re-date only records whose transaction timestamp is TODAY; historical
+        records remain on their original business date. This keeps Night Audit
+        history intact while preventing today's cashier screen from losing today's
+        payments/refunds after business-date recovery.
+      */
+      const sameProperty=x=>String(x?.propertyId||currentPropertyId)===String(currentPropertyId);
+      const txDate=x=>paymentDateOnly(x)||String(x?.dateTime||x?.date||'').slice(0,10);
+      let migratedPayments=0;
+      if(Array.isArray(payments)){
+        payments.forEach(p=>{
+          if(sameProperty(p)&&txDate(p)===today&&String(p.businessDate||'').slice(0,10)===current){
+            p.businessDate=today;
+            migratedPayments++;
+          }
+        });
+      }
+      if(Array.isArray(sales)){
+        sales.forEach(s=>{
+          if(sameProperty(s)){
+            const sd=String(s.dateTime||s.date||'').slice(0,10);
+            if(sd===today&&String(s.businessDate||'').slice(0,10)===current)s.businessDate=today;
+          }
+        });
+      }
+      if(migratedPayments&&typeof saveData==='function')saveData();
       settings.businessDate=today;
       const idx=properties.findIndex(p=>String(p.id)===String(currentPropertyId));
       if(idx>=0){properties[idx]={...properties[idx],businessDate:today};saveProperties();}
-      console.info('Signature PMS: stale business date auto-recovered from',current,'to',today);
+      console.info('Signature PMS: stale business date auto-recovered from',current,'to',today,'and migrated today transactions:',migratedPayments);
     }
   }catch(e){console.warn('Business date recovery skipped:',e);}
 }
@@ -9654,18 +9683,17 @@ function getTodayCashierPayments(){
     if(String(p.propertyId||currentPropertyId)!==String(currentPropertyId)) return false;
     const bd=String(p.businessDate||'').slice(0,10);
     const pd=String(paymentDateOnly(p)||'');
+    /* Primary rule: business date controls cashier-day membership. */
     if(bd===d) return true;
+    /* Legacy records without a businessDate fall back to transaction date. */
     if(!bd&&pd===d) return true;
-    /*
-      Refunds created during an invoice void can carry the original sale's
-      business date while their transaction timestamp is later. If the refund
-      links to a payment in this cashier day, include it in the same day so
-      Cash Refunds and Expected Cash reconcile correctly.
-    */
+    /* A refund belongs with the cashier day of its original payment when the
+       refund was posted later, while still requiring the same property. */
     if(paymentIsRefund(p)){
       const original=(payments||[]).find(x=>String(x.id||'')===String(p.refundOf||''));
       const originalBd=String(original?.businessDate||'').slice(0,10);
-      return originalBd===d;
+      const originalPd=String(paymentDateOnly(original)||'');
+      return originalBd===d || (!originalBd&&originalPd===d);
     }
     return false;
   });
