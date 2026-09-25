@@ -3288,6 +3288,12 @@ async function loginWithCloudUsername(username,password){
     try{ await hydrateSupabaseRooms(); }catch(err){
         console.warn("Cloud rooms hydration failed after successful login:",err);
     }
+    /* v2.1.126: final authoritative room read after all Admin cloud-context
+       refreshes. Prevents the Admin browser's old local room list from
+       surviving the login sequence when property_rooms has the shared set. */
+    try{ await forceHydrateSupabaseRooms(); }catch(err){
+        console.warn("Final cloud rooms hydration failed after successful login:",err);
+    }
     supabaseCloudReady=true;
     return true;
 }
@@ -15798,6 +15804,7 @@ async function hydrateCloudAfterLocalLogin(username,password){
         applyCloudContext(ctx);
         await hydrateSupabaseReservations();
         await hydrateSupabaseRooms();
+        await forceHydrateSupabaseRooms();
         supabaseCloudReady=true;
         return true;
     }catch(err){
@@ -16138,6 +16145,54 @@ async function syncCurrentPropertyRoomsToSupabase(){
         return true;
     }catch(err){
         console.warn("Supabase room sync skipped:",err);
+        return false;
+    }
+}
+
+async function forceHydrateSupabaseRooms(){
+    /* v2.1.126: after cloud property/user refresh, force the shared
+       property_rooms dataset to replace any stale browser-local room list.
+       This is intentionally read-only: it never inserts, updates, or deletes
+       property_rooms rows. */
+    try{
+        const client=initSupabaseClient();
+        if(!client || !currentPropertyId) return false;
+        const authUser=await getSupabaseSessionUser();
+        if(!authUser) return false;
+        const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+        if(!cloudPropertyId) return false;
+        const {data,error}=await client.from("property_rooms")
+            .select("property_id,room_id,room_data,active,housekeeping_status,updated_at")
+            .eq("property_id",String(cloudPropertyId));
+        if(error) throw error;
+        const rows=data||[];
+        if(!rows.length) return false;
+        const merged=rows.map(cloud=>{
+            const rd=cloud.room_data||{};
+            return {
+                ...rd,
+                id:rd.id ?? cloud.room_id,
+                name:rd.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
+                type:rd.type || "Guest Room",
+                rate:Number(rd.rate ?? settings?.roomRate ?? 0),
+                active:cloud.active!==false,
+                housekeepingStatus:["clean","dirty","inspected","oos"].includes(String(cloud.housekeeping_status||rd.housekeepingStatus||"clean"))
+                    ? String(cloud.housekeeping_status||rd.housekeepingStatus||"clean")
+                    : "clean",
+                maintenanceNote:rd.maintenanceNote||"",
+                oosReason:rd.oosReason||""
+            };
+        });
+        settings.rooms=merged;
+        const index=properties.findIndex(p=>String(p.id)===String(currentPropertyId));
+        if(index>=0){
+            properties[index]={...properties[index],rooms:JSON.parse(JSON.stringify(merged))};
+            saveProperties();
+        }
+        renderAll();
+        return true;
+    }catch(err){
+        console.warn("Forced cloud room hydration skipped:",err);
         return false;
     }
 }
