@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.147 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.148 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9809,7 +9809,17 @@ function getTodayCashierPayments(){
 }
 function cashierShiftRows(){try{return readArray('signature_pms_cashier_shifts_v184')}catch(e){return []}}
 function saveCashierShiftRows(a){localStorage.setItem('signature_pms_cashier_shifts_v184',JSON.stringify(a));}
-function currentCashierShift(){return cashierShiftRows().find(x=>x.propertyId===currentPropertyId&&x.businessDate===cashierBusinessDate()&&x.status==='Open'&&x.cashier===(currentUser?.username||'Cashier'));}
+function currentCashierShift(){
+    const bd=String(cashierBusinessDate()||'');
+    const prop=String(currentPropertyId||'');
+    const user=String(currentUser?.username||'Cashier').trim().toLowerCase();
+    return cashierShiftRows().find(x=>{
+        const xp=String(x.propertyId??'');
+        const xd=String(x.businessDate||'');
+        const xc=String(x.cashier||'').trim().toLowerCase();
+        return xp===prop && xd===bd && String(x.status||'').toLowerCase()==='open' && xc===user;
+    }) || null;
+}
 function anyCashierShift(){return cashierShiftRows().find(x=>x.propertyId===currentPropertyId&&x.businessDate===cashierBusinessDate()&&x.status==='Open');}
 function cashierClosingForBusinessDate(){
     const bd=String(cashierBusinessDate()||'');
@@ -9920,7 +9930,25 @@ window.calculateCashierVariance=calculateCashierVariance;
 function closeCashierDay(){
     if(!requireActionPermission('cashier.shift_openclose'))return;
     if(!requireActionPermission('cashier.reconcile'))return;
-    const sh=currentCashierShift(); if(!sh){alert('Open a cashier shift before closing the cashier day.');return;}
+    let sh=currentCashierShift();
+    /* Re-read the persisted shift directly before closing. This prevents a
+       stale UI/user object from reporting 'no shift' when the open shift is
+       already stored for the current property/date/cashier. */
+    if(!sh){
+        const bd=String(cashierBusinessDate()||'');
+        const prop=String(currentPropertyId||'');
+        const user=String(currentUser?.username||'Cashier').trim().toLowerCase();
+        sh=cashierShiftRows().find(x=>String(x.propertyId??'')===prop && String(x.businessDate||'')===bd && String(x.status||'').toLowerCase()==='open' && String(x.cashier||'').trim().toLowerCase()===user) || null;
+    }
+    if(!sh){
+        const other=anyCashierShift();
+        if(other){
+            alert('A cashier shift is already open for '+formatDate(cashierBusinessDate())+' under '+(other.cashier||'another cashier')+'. Close it using that cashier account.');
+        }else{
+            alert('Open a cashier shift before closing the cashier day.');
+        }
+        return;
+    }
     const actualEl=cashierActualEl(); if(!actualEl||actualEl.value===''){alert('Enter the actual cash counted before closing.');return;}
     if(cashierClosingForBusinessDate()){alert('The cashier day is already closed for '+formatDate(cashierBusinessDate())+'.');return;}
     const result=calculateCashierVariance(); const d=cashierBusinessDate();
