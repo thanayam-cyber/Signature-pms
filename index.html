@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.143 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.144 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -1930,7 +1930,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section-header" style="margin-bottom:10px"><div><strong>Individual User Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Click the modules this user can access. These rights override the role template.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(true)" type="button">Select All</button><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(false)" type="button">Clear All</button></div></div>
 <div id="userPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
 </div>
-<div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Module Action Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Expand Reservations, Purchasing, or HR &amp; Payroll to assign individual action rights.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(true)" type="button">Select All Actions</button><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(false)" type="button">Clear Actions</button></div></div><div id="userActionPermissionsGrid"></div></div>
+<div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Module Action Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Expand Reservations, Restaurant POS, Cashier, Purchasing, or HR &amp; Payroll to assign individual action rights.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(true)" type="button">Select All Actions</button><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(false)" type="button">Clear Actions</button></div></div><div id="userActionPermissionsGrid"></div></div>
 <div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Report Access</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Select exactly which reports this user can view or print.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(true)" type="button">Select All Reports</button><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(false)" type="button">Clear Reports</button></div></div><div id="userReportPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
 </div>
 <div class="user-error" id="userError"></div>
@@ -2287,7 +2287,7 @@ const ACTION_PERMISSION_GROUPS={
   ["pos.menu","Create menus, pricing, tax/service charges"],["pos.kot","Issue KOT/BOT"],["pos.room_post","Post outlet bills to room folios"],["pos.settlement","Cash/card/QR/city ledger settlements"],["pos.void","Void orders / cancel printed items"],["pos.discount","Apply POS discounts"],["pos.split_table","Split tables"],["pos.shift_summary","Shift-end sales summaries"],["pos.shift_openclose","Open/close cashier shifts and floats"]
  ],
  "Cashiering":[
-  ["cashier.petty_cash","Petty cash expenses / payouts"],["cashier.reconcile","Physical cash reconciliation / variance"]
+  ["cashier.shift_openclose","Open / close cashier shift and cashier day"],["cashier.reconcile","Cash count / physical cash reconciliation / variance"],["cashier.petty_cash","Petty cash expenses / payouts"]
  ],
  "Accounting / Finance":[
   ["accounting.coa","Chart of Accounts / GL"],["accounting.reports","Trial Balance / P&L / financial reports"],["accounting.ap","Supplier invoices / AP / bank reconciliation"],["purchasing.request_po","Purchase Requests / PO"],["purchasing.grn","GRN"],["inventory.adjust","Stock counts / inventory adjustments / recipe costing"]
@@ -2306,7 +2306,7 @@ const ROLE_ACTION_DEFAULTS={
  "Manager":["reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.room_override","reservations.rate_override","reservations.discount","folios.split","folios.merge","folios.transfer","folios.close","folios.manual_charge","payments.deposit","payments.refund","reservations.view_guests","nightaudit.run","housekeeping.room_status","housekeeping.oos","maintenance.manage","pos.use","pos.room_post","pos.settlement","pos.void","pos.discount","cashier.petty_cash","cashier.reconcile","accounting.reports","purchasing.request_po","purchasing.grn","inventory.adjust","hr.approve","security.audit"],
  "Front Office":["reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.view_guests","folios.manual_charge","payments.deposit"],
  "Housekeeping":["housekeeping.room_status","housekeeping.oos","housekeeping.roster","housekeeping.minibar","housekeeping.lost_found","maintenance.manage"],
- "Cashier":["payments.deposit","payments.refund","cashier.petty_cash","cashier.reconcile","pos.settlement","pos.room_post"],
+ "Cashier":["payments.deposit","payments.refund","cashier.shift_openclose","cashier.reconcile","cashier.petty_cash","pos.settlement","pos.room_post"],
  "Department Supervisor":["hr.clock","hr.self_attendance","hr.roster","hr.attendance_override"],
  "Viewer":[]
 };
@@ -3863,6 +3863,7 @@ const USER_MODULE_ACTION_GROUPS={
     ["purchasing.po","Purchase Order"],["purchasing.ap","Supplier Payment"],["purchasing.grn","GRN"],
     ["purchasing.suppliers","Suppliers"],["purchasing.articles","Articles"],["purchasing.request","Purchase Request"],["purchasing.refresh","Refresh"]
   ]},
+  cashier:{title:"Cashier Shift & Daily Closing Action Rights",items:ACTION_PERMISSION_GROUPS["Cashiering"]||[]},
   hr:{title:"HR & Payroll Action Rights",items:[
     ["hr.employee","Employee"],["hr.attendance","Attendance"],["hr.leave","Leave"],["hr.overtime","Overtime"],
     ["hr.calculate_payroll","Calculate Payroll"],["hr.approve_payroll","Approve Payroll"],["hr.post_payroll","Post to Accounting"],["hr.payroll_payment","Pay Payroll"],["hr.roster_update","Roster Update"],["hr.refresh","Refresh"]
@@ -9814,7 +9815,7 @@ function cashierClosingForBusinessDate(){
     return readArray(STORAGE.cashierClosings).find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.date||'')===bd)||null;
 }
 function openCashierShift(){
-    if(!requireRole('Admin','Manager','Cashier'))return;
+    if(!requireActionPermission('cashier.shift_openclose'))return;
     const bd=String(cashierBusinessDate()||localDateString());
     const closed=cashierClosingForBusinessDate();
     if(closed){alert('The cashier day is already closed for '+formatDate(bd)+'. A new cashier shift can only be opened for the next business date.');return;}
@@ -9885,6 +9886,7 @@ function cashierActualEl(){
     return a||b;
 }
 function calculateCashierVariance(silent=false){
+  if(!hasActionPermission('cashier.reconcile')){ if(!silent) alert('Access denied. Cash count / reconciliation has not been assigned to your user account.'); return {expected:0,actual:null,variance:null,error:'permission'}; }
   try{
     const list=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
     const sum=typeof paymentSummary==='function'?paymentSummary(list):{cash:0,cashRefunds:0};
@@ -9915,7 +9917,8 @@ function calculateCashierVariance(silent=false){
 window.calculateCashierVariance=calculateCashierVariance;
 
 function closeCashierDay(){
-    if(!requireRole('Admin','Manager','Cashier'))return;
+    if(!requireActionPermission('cashier.shift_openclose'))return;
+    if(!requireActionPermission('cashier.reconcile'))return;
     const sh=currentCashierShift(); if(!sh){alert('Open a cashier shift before closing the cashier day.');return;}
     const actualEl=cashierActualEl(); if(!actualEl||actualEl.value===''){alert('Enter the actual cash counted before closing.');return;}
     if(cashierClosingForBusinessDate()){alert('The cashier day is already closed for '+formatDate(cashierBusinessDate())+'.');return;}
