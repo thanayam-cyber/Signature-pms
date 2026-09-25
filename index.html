@@ -5178,6 +5178,10 @@ function saveRoomTypesConfiguration(){
 }
 
 function renderRoomConfiguration(){
+    // v2.1.156: background cloud/local refreshes must never rebuild the room
+    // configuration form while the Admin has unsaved edits. Rebuilding the
+    // table was causing values such as 330 to jump back to 0 within seconds.
+    if(roomConfigEditorDirty() || roomConfigEditorFocused()) return;
     const tbody=document.getElementById("roomConfigurationTable");
     const summary=document.getElementById("roomConfigurationSummary");
     if(!tbody)return;
@@ -5244,7 +5248,31 @@ function addRoomToCurrentProperty(){
     logAudit("ROOM_ADDED",p.id,"Room / unit added: "+code,p.id);
 }
 
-function saveRoomConfiguration(){
+function roomConfigEditorDirty(){
+    return !!window.__signaturePMSRoomConfigDirty;
+}
+
+function roomConfigEditorFocused(){
+    const a=document.activeElement;
+    return !!(a && /^cfgRoom(?:Code|Name|Type|Rate|Active)_/.test(String(a.id||"")));
+}
+
+function markRoomConfigEditorDirty(){
+    window.__signaturePMSRoomConfigDirty=true;
+}
+
+(function bindRoomConfigEditProtection(){
+    if(window.__signaturePMSRoomConfigEditProtectionBound)return;
+    window.__signaturePMSRoomConfigEditProtectionBound=true;
+    document.addEventListener("input",function(e){
+        if(/^cfgRoom(?:Code|Name|Type|Rate)_/.test(String(e.target?.id||""))) markRoomConfigEditorDirty();
+    },true);
+    document.addEventListener("change",function(e){
+        if(/^cfgRoom(?:Code|Name|Type|Rate|Active)_/.test(String(e.target?.id||""))) markRoomConfigEditorDirty();
+    },true);
+})();
+
+async function saveRoomConfiguration(){
     if(!requireRole("Admin"))return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p)return;
@@ -5281,6 +5309,7 @@ function saveRoomConfiguration(){
     }
 
     // Only commit after the entire proposed configuration is valid.
+    const roomConfigSavedAt=new Date().toISOString();
     proposed.forEach(({r,code,name,type,rate,active})=>{
         r.code=code;
         r.number=code;
@@ -5288,26 +5317,38 @@ function saveRoomConfiguration(){
         r.type=type;
         r.rate=rate;
         r.active=active;
+        // Track the last local room-configuration edit so an older cloud
+        // snapshot cannot immediately overwrite a successful local save.
+        r.roomConfigUpdatedAt=roomConfigSavedAt;
     });
 
     p.rooms=rooms;
     saveProperties();
-    if(currentPropertyId===p.id)loadCurrentPropertyData();
+    const roomSnapshot=JSON.parse(JSON.stringify(rooms));
+    if(currentPropertyId===p.id){
+        settings={...p,rooms:JSON.parse(JSON.stringify(roomSnapshot))};
+    }
     renderAll();
     setTimeout(renderRoomConfiguration,0);
     logAudit("ROOM_CONFIGURATION_UPDATED",p.id,"Room / unit configuration updated",p.id);
     if(typeof syncCurrentPropertyRoomsToSupabase==="function"){
-        syncCurrentPropertyRoomsToSupabase().then(ok=>{
+        try{
+            const ok=await syncCurrentPropertyRoomsToSupabase(roomSnapshot);
             if(!ok){
-                console.warn("Room configuration saved locally but cloud room sync did not complete.");
-                setSupabaseCloudMessage("Room configuration saved locally, but the cloud room configuration could not be updated. Check Supabase property_rooms permissions.","error");
+                setSupabaseCloudMessage("Room configuration was saved locally, but the cloud room configuration could not be updated.","error");
+                alert("Room configuration was saved locally, but the cloud update failed. Check the Cloud Rooms message before refreshing.");
+                return;
             }
-        }).catch(err=>{
-            console.warn("Room configuration cloud sync skipped:",err);
-            setSupabaseCloudMessage("Room configuration saved locally, but cloud sync failed: "+(err?.message||err),"error");
-        });
+        }catch(err){
+            console.warn("Room configuration cloud sync failed:",err);
+            setSupabaseCloudMessage("Room configuration was saved locally, but cloud sync failed: "+(err?.message||err),"error");
+            alert("Room configuration was saved locally, but the cloud update failed: "+(err?.message||err));
+            return;
+        }
     }
-    alert("Room / unit configuration saved successfully. Individual room rates were preserved.");
+    window.__signaturePMSRoomConfigDirty=false;
+    renderRoomConfiguration();
+    alert("Room / unit configuration saved successfully and synchronized to the cloud.");
 }
 
 function editProperty(id){
@@ -16476,7 +16517,7 @@ async function hydrateSupabaseReservations(){
    Scope: property room configuration + housekeeping / OOS state.
    Existing local room workflow remains intact.
 ========================================================= */
-async function syncCurrentPropertyRoomsToSupabase(){
+async function syncCurrentPropertyRoomsToSupabase(roomSnapshot){
     try{
         const client=initSupabaseClient();
         if(!client || !currentPropertyId || !settings || !Array.isArray(settings.rooms)) return false;
@@ -16487,7 +16528,8 @@ async function syncCurrentPropertyRoomsToSupabase(){
         if(!cloudPropertyId) return false;
 
         const now=new Date().toISOString();
-        const rooms=settings.rooms.map(room=>({
+        const sourceRooms=Array.isArray(roomSnapshot)?roomSnapshot:settings.rooms;
+        const rooms=sourceRooms.map(room=>({
             property_id:String(cloudPropertyId),
             room_id:String(room.id),
             room_data:{...room,propertyId:String(cloudPropertyId)},
@@ -16500,6 +16542,19 @@ async function syncCurrentPropertyRoomsToSupabase(){
             const {error}=await client.from("property_rooms")
                 .upsert(rooms,{onConflict:"property_id,room_id"});
             if(error) throw error;
+            const ids=rooms.map(r=>String(r.room_id));
+            const {data:verified,error:verifyError}=await client.from("property_rooms")
+                .select("room_id,room_data,active,housekeeping_status")
+                .eq("property_id",String(cloudPropertyId)).in("room_id",ids);
+            if(verifyError) throw verifyError;
+            const byId=new Map((verified||[]).map(r=>[String(r.room_id),r]));
+            for(const submitted of rooms){
+                const actual=byId.get(String(submitted.room_id));
+                if(!actual) throw new Error("Cloud verification failed: room "+submitted.room_id+" was not returned by Supabase.");
+                if(JSON.stringify(actual.room_data||{})!==JSON.stringify(submitted.room_data) || actual.active!==submitted.active){
+                    throw new Error("Cloud verification failed for room "+submitted.room_id+". Supabase returned different room configuration after save.");
+                }
+            }
         }
 
         const keepIds=rooms.map(r=>r.room_id);
@@ -16528,6 +16583,9 @@ async function syncCurrentPropertyRoomsToSupabase(){
 }
 
 async function forceHydrateSupabaseRooms(){
+    // v2.1.156: never replace the working room configuration while the Admin
+    // is editing it. The next explicit Save will publish the complete snapshot.
+    if(roomConfigEditorDirty() || roomConfigEditorFocused()) return false;
     /* v2.1.126: after cloud property/user refresh, force the shared
        property_rooms dataset to replace any stale browser-local room list.
        This is intentionally read-only: it never inserts, updates, or deletes
@@ -16545,15 +16603,25 @@ async function forceHydrateSupabaseRooms(){
         if(error) throw error;
         const rows=data||[];
         if(!rows.length) return false;
+        const localRooms=Array.isArray(settings?.rooms)?settings.rooms:[];
         const merged=rows.map(cloud=>{
             const rd=cloud.room_data||{};
+            const local=localRooms.find(r=>String(r?.id)===String(rd?.id ?? cloud.room_id));
+            const localConfigAt=Date.parse(String(local?.roomConfigUpdatedAt||""));
+            const cloudAt=Date.parse(String(rd?.roomConfigUpdatedAt||cloud.updated_at||""));
+            // If this browser has a newer room configuration than the cloud
+            // snapshot, preserve configuration fields until the cloud write
+            // succeeds. Housekeeping state remains cloud-authoritative.
+            const preserveLocal=Number.isFinite(localConfigAt) &&
+                (!Number.isFinite(cloudAt) || localConfigAt>cloudAt);
+            const base=preserveLocal ? {...rd,...local} : rd;
             return {
-                ...rd,
-                id:rd.id ?? cloud.room_id,
-                name:rd.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
-                type:rd.type || "Guest Room",
-                rate:Number(rd.rate ?? settings?.roomRate ?? 0),
-                active:cloud.active!==false,
+                ...base,
+                id:base.id ?? cloud.room_id,
+                name:base.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
+                type:base.type || "Guest Room",
+                rate:Number(base.rate ?? settings?.roomRate ?? 0),
+                active:preserveLocal ? base.active!==false : cloud.active!==false,
                 housekeepingStatus:["clean","dirty","inspected","oos"].includes(String(cloud.housekeeping_status||rd.housekeepingStatus||"clean"))
                     ? String(cloud.housekeeping_status||rd.housekeepingStatus||"clean")
                     : "clean",
@@ -16576,6 +16644,8 @@ async function forceHydrateSupabaseRooms(){
 }
 
 async function hydrateSupabaseRooms(){
+    // v2.1.156: background cloud refresh must not overwrite unsaved room edits.
+    if(roomConfigEditorDirty() || roomConfigEditorFocused()) return false;
     try{
         const client=initSupabaseClient();
         if(!client || !currentPropertyId) return false;
@@ -16603,15 +16673,26 @@ async function hydrateSupabaseRooms(){
         // Cloud is authoritative once this property has cloud room records.
         // This prevents each browser's localStorage room list from leaking into
         // another device and guarantees the same room set for the property.
+        // Preserve a room configuration saved locally after the last cloud snapshot.
+        // This keeps the proven v2.1.121 room-configuration behavior while retaining
+        // the later multi-device cloud room synchronization. Housekeeping remains
+        // cloud-authoritative.
+        const localRooms=Array.isArray(settings?.rooms)?settings.rooms:[];
         const merged=rows.map(cloud=>{
             const rd=cloud.room_data||{};
+            const local=localRooms.find(r=>String(r?.id)===String(rd?.id ?? cloud.room_id));
+            const localConfigAt=Date.parse(String(local?.roomConfigUpdatedAt||""));
+            const cloudConfigAt=Date.parse(String(rd?.roomConfigUpdatedAt||cloud.updated_at||""));
+            const preserveLocal=Number.isFinite(localConfigAt) &&
+                (!Number.isFinite(cloudConfigAt) || localConfigAt>cloudConfigAt);
+            const base=preserveLocal ? {...rd,...local} : rd;
             return {
-                ...rd,
-                id:rd.id ?? cloud.room_id,
-                name:rd.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
-                type:rd.type || "Guest Room",
-                rate:Number(rd.rate ?? settings?.roomRate ?? 0),
-                active:cloud.active!==false,
+                ...base,
+                id:base.id ?? cloud.room_id,
+                name:base.name || `Room ${String(cloud.room_id).padStart(2,"0")}`,
+                type:base.type || "Guest Room",
+                rate:Number(base.rate ?? settings?.roomRate ?? 0),
+                active:preserveLocal ? base.active!==false : cloud.active!==false,
                 housekeepingStatus:["clean","dirty","inspected","oos"].includes(String(cloud.housekeeping_status||rd.housekeepingStatus||"clean"))
                     ? String(cloud.housekeeping_status||rd.housekeepingStatus||"clean")
                     : "clean",
