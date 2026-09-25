@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.141 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.143 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9693,11 +9693,12 @@ function cashierBusinessDate(){
   const configured=(typeof settings!=='undefined'&&settings?.businessDate) ? String(settings.businessDate).slice(0,10) : "";
   return /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : localDateString();
 }
-function ensureVoidedFnbRefundPayments(){
-  /* v2.1.141 — One-time reconciliation for voided F&B invoices.  A voided
-     invoice must always have a matching refund movement so cashier, payments,
-     folio and cloud snapshot stay consistent. */
+async function ensureVoidedFnbRefundPayments(){
+  /* v2.1.143 — Repair legacy voided F&B invoices AND publish the repaired
+     refund snapshot to Supabase. The old repair only changed local arrays;
+     the next cloud hydration could therefore restore the old $22 collection. */
   let changed=false;
+  const affectedReservations=new Set();
   try{
     if(!Array.isArray(sales)||!Array.isArray(payments)) return false;
     (sales||[]).forEach(sale=>{
@@ -9709,29 +9710,35 @@ function ensureVoidedFnbRefundPayments(){
       if(exists) return;
       const posted=String(sale.voidedAt||sale.dateTime||sale.date||localDateTime());
       const postedDate=paymentDateOnly({date:posted})||localDateString();
+      const rid=original.reservationId||sale.reservationId||null;
       payments.push({
         id:'p_'+Date.now()+'_voidrepair_'+String(sale.id).replace(/[^a-zA-Z0-9]/g,'').slice(-8),
-        reservationId:original.reservationId||sale.reservationId||null,
-        propertyId:currentPropertyId,
-        date:posted,
-        reference:'VOID-'+(sale.invoiceNo||sale.id),
-        invoiceNo:sale.invoiceNo||'',
-        saleId:sale.id,
-        businessDate:postedDate,
-        type:'Refund',
+        reservationId:rid, propertyId:currentPropertyId, date:posted,
+        reference:'VOID-'+(sale.invoiceNo||sale.id), invoiceNo:sale.invoiceNo||'',
+        saleId:sale.id, businessDate:postedDate, type:'Refund',
         method:original.method||sale.paymentMethod||'Cash',
-        amount:-Math.abs(Number(original.amount||sale.total||0)),
-        status:'Received',
+        amount:-Math.abs(Number(original.amount||sale.total||0)), status:'Received',
         receivedBy:sale.voidedBy||currentUser?.username||'Manager',
         cashier:sale.voidedBy||currentUser?.username||'Manager',
-        refundOf:original.id,
-        guestName:sale.customerName||original.guestName||'',
+        refundOf:original.id, guestName:sale.customerName||original.guestName||'',
         roomId:original.roomId||null,
         notes:'F&B invoice void / refund — repaired from existing voided invoice'
       });
       changed=true;
+      if(rid) affectedReservations.add(String(rid));
     });
     if(changed && typeof saveData==='function') saveData();
+    if(changed && affectedReservations.size && typeof syncReservationToSupabase==='function'){
+      for(const rid of affectedReservations){
+        const r=(reservations||[]).find(x=>String(x.id)===rid);
+        if(r){
+          try{
+            const ok=await syncReservationToSupabase(r);
+            console.log('Repaired F&B void/refund cloud sync:',rid,ok);
+          }catch(e){console.warn('Repaired F&B void/refund cloud sync failed:',e);}
+        }
+      }
+    }
   }catch(e){console.warn('Voided F&B refund repair skipped:',e);}
   return changed;
 }
@@ -9739,7 +9746,12 @@ function getTodayCashierPayments(){
   /* v2.1.141 — Cashier reconciliation is based on the posting date of the
      cashier movement, not merely the original sale business date.  This also
      repairs legacy voided F&B invoices whose refund row was missing. */
-  ensureVoidedFnbRefundPayments();
+  /* Repair legacy void/refund records before calculating the cashier view.
+     The async cloud publish is followed by a render when it completes. */
+  const repairPromise=ensureVoidedFnbRefundPayments();
+  if(repairPromise&&typeof repairPromise.then==='function'){
+    repairPromise.then(changed=>{if(changed){try{renderAll();}catch(e){}}}).catch(()=>{});
+  }
   const d=String(cashierBusinessDate()||localDateString()).slice(0,10);
   const out=[];
   const seen=new Set();
