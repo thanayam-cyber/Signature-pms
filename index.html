@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.139 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.141 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9677,28 +9677,105 @@ function cashierBusinessDate(){
   const configured=(typeof settings!=='undefined'&&settings?.businessDate) ? String(settings.businessDate).slice(0,10) : "";
   return /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : localDateString();
 }
+function ensureVoidedFnbRefundPayments(){
+  /* v2.1.141 — One-time reconciliation for voided F&B invoices.  A voided
+     invoice must always have a matching refund movement so cashier, payments,
+     folio and cloud snapshot stay consistent. */
+  let changed=false;
+  try{
+    if(!Array.isArray(sales)||!Array.isArray(payments)) return false;
+    (sales||[]).forEach(sale=>{
+      if(!(sale?.voided||sale?.isVoided||sale?.status==='Voided')) return;
+      if(String(sale.propertyId||currentPropertyId)!==String(currentPropertyId)) return;
+      const original=(payments||[]).find(p=>String(p.saleId||'')===String(sale.id)&&!paymentIsRefund(p));
+      if(!original || !paymentIsReceived(original)) return;
+      const exists=(payments||[]).some(p=>String(p.refundOf||'')===String(original.id));
+      if(exists) return;
+      const posted=String(sale.voidedAt||sale.dateTime||sale.date||localDateTime());
+      const postedDate=paymentDateOnly({date:posted})||localDateString();
+      payments.push({
+        id:'p_'+Date.now()+'_voidrepair_'+String(sale.id).replace(/[^a-zA-Z0-9]/g,'').slice(-8),
+        reservationId:original.reservationId||sale.reservationId||null,
+        propertyId:currentPropertyId,
+        date:posted,
+        reference:'VOID-'+(sale.invoiceNo||sale.id),
+        invoiceNo:sale.invoiceNo||'',
+        saleId:sale.id,
+        businessDate:postedDate,
+        type:'Refund',
+        method:original.method||sale.paymentMethod||'Cash',
+        amount:-Math.abs(Number(original.amount||sale.total||0)),
+        status:'Received',
+        receivedBy:sale.voidedBy||currentUser?.username||'Manager',
+        cashier:sale.voidedBy||currentUser?.username||'Manager',
+        refundOf:original.id,
+        guestName:sale.customerName||original.guestName||'',
+        roomId:original.roomId||null,
+        notes:'F&B invoice void / refund — repaired from existing voided invoice'
+      });
+      changed=true;
+    });
+    if(changed && typeof saveData==='function') saveData();
+  }catch(e){console.warn('Voided F&B refund repair skipped:',e);}
+  return changed;
+}
 function getTodayCashierPayments(){
-  const d=String(cashierBusinessDate()||'');
-  return payments.filter(p=>{
-    if(String(p.propertyId||currentPropertyId)!==String(currentPropertyId)) return false;
+  /* v2.1.141 — Cashier reconciliation is based on the posting date of the
+     cashier movement, not merely the original sale business date.  This also
+     repairs legacy voided F&B invoices whose refund row was missing. */
+  ensureVoidedFnbRefundPayments();
+  const d=String(cashierBusinessDate()||localDateString()).slice(0,10);
+  const out=[];
+  const seen=new Set();
+  const add=p=>{
+    if(!p||String(p.propertyId||currentPropertyId)!==String(currentPropertyId))return;
+    const id=String(p.id||'');
+    if(id&&seen.has(id))return;
     const bd=String(p.businessDate||'').slice(0,10);
     const pd=String(paymentDateOnly(p)||'');
-
-    /* Refunds are cashier movements on the day they are actually posted.
-       This is important when a guest is refunded today for a payment made on
-       an earlier business date: the refund must appear in today's cashier
-       reconciliation rather than disappearing into the original sale day. */
+    let include=false;
     if(paymentIsRefund(p)){
-      return pd===d || bd===d;
+      /* Refunds are counted on the date they were posted.  Keep bd as a
+         fallback for older records that have no usable timestamp. */
+      include=(pd===d)||(bd===d);
+    }else{
+      include=(bd===d)||(!bd&&pd===d);
     }
+    if(include){out.push(p);if(id)seen.add(id);}
+  };
+  (payments||[]).forEach(add);
 
-    /* Normal settled/pending payment membership is controlled by businessDate. */
-    if(bd===d) return true;
-
-    /* Legacy records without a businessDate fall back to transaction date. */
-    if(!bd&&pd===d) return true;
-    return false;
+  /* Defensive reconciliation: if a voided sale is dated today but its refund
+     row was lost from an old local/cloud snapshot, create a non-persistent
+     cashier-only refund movement so today's reconciliation cannot overstate
+     cash. The persistent repair above normally makes this branch unnecessary. */
+  (sales||[]).forEach(sale=>{
+    if(!(sale?.voided||sale?.isVoided||sale?.status==='Voided'))return;
+    if(String(sale.propertyId||currentPropertyId)!==String(currentPropertyId))return;
+    const saleDate=String(sale.dateTime||sale.date||'').slice(0,10);
+    const saleBd=String(sale.businessDate||'').slice(0,10);
+    if(saleDate!==d && saleBd!==d)return;
+    const originals=(payments||[]).filter(p=>String(p.saleId||'')===String(sale.id)&&!paymentIsRefund(p)&&paymentIsReceived(p));
+    originals.forEach(orig=>{
+      const already=out.some(p=>String(p.refundOf||'')===String(orig.id));
+      if(already)return;
+      const refund={
+        id:'virtual_void_'+String(sale.id)+'_'+String(orig.id),
+        reservationId:orig.reservationId||sale.reservationId||null,
+        propertyId:currentPropertyId,
+        date:String(sale.voidedAt||sale.dateTime||localDateTime()),
+        reference:'VOID-'+(sale.invoiceNo||sale.id),
+        invoiceNo:sale.invoiceNo||'',saleId:sale.id,businessDate:d,type:'Refund',
+        method:orig.method||sale.paymentMethod||'Cash',amount:-Math.abs(Number(orig.amount||sale.total||0)),
+        status:'Received',receivedBy:sale.voidedBy||currentUser?.username||'Manager',
+        cashier:sale.voidedBy||currentUser?.username||'Manager',refundOf:orig.id,
+        guestName:sale.customerName||orig.guestName||'',roomId:orig.roomId||null,
+        notes:'Cashier reconciliation repair for existing voided F&B invoice'
+      };
+      out.push(refund);
+    });
   });
+  return out;
 }
 function cashierShiftRows(){try{return readArray('signature_pms_cashier_shifts_v184')}catch(e){return []}}
 function saveCashierShiftRows(a){localStorage.setItem('signature_pms_cashier_shifts_v184',JSON.stringify(a));}
