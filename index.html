@@ -933,7 +933,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section-header" style="margin-bottom:8px"><h3>3. Cash Count &amp; Reconciliation</h3></div>
 <div class="form-grid">
 <div class="form-group"><label>Expected Cash</label><input id="csExpectedCash" readonly="" type="text"/></div>
-<div class="form-group"><label>Actual Cash Counted</label><input id="csActualCash" min="0" oninput="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
+<div class="form-group"><label>Actual Cash Counted</label><input id="csActualCash" min="0" onchange="window.calculateCashierVariance(true)" onblur="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
 <div class="form-group"><label>Variance</label><input id="csVariance" readonly="" type="text"/></div>
 </div>
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-secondary" onclick="window.calculateCashierVariance()">Calculate Variance</button><button class="btn btn-success" onclick="window.closeCashierDay()">Close Cashier Day</button></div>
@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.146 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.147 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9906,7 +9906,7 @@ function calculateCashierVariance(silent=false){
     const putValue=(id,v)=>{const e=document.getElementById(id);if(e){e.value=Number(v||0).toFixed(2);e.dispatchEvent(new Event('input',{bubbles:true}));}};
     const putText=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=moneyFn(v);};
     putValue('csExpectedCash',expected); putText('cashierExpectedCash',expected);
-    putValue('csActualCash',actual); putValue('cashierActualCash',actual);
+    if(actualEl && actualEl.id!=='csActualCash') putValue('csActualCash',actual); if(actualEl && actualEl.id!=='cashierActualCash') putValue('cashierActualCash',actual);
     putValue('csVariance',variance); putText('cashierVariance',variance); putText('csVarianceTop',variance);
     return {expected,actual,variance};
   }catch(err){
