@@ -9554,7 +9554,21 @@ function fnbVoidInvoice(saleId){
 /* v2.1.131 — Reception / Front Office may post normal Restaurant POS orders; preserve selected in-house guest during POS refresh. */
 function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,propertyId:currentPropertyId,fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}folio.restaurant=Number(folio.restaurant||0)+total;folio.total=Number(folio.accommodation||0)+Number(folio.restaurant||0)+Number(folio.extras||0)+Number(folio.taxes||0)+Number(folio.serviceCharges||0)-Number(folio.discounts||0);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
 if(guest && typeof syncReservationToSupabase==='function'){
-  syncReservationToSupabase(guest).then(ok=>{if(ok)console.log("Restaurant POS cloud sync completed:",saleId);}).catch(e=>console.warn("Restaurant POS cloud sync failed:",e));
+  // v2.1.133 — explicitly sync the updated guest reservation snapshot after
+  // the POS sale/folio/payment arrays have been committed locally.
+  // This keeps the existing reservations table as the cloud transaction
+  // envelope without changing the PMS schema or auth/rights model.
+  Promise.resolve().then(()=>syncReservationToSupabase(guest)).then(ok=>{
+    if(ok){
+      console.log("Restaurant POS cloud sync completed:",saleId,guest.guestName||guest.id);
+      setSupabaseCloudMessage("Restaurant POS cloud sync completed for "+(guest.guestName||guest.id),"success");
+    }else{
+      console.warn("Restaurant POS cloud sync returned false:",saleId);
+    }
+  }).catch(e=>{
+    console.warn("Restaurant POS cloud sync failed:",e);
+    setSupabaseCloudMessage("Restaurant POS cloud sync failed: "+(e?.message||e),"error");
+  });
 }
 clearPOSOrder();renderAll();logAudit("POS_SALE",saleId,"Restaurant order saved ["+invoiceNo+"]: "+total+" — "+outlet.name+" — "+customerType,currentPropertyId);try{if(typeof storesOnPOSSale==="function")storesOnPOSSale(saleId);}catch(e){console.warn("Stock deduction failed",e);}
 if(confirm("Restaurant order saved successfully.\nInvoice No: "+invoiceNo+"\n\nPrint invoice now?"))printPOSInvoice(saleId);}
@@ -15988,6 +16002,7 @@ async function syncReservationToSupabase(reservation){
         };
         const {error}=await client.from("reservations").upsert(row,{onConflict:"id"});
         if(error) throw error;
+        console.log("Supabase reservation upsert succeeded:", reservation.id, "cloud folio:", !!row.reservation_data.__cloudFolio, "sales:", row.reservation_data.__cloudSales.length, "payments:", row.reservation_data.__cloudPayments.length);
         return true;
     }catch(err){
         console.warn("Supabase reservation sync skipped:",err);
