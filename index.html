@@ -939,7 +939,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-secondary" onclick="window.calculateCashierVariance()">Calculate Variance</button><button class="btn btn-success" onclick="window.closeCashierDay()">Close Cashier Day</button></div>
 </div>
 <div class="section" style="padding:14px;background:#f8faf9;margin-top:14px">
-<div class="section-header" style="margin-bottom:8px"><h3>4. Closing Record</h3></div>
+<div class="section-header" style="margin-bottom:8px"><h3>4. Closing Record</h3><div id="csReopenWrap" style="display:none"><button class="btn btn-warning" type="button" onclick="window.reopenCashierDay()">Reopen Cashier Day</button></div></div>
 <div class="empty" id="csClosingRecord">No cashier closing recorded for this business date.</div>
 </div>
 </div>
@@ -1670,7 +1670,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.145 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.146 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -9930,6 +9930,29 @@ function closeCashierDay(){
     logAudit('CASHIER_DAY_CLOSED','CC_'+d,'Cashier closing. Expected '+result.expected+', actual '+result.actual+', variance '+result.variance,currentPropertyId);
     cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender(); alert('Cashier day closed successfully. Variance: '+money(result.variance));
 }
+function reopenCashierDay(){
+    if(!currentUser || currentUser.role!=='Admin'){ alert('Only an Admin can reopen a closed cashier day.'); return; }
+    const d=String(cashierBusinessDate()||localDateString());
+    const closing=cashierClosingForBusinessDate();
+    if(!closing){ alert('There is no closed cashier day for '+formatDate(d)+'.'); return; }
+    if(!confirm('Reopen the cashier day for '+formatDate(d)+'?\n\nThe closing record will be removed from the active day, the existing cashier shift will be reopened, and all payments/refunds will remain unchanged.')) return;
+    const closings=readArray(STORAGE.cashierClosings).filter(x=>!(String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.date||'')===d));
+    localStorage.setItem(STORAGE.cashierClosings,JSON.stringify(closings));
+    const rows=cashierShiftRows(); let reopened=false;
+    const updated=rows.map(x=>{
+        if(String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.businessDate||'')===d&&String(x.status||'')==='Closed'&&(!x.closingId||String(x.closingId)===String(closing.id))){
+            reopened=true; const y={...x,status:'Open'}; delete y.closedAt; delete y.closingId; return y;
+        }
+        return x;
+    });
+    if(!reopened) updated.push({id:'CS_'+Date.now(),propertyId:currentPropertyId,businessDate:d,cashier:closing.closedBy||currentUser.username||'Admin',openedAt:localDateTime(),openingFloat:Number(closing.openingFloat||0),status:'Open'});
+    saveCashierShiftRows(updated);
+    logAudit('CASHIER_DAY_REOPENED','CC_'+d,'Cashier day reopened by '+(currentUser?.username||'Admin'),currentPropertyId);
+    cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender();
+    alert('Cashier day reopened successfully for '+formatDate(d)+'.');
+}
+window.reopenCashierDay=reopenCashierDay;
+
 function cashierShiftRefresh(){
     const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=paymentSummary(list),sh=currentCashierShift(),cl=cashierClosingForBusinessDate();
     const expected=Number((sh||cl)?.openingFloat||0)+sum.cash-sum.cashRefunds; const actualInput=cashierActualEl(); const rawActual=actualInput?String(actualInput.value??'').trim():''; const hasActual=rawActual!==''&&Number.isFinite(Number(rawActual)); const actual=cl ? Number(cl.actualCash||0) : (sh&&hasActual ? Number(rawActual) : 0); const variance=cl ? Number(cl.variance||0) : (sh&&hasActual ? actual-expected : 0);
@@ -9942,7 +9965,7 @@ function cashierShiftRefresh(){
     const av=document.getElementById('cashierActualCash');if(av){if(!(sh||cl))av.value='';else if(cl)av.value=String(actual);else if(hasActual)av.value=String(actual);}
     const cv=document.getElementById('csVariance');if(cv)cv.value=money(variance);
     const cm=document.getElementById('csShiftMessage');if(cm)cm.textContent=cl?'Cashier day is closed.':sh?'Shift opened by '+sh.cashier+' at '+sh.openedAt+'.':anyCashierShift()?'Another cashier has an open cashier shift.':'No cashier shift is open for this business date.';
-    const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+money(cl.expectedCash)+' | Actual: '+money(cl.actualCash)+' | Variance: '+money(cl.variance)):'No cashier closing recorded for this business date.';
+    const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+money(cl.expectedCash)+' | Actual: '+money(cl.actualCash)+' | Variance: '+money(cl.variance)):'No cashier closing recorded for this business date.'; const rw=document.getElementById('csReopenWrap'); if(rw)rw.style.display=(cl&&currentUser?.role==='Admin')?'block':'none';
 }
 bindCashierOpeningFloatPersistence();
 
