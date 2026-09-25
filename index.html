@@ -16339,21 +16339,24 @@ window.storesCloudRefreshClick = async function(btn){
 </script>
 <script>
 /* =========================================================
-   v2.1.127 — CLOUD AUTO SYNC
-   Scope: automatic reservation/room-status refresh between
-   already-open PMS sessions. Existing auth, permissions,
-   reservation save logic and room configuration are unchanged.
+   v2.1.128 — CLOUD AUTO SYNC BOOT / POLLING FIX
+   Scope: automatic reservation refresh between already-open
+   PMS sessions. Auth, permissions, reservation save logic,
+   room configuration and accounting are unchanged.
 ========================================================= */
 (function(){
   let channel=null;
   let pollTimer=null;
   let refreshTimer=null;
+  let retryTimer=null;
   let started=false;
   let lastCloudFingerprint='';
 
   function canSync(){
     try{
-      return !!(window.supabase && typeof initSupabaseClient==='function' &&
+      // Do not require window.supabase here. Some Supabase builds expose the
+      // client factory without leaving the SDK namespace on window.
+      return !!(typeof initSupabaseClient==='function' &&
         typeof hydrateSupabaseReservations==='function' &&
         typeof getSupabaseSessionUser==='function' && currentPropertyId);
     }catch(e){return false;}
@@ -16367,10 +16370,10 @@ window.storesCloudRefreshClick = async function(btn){
   }
 
   async function safeRefresh(reason){
-    if(!canSync()) return;
-    if(document.hidden) return;
+    if(!canSync()) return false;
+    if(document.hidden) return false;
     // Never replace data while a user is actively editing a modal.
-    if(document.querySelector('.modal.show')) return;
+    if(document.querySelector('.modal.show')) return false;
     try{
       const ok=await hydrateSupabaseReservations();
       if(ok){
@@ -16382,8 +16385,10 @@ window.storesCloudRefreshClick = async function(btn){
           if(typeof renderAll==='function') renderAll();
           if(typeof renderFrontOffice==='function' && document.getElementById('frontoffice')?.classList.contains('active')) renderFrontOffice();
         }
+        return true;
       }
     }catch(e){ console.warn('Cloud auto-sync refresh skipped:',reason,e); }
+    return false;
   }
 
   function scheduleRefresh(reason){
@@ -16392,19 +16397,22 @@ window.storesCloudRefreshClick = async function(btn){
   }
 
   async function start(){
-    if(started) return;
+    if(started) return true;
+    if(!canSync()) return false;
     started=true;
     try{
       const client=initSupabaseClient();
-      if(!client){started=false;return;}
+      if(!client){started=false;return false;}
       const user=await getSupabaseSessionUser();
-      if(!user){started=false;return;}
+      if(!user){started=false;return false;}
       const propertyId=await getCloudPropertyId();
-      if(!propertyId){started=false;return;}
+      if(!propertyId){started=false;return false;}
 
-      // Supabase Realtime: reservation INSERT/UPDATE/DELETE triggers a
-      // property-scoped cloud hydration in every open PMS session.
-      channel=client.channel('signature-pms-reservations-auto-sync-'+String(propertyId))
+      try{
+        if(channel && typeof client.removeChannel==='function') client.removeChannel(channel);
+      }catch(e){}
+
+      channel=client.channel('signature-pms-reservations-auto-sync-'+String(propertyId)+'-'+String(Date.now()))
         .on('postgres_changes',{event:'*',schema:'public',table:'reservations'},payload=>{
           const row=payload?.new || payload?.old || {};
           if(String(row.property_id||'')===String(propertyId)) scheduleRefresh('realtime');
@@ -16413,43 +16421,71 @@ window.storesCloudRefreshClick = async function(btn){
           console.log('Signature PMS reservation realtime:',status);
         });
 
-      // Lightweight fallback: protects the PMS if Realtime is unavailable
-      // or not enabled for the table. It checks cloud state without a page
-      // reload, so another user's changes normally appear within a few seconds.
       clearInterval(pollTimer);
-      pollTimer=setInterval(()=>safeRefresh('poll'),5000);
-      window.addEventListener('focus',()=>scheduleRefresh('window-focus'));
-      document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRefresh('visibility');});
+      // Polling is the guaranteed fallback even when Supabase Realtime is not
+      // enabled for the reservations table. No page reload is performed.
+      pollTimer=setInterval(()=>{ if(!started) return; safeRefresh('poll'); },5000);
+
+      if(!window.__signaturePMSAutoSyncFocusBound){
+        window.__signaturePMSAutoSyncFocusBound=true;
+        window.addEventListener('focus',()=>scheduleRefresh('window-focus'));
+        document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRefresh('visibility');});
+      }
+
       await safeRefresh('initial-auto-sync');
+      return true;
     }catch(e){
       console.warn('Signature PMS cloud auto-sync could not start:',e);
       started=false;
+      return false;
     }
   }
 
+  function scheduleStartRetry(){
+    clearTimeout(retryTimer);
+    if(started) return;
+    retryTimer=setTimeout(async()=>{
+      retryTimer=null;
+      const ok=await start();
+      if(!ok) scheduleStartRetry();
+    },2000);
+  }
+
   function stop(){
-    try{if(channel && supabaseClient) supabaseClient.removeChannel(channel);}catch(e){}
+    try{
+      const client=typeof initSupabaseClient==='function' ? initSupabaseClient() : null;
+      if(channel && client && typeof client.removeChannel==='function') client.removeChannel(channel);
+    }catch(e){}
     channel=null;
     clearInterval(pollTimer); pollTimer=null;
     clearTimeout(refreshTimer); refreshTimer=null;
+    clearTimeout(retryTimer); retryTimer=null;
     started=false;
   }
 
-  // Start after cloud authentication/context is ready. The existing login
-  // workflow remains untouched; this only observes the active session.
-  function boot(){
-    setTimeout(()=>{ if(canSync()) start(); },1200);
+  async function boot(){
+    // Login/context initialization can finish after DOMContentLoaded. Keep
+    // retrying until currentPropertyId + authenticated Supabase session exist.
+    const ok=await start();
+    if(!ok) scheduleStartRetry();
   }
+
+  // Re-run after the existing cloud-status workflow completes.
   const oldCheck=window.checkSupabaseCloudStatus;
-  if(typeof oldCheck==='function'){
-    window.checkSupabaseCloudStatus=async function(){
+  if(typeof oldCheck==='function' && !oldCheck.__signatureAutoSyncWrapped){
+    const wrapped=async function(){
       const result=await oldCheck.apply(this,arguments);
-      if(result) start();
+      if(result) { clearTimeout(retryTimer); await start(); }
+      else scheduleStartRetry();
       return result;
     };
+    wrapped.__signatureAutoSyncWrapped=true;
+    window.checkSupabaseCloudStatus=wrapped;
   }
+
   window.signaturePMSAutoSync={start,stop,refresh:()=>safeRefresh('manual')};
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+  setTimeout(()=>{ if(!started) scheduleStartRetry(); },3500);
 })();
 </script>
 
