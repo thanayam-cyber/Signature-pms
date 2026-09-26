@@ -5178,10 +5178,6 @@ function saveRoomTypesConfiguration(){
 }
 
 function renderRoomConfiguration(){
-    // v2.1.156: background cloud/local refreshes must never rebuild the room
-    // configuration form while the Admin has unsaved edits. Rebuilding the
-    // table was causing values such as 330 to jump back to 0 within seconds.
-    if(roomConfigEditorDirty() || roomConfigEditorFocused()) return;
     const tbody=document.getElementById("roomConfigurationTable");
     const summary=document.getElementById("roomConfigurationSummary");
     if(!tbody)return;
@@ -5247,30 +5243,6 @@ function addRoomToCurrentProperty(){
     setTimeout(renderRoomConfiguration,0);
     logAudit("ROOM_ADDED",p.id,"Room / unit added: "+code,p.id);
 }
-
-function roomConfigEditorDirty(){
-    return !!window.__signaturePMSRoomConfigDirty;
-}
-
-function roomConfigEditorFocused(){
-    const a=document.activeElement;
-    return !!(a && /^cfgRoom(?:Code|Name|Type|Rate|Active)_/.test(String(a.id||"")));
-}
-
-function markRoomConfigEditorDirty(){
-    window.__signaturePMSRoomConfigDirty=true;
-}
-
-(function bindRoomConfigEditProtection(){
-    if(window.__signaturePMSRoomConfigEditProtectionBound)return;
-    window.__signaturePMSRoomConfigEditProtectionBound=true;
-    document.addEventListener("input",function(e){
-        if(/^cfgRoom(?:Code|Name|Type|Rate)_/.test(String(e.target?.id||""))) markRoomConfigEditorDirty();
-    },true);
-    document.addEventListener("change",function(e){
-        if(/^cfgRoom(?:Code|Name|Type|Rate|Active)_/.test(String(e.target?.id||""))) markRoomConfigEditorDirty();
-    },true);
-})();
 
 async function saveRoomConfiguration(){
     if(!requireRole("Admin"))return;
@@ -5346,8 +5318,6 @@ async function saveRoomConfiguration(){
             return;
         }
     }
-    window.__signaturePMSRoomConfigDirty=false;
-    renderRoomConfiguration();
     alert("Room / unit configuration saved successfully and synchronized to the cloud.");
 }
 
@@ -16583,9 +16553,6 @@ async function syncCurrentPropertyRoomsToSupabase(roomSnapshot){
 }
 
 async function forceHydrateSupabaseRooms(){
-    // v2.1.156: never replace the working room configuration while the Admin
-    // is editing it. The next explicit Save will publish the complete snapshot.
-    if(roomConfigEditorDirty() || roomConfigEditorFocused()) return false;
     /* v2.1.126: after cloud property/user refresh, force the shared
        property_rooms dataset to replace any stale browser-local room list.
        This is intentionally read-only: it never inserts, updates, or deletes
@@ -16644,8 +16611,6 @@ async function forceHydrateSupabaseRooms(){
 }
 
 async function hydrateSupabaseRooms(){
-    // v2.1.156: background cloud refresh must not overwrite unsaved room edits.
-    if(roomConfigEditorDirty() || roomConfigEditorFocused()) return false;
     try{
         const client=initSupabaseClient();
         if(!client || !currentPropertyId) return false;
@@ -17294,5 +17259,68 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const oldRenderAll=window.renderAll;
   window.renderAll=function(){const r=oldRenderAll.apply(this,arguments);setTimeout(()=>{ensureDual();injectRateBaseFields();renderRoomRatePlans();},0);return r;};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensureDual();injectRateBaseFields();renderRoomRatePlans();});else{ensureDual();injectRateBaseFields();renderRoomRatePlans();}
+})();
+</script>
+
+<script>
+/* v2.1.157 — Property Settings + Rate Plan edit protection
+   Prevent background render/cloud refresh from replacing values while an
+   administrator/manager is actively editing these configuration forms.
+   Saved values remain authoritative; this only protects unsaved UI edits. */
+(function(){
+  let settingsDirty=false;
+  let ratePlansDirty=false;
+  const settingIds=[
+    'settingProperty','settingLocation','settingMaxGuests','settingFoodCostMarkup',
+    'settingVillaLocal','settingVillaForeign','settingRoomRate',
+    'settingLicenseHolder','settingLicenseKey','settingSupportContact','settingInstallationId',
+    'settingRoomBaseLocal','settingRoomBaseForeign'
+  ];
+  const isSettingField=(el)=>!!(el&&el.id&&settingIds.includes(el.id));
+  const isRatePlanField=(el)=>!!(el&&el.id&&el.id.indexOf('rr_')===0);
+
+  document.addEventListener('input',function(e){
+    if(isSettingField(e.target)) settingsDirty=true;
+    if(isRatePlanField(e.target)) ratePlansDirty=true;
+  },true);
+  document.addEventListener('change',function(e){
+    if(isSettingField(e.target)) settingsDirty=true;
+    if(isRatePlanField(e.target)) ratePlansDirty=true;
+  },true);
+
+  const originalLoadSettings=window.loadSettings;
+  if(typeof originalLoadSettings==='function'){
+    window.loadSettings=function(){
+      if(settingsDirty || ratePlansDirty) return;
+      return originalLoadSettings.apply(this,arguments);
+    };
+  }
+
+  const originalRenderRatePlans=window.renderRoomRatePlans;
+  if(typeof originalRenderRatePlans==='function'){
+    window.renderRoomRatePlans=function(){
+      if(ratePlansDirty) return;
+      return originalRenderRatePlans.apply(this,arguments);
+    };
+  }
+
+  const originalSaveSettings=window.saveSettings;
+  if(typeof originalSaveSettings==='function'){
+    window.saveSettings=function(){
+      const result=originalSaveSettings.apply(this,arguments);
+      settingsDirty=false;
+      ratePlansDirty=false;
+      return result;
+    };
+  }
+
+  const originalSaveRatePlans=window.saveRatePlans;
+  if(typeof originalSaveRatePlans==='function'){
+    window.saveRatePlans=function(){
+      const result=originalSaveRatePlans.apply(this,arguments);
+      ratePlansDirty=false;
+      return result;
+    };
+  }
 })();
 </script>
