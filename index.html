@@ -370,131 +370,62 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
      DASHBOARD
 ========================================================= -->
 <section class="page" id="dashboard">
-<div class="grid-4">
-<div class="card">
-<div class="card-title">Today's Occupancy</div>
-<div class="card-value" id="dashOccupancy">0%</div>
-</div>
-<div class="card">
-<div class="card-title">Arrivals Today</div>
-<div class="card-value" id="dashArrivals">0</div>
-</div>
-<div class="card">
-<div class="card-title">Departures Today</div>
-<div class="card-value" id="dashDepartures">0</div>
-</div>
-<div class="card">
-<div class="card-title">Today's Revenue</div>
-<div class="card-value" id="dashRevenue">$0.00</div>
-</div>
-</div>
-<div class="grid-4" style="margin-top:18px">
-<div class="card dashboard-stat">
-<div class="card-title">ADR</div>
-<div class="card-value" id="dashADR">$0.00</div>
-<div class="kpi-sub">Average Daily Rate</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">RevPAR</div>
-<div class="card-value" id="dashRevPAR">$0.00</div>
-<div class="kpi-sub">Revenue per available room</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Total Revenue</div>
-<div class="card-value" id="dashTotalRevenue">$0.00</div>
-<div class="kpi-sub">Today's total revenue</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Today's Cancellations</div>
-<div class="card-value" id="dashCancellations">0</div>
-<div class="kpi-sub">Cancelled reservations</div>
-</div>
-</div>
-<div class="grid-4" style="margin-top:18px">
-<div class="card dashboard-stat">
-<div class="card-title">AP Outstanding</div>
-<div class="card-value" id="dashAPOutstanding">$0.00</div>
-<div class="kpi-sub">Accounts payable</div>
-</div>
-</div>
-<div class="grid-6" style="margin-top:18px">
-<div class="card dashboard-stat">
-<div class="card-title">Occupied Rooms</div>
-<div class="card-value" id="dashOccupiedRooms">0 / 4</div>
-<div class="kpi-sub">Currently in-house</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Available Rooms</div>
-<div class="card-value" id="dashAvailableRooms">4</div>
-<div class="kpi-sub">Ready for sale</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Reserved Rooms</div>
-<div class="card-value" id="dashReservedRooms">0</div>
-<div class="kpi-sub">Today's reserved units</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Outstanding</div>
-<div class="card-value" id="dashOutstanding">$0.00</div>
-<div class="kpi-sub">Open guest balances</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Restaurant Today</div>
-<div class="card-value" id="dashRestaurant">$0.00</div>
-<div class="kpi-sub">POS sales</div>
-</div>
-<div class="card dashboard-stat">
-<div class="card-title">Rooms OOS</div>
-<div class="card-value" id="dashOOS">0</div>
-<div class="kpi-sub">Maintenance / OOS</div>
-</div>
-</div>
-<div class="grid-2" style="margin-top:18px">
-<div class="section">
-<div class="section-header">
-<h3>7-Day Overview</h3>
-<span style="font-size:12px;color:#6b7280">Upcoming arrivals &amp; departures</span>
-</div>
-<div class="overview-list" id="dashboard7Day"><div class="overview-row"><strong>Today</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div><div class="overview-row"><strong>15/09/2026</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div><div class="overview-row"><strong>16/09/2026</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div><div class="overview-row"><strong>17/09/2026</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div><div class="overview-row"><strong>18/09/2026</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div><div class="overview-row"><strong>19/09/2026</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div><div class="overview-row"><strong>20/09/2026</strong><span>0 arrivals</span><span>0 dep.</span><span>0 in-house</span></div></div>
-</div>
-<div class="section">
-<div class="section-header">
-<h3>Housekeeping Snapshot</h3>
-<button class="btn btn-secondary btn-small" onclick="showPage('rooms')">Open Rooms</button>
-</div>
-<div id="dashboardHousekeeping">
-<div class="grid-2">
-<div class="summary-box"><strong>4</strong><div class="kpi-sub">Clean</div></div>
-<div class="summary-box"><strong>0</strong><div class="kpi-sub">Dirty</div></div>
-<div class="summary-box"><strong>0</strong><div class="kpi-sub">Inspected</div></div>
-<div class="summary-box"><strong>0</strong><div class="kpi-sub">Out of Order</div></div>
-</div></div>
-</div>
-</div>
-<div class="section" style="margin-top:18px">
-<div class="section-header">
-<h3>Today's Operations</h3>
-</div>
-<div id="dashboardOperations"><div class="empty">No major operations for today.</div></div>
-</div>
-<div class="section">
-<div class="section-header">
-<h3>Quick Actions</h3>
-</div>
-<div class="toolbar">
-<button class="btn btn-primary" onclick="openReservationModal()">
-                New Reservation
-            </button>
-<button class="btn btn-success" onclick="showPage('checkin')">
-                Guest Check-In
-            </button>
-<button class="btn btn-warning" onclick="showPage('checkout')">
-                Guest Check-Out
-            </button>
-<button class="btn btn-blue" onclick="showPage('pos')">
-                Restaurant POS
-            </button>
-</div>
+<style>
+.gm-dash{font-size:14px}.gm-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.gm-title h2{margin:0;font-size:22px}.gm-title p{margin:4px 0 0;color:#64748b;font-size:12px}.gm-toggle{display:flex;gap:4px;background:#f1f5f9;padding:4px;border-radius:8px}.gm-toggle button{border:0;background:transparent;padding:7px 13px;border-radius:6px;cursor:pointer;font-weight:600;color:#64748b}.gm-toggle button.active{background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.12)}.gm-kpis{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#fff}.gm-kpi{padding:18px 20px;min-height:112px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}.gm-kpi:nth-child(3n){border-right:0}.gm-kpi:nth-last-child(-n+3){border-bottom:0}.gm-label{font-size:12px;font-weight:700;color:#475569}.gm-value{font-size:26px;font-weight:800;margin-top:3px;color:#0f172a}.gm-sub{font-size:11px;color:#64748b;margin-top:5px}.gm-section{margin-top:18px}.gm-section h3{margin:0 0 10px;font-size:16px;color:#0f172a}.gm-strip{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}.gm-strip .gm-cell{padding:12px 14px;border-right:1px solid #e2e8f0}.gm-strip .gm-cell:last-child{border-right:0}.gm-cell strong{display:block;font-size:17px;color:#0f172a}.gm-cell span{font-size:11px;color:#64748b}.gm-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.gm-table th,.gm-table td{padding:9px 10px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:12px}.gm-table th{background:#f8fafc;color:#475569;font-weight:700}.gm-table tr:last-child td{border-bottom:0}.gm-low{background:#fff7ed}.gm-ops{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}.gm-op{padding:13px;text-align:center;border-right:1px solid #e2e8f0}.gm-op:last-child{border-right:0}.gm-op strong{font-size:21px;display:block}.gm-op span{font-size:11px;color:#64748b}.gm-two{display:grid;grid-template-columns:1fr 1fr;gap:18px}.gm-alerts{border:1px solid #e2e8f0;border-radius:8px;background:#fff;overflow:hidden}.gm-alert{display:flex;gap:10px;padding:11px 13px;border-bottom:1px solid #e2e8f0}.gm-alert:last-child{border-bottom:0}.gm-alert .dot{width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-top:5px;flex:0 0 auto}.gm-alert.ok .dot{background:#22c55e}.gm-alert b{display:block;font-size:12px}.gm-alert span{font-size:11px;color:#64748b}.gm-movement{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.gm-move{border:1px solid #e2e8f0;border-radius:8px;padding:13px;background:#fff}.gm-move strong{font-size:20px}.gm-move div{font-size:12px;font-weight:700}.gm-move small{display:block;color:#64748b;margin-top:3px}.gm-actions{display:flex;gap:8px;flex-wrap:wrap}.gm-note{font-size:11px;color:#64748b;margin-top:8px}.gm-empty{padding:16px;text-align:center;color:#64748b;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
+@media(max-width:900px){.gm-kpis{grid-template-columns:1fr 1fr}.gm-kpi:nth-child(3n){border-right:1px solid #e2e8f0}.gm-strip,.gm-ops{grid-template-columns:repeat(2,1fr)}.gm-two{grid-template-columns:1fr}.gm-kpi:nth-last-child(-n+3){border-bottom:1px solid #e2e8f0}.gm-kpi:last-child{border-bottom:0}.gm-kpi:nth-child(even){border-right:0}}
+</style>
+<div class="gm-dash">
+  <div class="gm-head">
+    <div class="gm-title"><h2>Owner / GM Dashboard</h2><p>Hotel performance, forward outlook, operational readiness and management attention.</p></div>
+    <div class="gm-toggle"><button id="gmTodayBtn" class="active" onclick="window.gmSetPeriod('today')">Today</button><button id="gmMtdBtn" onclick="window.gmSetPeriod('mtd')">MTD</button><button id="gmYtdBtn" onclick="window.gmSetPeriod('ytd')">YTD</button></div>
+  </div>
+
+  <div class="gm-kpis">
+    <div class="gm-kpi"><div class="gm-label">Occupancy</div><div class="gm-value" id="dashOccupancy">0%</div><div class="gm-sub" id="gmOccSub">0 / 0 rooms</div></div>
+    <div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average Daily Rate</div></div>
+    <div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Revenue per available room</div></div>
+    <div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">$0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Room-night revenue basis</div></div>
+    <div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">$0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
+    <div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
+  </div>
+
+  <div class="gm-section"><h3>Commercial Outlook — Next 7 Days</h3>
+    <div class="gm-strip" style="margin-bottom:10px">
+      <div class="gm-cell"><span>Next 7 Days Avg. Occ.</span><strong id="gm7AvgOcc">0%</strong></div>
+      <div class="gm-cell"><span>Next 30 Days Occ.</span><strong id="gm30Occ">—</strong></div>
+      <div class="gm-cell"><span>7-Day Rooms Revenue</span><strong id="gm7Revenue">$0.00</strong></div>
+      <div class="gm-cell"><span>Pickup — Last 7 Days</span><strong id="gmPickup">—</strong></div>
+    </div>
+    <div id="dashboard7Day"></div>
+    <div class="gm-note">Forecast revenue is based on booked room nights and their configured reservation value. It is an outlook, not a posted accounting figure.</div>
+  </div>
+
+  <div class="gm-section"><h3>Today's Hotel — Operational Snapshot</h3>
+    <div class="gm-ops">
+      <div class="gm-op"><strong id="gmOccupied">0 / 0</strong><span>Occupied</span></div>
+      <div class="gm-op"><strong id="dashArrivals">0</strong><span>Arrivals</span></div>
+      <div class="gm-op"><strong id="dashDepartures">0</strong><span>Departures</span></div>
+      <div class="gm-op"><strong id="gmStayovers">0</strong><span>Stayovers</span></div>
+      <div class="gm-op"><strong id="dashOOS">0</strong><span>OOS</span></div>
+    </div>
+  </div>
+
+  <div class="gm-two gm-section">
+    <div><h3>Housekeeping / Room Readiness</h3><div id="dashboardHousekeeping"></div><div class="gm-actions" style="margin-top:10px"><button class="btn btn-secondary btn-small" onclick="showPage('rooms')">Open Rooms</button></div><div class="gm-note" id="gmReadinessNote"></div></div>
+    <div><h3>Management Attention</h3><div class="gm-alerts" id="gmAlerts"></div></div>
+  </div>
+
+  <div class="gm-section"><h3>Guest Movement</h3>
+    <div class="gm-movement">
+      <div class="gm-move"><strong id="gmMoveArrivals">0</strong><div>Arrivals</div><small>Guests arriving today</small><button class="btn btn-secondary btn-small" style="margin-top:8px" onclick="showPage('reports');setTimeout(()=>{const e=document.getElementById('printReportType');if(e)e.value='arrivals';renderPrintableReport&&renderPrintableReport();},50)">View Arrivals</button></div>
+      <div class="gm-move"><strong id="gmMoveDepartures">0</strong><div>Departures</div><small>Guests departing today</small><button class="btn btn-secondary btn-small" style="margin-top:8px" onclick="showPage('reports');setTimeout(()=>{const e=document.getElementById('printReportType');if(e)e.value='departures';renderPrintableReport&&renderPrintableReport();},50)">View Departures</button></div>
+      <div class="gm-move"><strong id="gmMoveStayovers">0</strong><div>Stayovers</div><small>Guests staying in-house</small><button class="btn btn-secondary btn-small" style="margin-top:8px" onclick="showPage('reports');setTimeout(()=>{const e=document.getElementById('printReportType');if(e)e.value='inhouse';renderPrintableReport&&renderPrintableReport();},50)">View In-House</button></div>
+    </div>
+  </div>
+
+  <div class="gm-section"><h3>Management Controls</h3><div class="gm-actions">
+    <button class="btn btn-primary" onclick="openReservationModal()">New Reservation</button><button class="btn btn-success" onclick="showPage('checkin')">Guest Check-In</button><button class="btn btn-warning" onclick="showPage('checkout')">Guest Check-Out</button><button class="btn btn-blue" onclick="showPage('pos')">Restaurant POS</button><button class="btn btn-secondary" onclick="showPage('reports')">Reports</button>
+  </div></div>
 </div>
 </section>
 <!-- =========================================================
@@ -1101,6 +1032,14 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-primary" onclick="openExperienceModal()">+ Add Experience</button>
 </div>
 <div id="experiencesList"><div class="empty">No experiences configured for this property.</div></div>
+<div style="margin-top:22px;border-top:1px solid #e5e7eb;padding-top:18px">
+  <div class="section-header">
+    <div><h3 style="margin:0">Experience / Event Bookings</h3><div style="font-size:12px;color:#6b7280">Book safaris, river rides, dining, wellness and private events against guests or reservations.</div></div>
+    <button class="btn btn-primary" onclick="openExperienceBookingModal()">+ New Booking</button>
+  </div>
+  <div id="experienceBookingSummary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0"></div>
+  <div class="table-wrap"><table><thead><tr><th>Booking</th><th>Date / Time</th><th>Experience / Event</th><th>Guest / Reservation</th><th>Pax</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody id="experienceBookingTable"><tr><td colspan="8" class="empty">No bookings yet.</td></tr></tbody></table></div>
+</div>
 </section>
 <!-- =========================================================
      PURCHASING
@@ -1717,6 +1656,26 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div id="experienceError" style="color:#b91c1c;font-size:13px;margin-top:10px"></div>
 <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="closeExperienceModal()">Cancel</button><button class="btn btn-primary" onclick="saveExperience()">Save Experience</button></div>
 </div></div>
+<div class="modal" id="experienceBookingModal">
+<div class="modal-box" style="max-width:760px">
+<div class="modal-header"><h3 id="experienceBookingModalTitle">New Experience / Event Booking</h3><button class="close-btn" onclick="closeExperienceBookingModal()">×</button></div>
+<div class="form-grid">
+<div class="form-group"><label>Experience / Event *</label><select id="ebExperience" onchange="updateExperienceBookingPrice()"></select></div>
+<div class="form-group"><label>Booking Date *</label><input id="ebDate" type="date" onchange="updateExperienceBookingPrice()"></div>
+<div class="form-group"><label>Time</label><input id="ebTime" type="time"></div>
+<div class="form-group"><label>Guest / Reservation</label><select id="ebReservation" onchange="updateExperienceBookingPrice()"></select></div>
+<div class="form-group"><label>Adults</label><input id="ebAdults" type="number" min="0" value="2" onchange="updateExperienceBookingPrice()"></div>
+<div class="form-group"><label>Children</label><input id="ebChildren" type="number" min="0" value="0" onchange="updateExperienceBookingPrice()"></div>
+<div class="form-group"><label>Unit Price</label><input id="ebUnitPrice" type="number" min="0" step="0.01" value="0" onchange="updateExperienceBookingPrice()"></div>
+<div class="form-group"><label>Discount</label><input id="ebDiscount" type="number" min="0" step="0.01" value="0" onchange="updateExperienceBookingPrice()"></div>
+<div class="form-group"><label>Status</label><select id="ebStatus"><option>Confirmed</option><option>Pending</option><option>Completed</option><option>Cancelled</option><option>No-Show</option></select></div>
+<div class="form-group"><label>Payment Status</label><select id="ebPaymentStatus"><option>Unpaid</option><option>Partially Paid</option><option>Paid</option><option>Posted to Folio</option></select></div>
+<div class="form-group full"><label>Notes</label><textarea id="ebNotes" placeholder="Pickup time, safari vehicle, dietary notes, event setup, special requests..."></textarea></div>
+<div class="form-group full" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px"><strong>Total: <span id="ebTotal">0.00</span></strong><div id="ebPriceNote" style="font-size:12px;color:#64748b;margin-top:4px"></div></div>
+</div>
+<div id="ebError" style="color:#b91c1c;font-size:13px;margin-top:10px"></div>
+<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="closeExperienceBookingModal()">Cancel</button><button class="btn btn-primary" onclick="saveExperienceBooking()">Save Booking</button></div>
+</div></div>
 <div class="modal" data-r20="1" id="reservationModal">
 <div class="modal-box">
 <div class="modal-header">
@@ -2085,7 +2044,8 @@ const STORAGE = {
     cashierClosings:"signature_pms_cashier_closings",
     fnbClosings:"signature_pms_fnb_closings",
     pmAccounts:"signature_pms_pm_accounts",
-    pmTransactions:"signature_pms_pm_transactions"
+    pmTransactions:"signature_pms_pm_transactions",
+    experienceBookings:"signature_pms_experience_bookings"
 };
 
 const DEFAULT_POS_MENU = [
@@ -2234,6 +2194,7 @@ let sales=[];
 let guests=[];
 let pmAccounts=[];
 let pmTransactions=[];
+let experienceBookings=[];
 let users=[];
 let settings=null;
 let currentUser=null;
@@ -2564,6 +2525,7 @@ function loadCurrentPropertyData(){
         guests=[];
         pmAccounts=[];
         pmTransactions=[];
+        experienceBookings=[];
         POS_MENU.length=0;
         POS_MENU.push(...normalizePOSMenu(DEFAULT_POS_MENU));
         return;
@@ -2617,6 +2579,7 @@ function loadCurrentPropertyData(){
     guests=readArray(STORAGE.guests).filter(sameProperty);
     pmAccounts=readArray(STORAGE.pmAccounts).filter(sameProperty);
     pmTransactions=readArray(STORAGE.pmTransactions).filter(sameProperty);
+    experienceBookings=readArray(STORAGE.experienceBookings).filter(sameProperty);
 }
 
 function saveProperties(){
@@ -2645,6 +2608,7 @@ function saveData(){
     mergePropertyData(STORAGE.guests,guests);
     mergePropertyData(STORAGE.pmAccounts,pmAccounts);
     mergePropertyData(STORAGE.pmTransactions,pmTransactions);
+    mergePropertyData(STORAGE.experienceBookings,experienceBookings);
 
     if(settings){
         settings.posMenu=normalizePOSMenu(POS_MENU);
@@ -5899,6 +5863,90 @@ function postExperienceToFolio(experienceId){
     if(answer===null)return;
     const index=Number(answer)-1; const r=activeReservations[index]; if(!r){alert("Invalid guest selection.");return;}
     addExperienceToFolio(r.id,e.id);
+}
+
+let editingExperienceBookingId=null;
+function getExperienceBooking(id){return (experienceBookings||[]).find(x=>String(x.id)===String(id));}
+function openExperienceBookingModal(id=null){
+    if(!requireRole("Admin","Manager","Front Office","Cashier")) return;
+    editingExperienceBookingId=id;
+    const b=getExperienceBooking(id);
+    const sel=document.getElementById("ebExperience");
+    const items=(settings?.experiences||[]).filter(x=>x.active!==false);
+    sel.innerHTML='<option value="">Select experience / event</option>'+items.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)} — ${money(Number(x.price||0))}</option>`).join("");
+    const rs=(reservations||[]).filter(r=>!["Cancelled","No-Show","Checked-Out"].includes(String(r.status||"")));
+    document.getElementById("ebReservation").innerHTML='<option value="">Walk-in / External Guest</option>'+rs.map(r=>`<option value="${escapeHtml(r.id)}">${escapeHtml(r.guestName||"Guest")} — ${escapeHtml(r.bookingNo||r.id)}${r.room?" — Room "+escapeHtml(r.room):""}</option>`).join("");
+    document.getElementById("experienceBookingModalTitle").textContent=b?"Edit Experience / Event Booking":"New Experience / Event Booking";
+    document.getElementById("ebExperience").value=b?.experienceId||"";
+    document.getElementById("ebDate").value=b?.date||localDateString();
+    document.getElementById("ebTime").value=b?.time||"09:00";
+    document.getElementById("ebReservation").value=b?.reservationId||"";
+    document.getElementById("ebAdults").value=b?.adults??2;
+    document.getElementById("ebChildren").value=b?.children??0;
+    document.getElementById("ebUnitPrice").value=b?.unitPrice??0;
+    document.getElementById("ebDiscount").value=b?.discount??0;
+    document.getElementById("ebStatus").value=b?.status||"Confirmed";
+    document.getElementById("ebPaymentStatus").value=b?.paymentStatus||"Unpaid";
+    document.getElementById("ebNotes").value=b?.notes||"";
+    document.getElementById("ebError").textContent="";
+    document.getElementById("experienceBookingModal").classList.add("show");
+    updateExperienceBookingPrice();
+}
+function closeExperienceBookingModal(){document.getElementById("experienceBookingModal")?.classList.remove("show");editingExperienceBookingId=null;}
+function updateExperienceBookingPrice(){
+    const e=(settings?.experiences||[]).find(x=>String(x.id)===String(document.getElementById("ebExperience")?.value));
+    const unit=document.getElementById("ebUnitPrice");
+    if(e && !editingExperienceBookingId) unit.value=Number(e.price||0);
+    const adults=Math.max(0,Number(document.getElementById("ebAdults")?.value||0));
+    const children=Math.max(0,Number(document.getElementById("ebChildren")?.value||0));
+    const discount=Math.max(0,Number(document.getElementById("ebDiscount")?.value||0));
+    const price=Math.max(0,Number(unit?.value||0));
+    const total=Math.max(0,(adults+children)*price-discount);
+    document.getElementById("ebTotal").textContent=money(total);
+    document.getElementById("ebPriceNote").textContent=e?(e.includedAI?"AI inclusion configured for this experience.":e.includedHB?"HB inclusion configured for this experience.":"Chargeable experience."):"Select an experience to calculate the booking total.";
+}
+function saveExperienceBooking(){
+    if(!requireRole("Admin","Manager","Front Office","Cashier")) return;
+    const expId=document.getElementById("ebExperience").value;
+    const date=document.getElementById("ebDate").value;
+    if(!expId||!date){document.getElementById("ebError").textContent="Experience and booking date are required.";return;}
+    const e=(settings?.experiences||[]).find(x=>String(x.id)===String(expId)); if(!e)return;
+    const reservationId=document.getElementById("ebReservation").value||null;
+    const adults=Math.max(0,Number(document.getElementById("ebAdults").value||0));
+    const children=Math.max(0,Number(document.getElementById("ebChildren").value||0));
+    if(adults+children<1){document.getElementById("ebError").textContent="At least one guest is required.";return;}
+    const unitPrice=Math.max(0,Number(document.getElementById("ebUnitPrice").value||0));
+    const discount=Math.max(0,Number(document.getElementById("ebDiscount").value||0));
+    const total=Math.max(0,(adults+children)*unitPrice-discount);
+    const r=reservationId?reservations.find(x=>String(x.id)===String(reservationId)):null;
+    const item={id:editingExperienceBookingId||("EB-"+Date.now()),bookingNo:(getExperienceBooking(editingExperienceBookingId)?.bookingNo)||("EXP-"+localDateString().replace(/-/g,"")+"-"+String((experienceBookings||[]).length+1).padStart(3,"0")),propertyId:currentPropertyId,experienceId:expId,experienceName:e.name,date,time:document.getElementById("ebTime").value||"",reservationId,guestName:r?.guestName||"Walk-in / External Guest",room:r?.room||"",adults,children,pax:adults+children,unitPrice,discount,total,status:document.getElementById("ebStatus").value,paymentStatus:document.getElementById("ebPaymentStatus").value,notes:document.getElementById("ebNotes").value.trim(),createdAt:getExperienceBooking(editingExperienceBookingId)?.createdAt||localDateTime(),updatedAt:localDateTime()};
+    const idx=(experienceBookings||[]).findIndex(x=>String(x.id)===String(editingExperienceBookingId));
+    if(idx>=0)experienceBookings[idx]=item;else experienceBookings.push(item);
+    saveData();closeExperienceBookingModal();renderAll();
+}
+function cancelExperienceBooking(id){
+    if(!requireRole("Admin","Manager","Front Office","Cashier")) return;
+    const b=getExperienceBooking(id);if(!b)return;
+    if(!confirm("Cancel booking "+b.bookingNo+"?"))return;
+    b.status="Cancelled";b.updatedAt=localDateTime();saveData();renderAll();
+}
+function postExperienceBookingToFolio(id){
+    if(!requireRole("Admin","Manager","Front Office","Cashier")) return;
+    const b=getExperienceBooking(id);if(!b||!b.reservationId){alert("Link this booking to an in-house reservation before posting to a folio.");return;}
+    if(b.status==="Cancelled"||b.status==="No-Show"){alert("Cancelled / No-Show bookings cannot be posted.");return;}
+    let f=getFolio(b.reservationId);const r=reservations.find(x=>String(x.id)===String(b.reservationId));if(!f){f={id:"f_"+Date.now(),reservationId:b.reservationId,accommodation:Number(r?.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(r?.total||0),createdAt:localDateTime()};folios.push(f);}
+    f.extras=Number(f.extras||0)+Number(b.total||0);f.experienceItems=Array.isArray(f.experienceItems)?f.experienceItems:[];
+    f.experienceItems.push({id:Date.now(),experienceBookingId:b.id,experienceId:b.experienceId,name:b.experienceName,amount:Number(b.total||0),date:b.date,addedAt:localDateTime()});
+    b.paymentStatus="Posted to Folio";b.updatedAt=localDateTime();saveData();renderAll();alert("Experience charge posted to guest folio.");
+}
+function renderExperienceBookings(){
+    const tb=document.getElementById("experienceBookingTable");if(!tb)return;
+    const list=(experienceBookings||[]).slice().sort((a,b)=>(String(a.date)+String(a.time)).localeCompare(String(b.date)+String(b.time)));
+    const today=localDateString();
+    const summary=[list.filter(x=>x.date===today&&x.status!=="Cancelled").length,list.filter(x=>x.status==="Confirmed").length,list.filter(x=>x.paymentStatus==="Unpaid").length,list.filter(x=>x.date>=today&&x.status!=="Cancelled").reduce((n,x)=>n+Number(x.total||0),0)];
+    const sm=document.getElementById("experienceBookingSummary");if(sm)sm.innerHTML=[['Today',summary[0]],['Confirmed',summary[1]],['Unpaid',summary[2]],['Upcoming Value',money(summary[3])]].map(x=>`<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fff"><div style="font-size:11px;color:#64748b">${x[0]}</div><strong style="font-size:20px">${x[1]}</strong></div>`).join("");
+    if(!list.length){tb.innerHTML='<tr><td colspan="8" class="empty">No experience / event bookings yet.</td></tr>';return;}
+    tb.innerHTML=list.map(b=>`<tr><td><strong>${escapeHtml(b.bookingNo||b.id)}</strong></td><td>${escapeHtml(b.date||'')} ${escapeHtml(b.time||'')}</td><td>${escapeHtml(b.experienceName||'')}</td><td>${escapeHtml(b.guestName||'Walk-in')}${b.room?`<br><small>Room ${escapeHtml(b.room)}</small>`:''}</td><td>${Number(b.pax||0)}</td><td>${money(Number(b.total||0))}</td><td><span class="badge ${b.status==='Confirmed'?'badge-green':b.status==='Cancelled'?'badge-red':'badge-yellow'}">${escapeHtml(b.status||'')}</span><br><small>${escapeHtml(b.paymentStatus||'')}</small></td><td><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-secondary btn-small" onclick="openExperienceBookingModal('${b.id}')">Edit</button>${b.reservationId&&b.paymentStatus!=='Posted to Folio'&&b.status!=='Cancelled'?`<button class="btn btn-success btn-small" onclick="postExperienceBookingToFolio('${b.id}')">Post Folio</button>`:''}${b.status!=='Cancelled'?`<button class="btn btn-danger btn-small" onclick="cancelExperienceBooking('${b.id}')">Cancel</button>`:''}</div></td></tr>`).join("");
 }
 
 function loadSettings(){
@@ -10101,101 +10149,59 @@ function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashie
 ========================================================= */
 
 function renderDashboard(){
-
     const today=localDateString();
     const roomIds=getRoomIds();
-    let occupied=0,reserved=0,available=0,oos=0;
-
-    roomIds.forEach(roomId=>{
-        const s=getRoomStatus(roomId);
-        const room=getRoomOperationalConfig(roomId);
-        if(room?.housekeepingStatus==="oos") oos++;
-        if(s.status==="occupied") occupied++;
-        else if(s.status==="reserved") reserved++;
-        else available++;
-    });
-
-    const villa=getVillaBooking(today);
-    if(villa && villa.status==="Checked-In") occupied=roomIds.length;
-    else if(villa && villa.status==="Reserved") reserved=roomIds.length;
-
-    const occupancy=Math.round((occupied/Math.max(1,getRoomCount()))*100);
-    const arrivals=reservations.filter(r=>r.checkIn===today&&r.status==="Reserved").length;
-    const departures=reservations.filter(r=>r.checkOut===today&&r.status==="Checked-In").length;
-
-    const accommodationRevenue=reservations.filter(r=>r.checkIn===today&&r.status!=="Cancelled").reduce((sum,r)=>sum+Number(r.total||0),0);
-    const restaurantRevenue=sales.filter(s=>s.date===today).reduce((sum,s)=>sum+Number(s.total||0),0);
-    const otherRevenue=reservations.filter(r=>r.checkIn===today&&r.status!=="Cancelled").reduce((sum,r)=>sum+Number(getFolio(r.id)?.extras||0),0);
-    const discounts=reservations.filter(r=>r.checkIn===today).reduce((sum,r)=>sum+Number(getFolio(r.id)?.discounts||0),0);
-    const totalRevenueToday=accommodationRevenue+restaurantRevenue+otherRevenue-discounts;
-    const roomNights=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=today&&r.checkOut>today&&r.bookingType==="room").length + (getVillaBooking(today)?.status==="Checked-In" ? getRoomCount() : 0);
-    const adr=roomNights>0?accommodationRevenue/roomNights:0;
-    const revpar=accommodationRevenue/Math.max(1,getRoomCount());
-    const cancellations=reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length;
+    const roomCount=Math.max(1,getRoomCount());
+    const activeStatuses=["Reserved","Confirmed","Checked-In"];
+    const activeRoomRes=reservations.filter(r=>r.bookingType==="room"&&activeStatuses.includes(r.status));
+    const villaRes=reservations.filter(r=>r.bookingType==="villa"&&activeStatuses.includes(r.status));
+    const overlaps=(r,d)=>r.status!=="Cancelled"&&r.status!=="No-Show"&&String(r.checkIn||"")<=d&&String(r.checkOut||"")>d;
+    const bookedForDate=(d)=>{
+        const rooms=activeRoomRes.filter(r=>overlaps(r,d));
+        const villa=villaRes.find(r=>overlaps(r,d));
+        return Math.min(roomCount,rooms.length+(villa?roomCount:0));
+    };
+    const nightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);return Math.max(0,Number(r.total||0)/n);};
+    const roomRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>s+nightlyValue(r),0)+((villaRes.find(r=>overlaps(r,d)))?Math.max(0,Number(villaRes.find(r=>overlaps(r,d)).total||0)/Math.max(1,Number(villaRes.find(r=>overlaps(r,d)).nights||1))):0):0;
+    const restaurantForDate=d=>sales.filter(s=>String(s.date||"").slice(0,10)===d&&Number(s.total||0)>0).reduce((s,x)=>s+Number(x.total||0),0);
+    const occupiedForDate=d=>bookedForDate(d);
+    const arrivals=reservations.filter(r=>r.checkIn===today&&r.status!=="Cancelled"&&r.status!=="No-Show");
+    const departures=reservations.filter(r=>r.checkOut===today&&["Checked-In","Checked-Out"].includes(r.status));
+    const stayovers=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<today&&r.checkOut>today);
+    let occupied=0; roomIds.forEach(roomId=>{const b=getBookingForRoom(roomId,today); if(b&&b.status==="Checked-In") occupied++;}); const villaToday=getVillaBooking(today); if(villaToday&&villaToday.status==="Checked-In") occupied=roomCount; const reserved=reservations.filter(r=>r.checkIn===today&&["Reserved","Confirmed"].includes(r.status)).length,available=Math.max(0,roomCount-occupied-reserved),oos=0;
+    roomIds.forEach(roomId=>{if(getRoomOperationalConfig(roomId)?.housekeepingStatus==="oos")oos++;});
+    const occPct=Math.round((occupied/roomCount)*100);
+    const roomRevenueToday=roomRevenueForDate(today),restaurantRevenue=restaurantForDate(today),totalRevenueToday=roomRevenueToday+restaurantRevenue;
+    const adr=occupied>0?roomRevenueToday/occupied:0,revpar=roomRevenueToday/roomCount;
     const apOutstanding=apTotals(today).total;
-    const outstanding=reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((sum,r)=>sum+getBalance(r.id),0);
+    const outstanding=reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((s,r)=>s+getBalance(r.id),0);
 
-    document.getElementById("dashOccupancy").textContent=occupancy+"%";
-    document.getElementById("dashArrivals").textContent=arrivals;
-    document.getElementById("dashDepartures").textContent=departures;
-    document.getElementById("dashRevenue").textContent=money(accommodationRevenue+restaurantRevenue);
-    const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
-    set("dashADR",money(adr));
-    set("dashRevPAR",money(revpar));
-    set("dashTotalRevenue",money(totalRevenueToday));
-    set("dashCancellations",cancellations);
-    set("dashAPOutstanding",money(apOutstanding));
-    set("dashOccupiedRooms",occupied+" / "+getRoomCount());
-    set("dashAvailableRooms",available);
-    set("dashReservedRooms",reserved);
-    set("dashOutstanding",money(outstanding));
-    set("dashRestaurant",money(restaurantRevenue));
-    set("dashOOS",oos);
+    const periodStart=(kind)=>{const d=new Date(today+"T00:00:00");if(kind==="mtd")d.setDate(1);if(kind==="ytd"){d.setMonth(0,1);}return localDateString(d);};
+    const periodEnd=(kind)=>{if(kind==="today")return today;return today;};
+    window.__gmPeriod=window.__gmPeriod||"today";
+    const kind=window.__gmPeriod, ps=periodStart(kind), pe=periodEnd(kind);
+    const days=[];for(let d=new Date(ps+"T00:00:00");d<=new Date(pe+"T00:00:00");d.setDate(d.getDate()+1))days.push(localDateString(new Date(d)));
+    const periodRooms=days.reduce((s,d)=>s+roomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0);
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+    set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",money(periodAdr));set("dashRevPAR",money(periodRevpar));set("dashRevenue",money(periodRooms));set("dashTotalRevenue",money(periodRooms+periodFnb));set("gmGop","—");set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",money(apOutstanding));set("dashOutstanding",money(outstanding));set("dashRestaurant",money(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
+    set("gmRoomRevenueSub",kind==="today"?"Estimated room-night revenue":"Period room-night revenue");
+    ["today","mtd","ytd"].forEach(k=>{const e=document.getElementById("gm"+({today:"Today",mtd:"Mtd",ytd:"Ytd"}[k])+"Btn");if(e)e.classList.toggle("active",k===kind);});
 
-    const seven=document.getElementById("dashboard7Day");
-    if(seven){
-        const rows=[];
-        for(let i=0;i<7;i++){
-            const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+i);
-            const date=localDateString(d);
-            const arr=reservations.filter(r=>r.checkIn===date&&r.status!=="Cancelled").length;
-            const dep=reservations.filter(r=>r.checkOut===date&&["Checked-In","Checked-Out"].includes(r.status)).length;
-            const inhouse=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=date&&r.checkOut>date).length;
-            rows.push(`<div class="overview-row"><strong>${i===0?"Today":formatDate(date)}</strong><span>${arr} arrival${arr===1?"":"s"}</span><span>${dep} dep.</span><span>${inhouse} in-house</span></div>`);
-        }
-        seven.innerHTML=rows.join("");
-    }
+    const outlook=[];let rev7=0,occ7=0;for(let i=0;i<7;i++){const d=new Date(today+"T00:00:00");d.setDate(d.getDate()+i);const ds=localDateString(d),sold=bookedForDate(ds),occ=Math.round(sold/roomCount*100),arr=reservations.filter(r=>r.checkIn===ds&&r.status!=="Cancelled"&&r.status!=="No-Show").length,dep=reservations.filter(r=>r.checkOut===ds&&["Reserved","Confirmed","Checked-In","Checked-Out"].includes(r.status)).length,rr=roomRevenueForDate(ds),a=sold?rr/sold:0;rev7+=rr;occ7+=occ;outlook.push({ds,sold,occ,arr,dep,adr:a,rr});}
+    set("gm7AvgOcc",Math.round(occ7/7)+"%");set("gm7Revenue",money(rev7));set("gm30Occ",(()=>{let total=0;for(let i=0;i<30;i++){const d=new Date(today+"T00:00:00");d.setDate(d.getDate()+i);total+=bookedForDate(localDateString(d))/roomCount*100;}return Math.round(total/30)+"%";})());set("gmPickup","—");
+    const seven=document.getElementById("dashboard7Day");if(seven)seven.innerHTML=`<table class="gm-table"><thead><tr><th>Date</th><th>Occ.</th><th>Rooms Sold</th><th>Arrivals</th><th>Departures</th><th>ADR</th><th>Rooms Revenue</th></tr></thead><tbody>${outlook.map((x,i)=>`<tr class="${x.occ===Math.min(...outlook.map(o=>o.occ))?"gm-low":""}"><td><b>${i===0?"Today":formatDate(x.ds)}</b></td><td>${x.occ}%</td><td>${x.sold} / ${roomCount}</td><td>${x.arr}</td><td>${x.dep}</td><td>${money(x.adr)}</td><td>${money(x.rr)}</td></tr>`).join("")}</tbody></table>`;
 
-    const hkBox=document.getElementById("dashboardHousekeeping");
-    if(hkBox){
-        const counts={clean:0,dirty:0,inspected:0,oos:0};
-        roomIds.forEach(id=>{const st=getRoomOperationalConfig(id)?.housekeepingStatus||"clean";counts[st]=(counts[st]||0)+1;});
-        hkBox.innerHTML=`
-            <div class="grid-2">
-                <div class="summary-box"><strong>${counts.clean||0}</strong><div class="kpi-sub">Clean</div></div>
-                <div class="summary-box"><strong>${counts.dirty||0}</strong><div class="kpi-sub">Dirty</div></div>
-                <div class="summary-box"><strong>${counts.inspected||0}</strong><div class="kpi-sub">Inspected</div></div>
-                <div class="summary-box"><strong>${counts.oos||0}</strong><div class="kpi-sub">Out of Order</div></div>
-            </div>`;
-    }
+    const hkBox=document.getElementById("dashboardHousekeeping");if(hkBox){const c={clean:0,dirty:0,inspected:0,oos:0};roomIds.forEach(id=>{const st=getRoomOperationalConfig(id)?.housekeepingStatus||"clean";c[st]=(c[st]||0)+1;});const ready=(c.clean||0)+(c.inspected||0);const occupiedSet=new Set();roomIds.forEach(id=>{const b=getBookingForRoom(id,today);if(b&&b.status==="Checked-In")occupiedSet.add(String(id));});const vacantClean=roomIds.filter(id=>!occupiedSet.has(String(id))&&["clean","inspected"].includes(getRoomOperationalConfig(id)?.housekeepingStatus||"clean")).length;hkBox.innerHTML=`<div class="gm-strip"><div class="gm-cell"><span>Ready / Inspected</span><strong>${ready}</strong></div><div class="gm-cell"><span>Dirty</span><strong>${c.dirty||0}</strong></div><div class="gm-cell"><span>Occupied</span><strong>${occupied}</strong></div><div class="gm-cell"><span>Vacant Clean</span><strong>${vacantClean}</strong></div><div class="gm-cell"><span>Out of Order</span><strong>${c.oos||0}</strong></div><div class="gm-cell"><span>Out of Service</span><strong>0</strong></div></div>`;set("gmReadinessNote",arrivals.length?`${arrivals.length} arrival${arrivals.length===1?"":"s"} today — ${ready} room${ready===1?"":"s"} ready / inspected.`:"No arrivals today.");}
 
-    const operations=document.getElementById("dashboardOperations");
-    if(!operations) return;
-    const todayGuests=reservations.filter(r=>(r.checkIn===today||r.checkOut===today||(r.checkIn<today&&r.checkOut>today&&r.status==="Checked-In"))&&r.status!=="Cancelled");
-    if(!todayGuests.length){
-        operations.innerHTML=`<div class="empty">No major operations for today.</div>`;
-        return;
-    }
-    operations.innerHTML=todayGuests.map(r=>{
-        const arrival=r.checkIn===today,departure=r.checkOut===today;
-        const room=r.bookingType==="villa"?"Entire Villa":getRoomLabel(r.roomId);
-        return `<div style="padding:10px 0;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
-            <div><strong>${escapeHtml(r.guestName)}</strong><div style="font-size:12px;color:#6b7280">${room} · ${escapeHtml(r.bookingNo)}</div></div>
-            <div>${arrival?`<span class="badge badge-green">Arrival</span>`:""}${departure?`<span class="badge badge-blue">Departure</span>`:""}${!arrival&&!departure&&r.status==="Checked-In"?`<span class="badge badge-blue">In-House</span>`:""}</div>
-        </div>`;
-    }).join("");
+    set("gmMoveArrivals",arrivals.length);set("gmMoveDepartures",departures.length);set("gmMoveStayovers",stayovers.length);
+    const alerts=[];
+    const arrivalRoomIds=arrivals.map(r=>r.roomId).filter(x=>x!==undefined&&x!==null);const notReady=arrivalRoomIds.filter(id=>!(["clean","inspected"].includes(getRoomOperationalConfig(id)?.housekeepingStatus||"clean"))).length;if(notReady)alerts.push(["Arrival readiness",`${notReady} arrival room${notReady===1?"":"s"} not yet ready.`]);
+    const pendingDeposits=reservations.filter(r=>r.status!=="Cancelled"&&getBalance(r.id)>0&&r.checkIn>=today).length;if(pendingDeposits)alerts.push(["Outstanding guest balances",`${pendingDeposits} upcoming / in-house reservation${pendingDeposits===1?"":"s"} with balance pending.`]);
+    const lowest=outlook.reduce((a,b)=>b.occ<a.occ?b:a,outlook[0]);if(lowest&&lowest.occ<50)alerts.push(["Low occupancy date",`${formatDate(lowest.ds)} occupancy is only ${lowest.occ}%.`]);
+    const canc=reservations.filter(r=>r.status==="Cancelled"&&String(r.cancelledAt||"").startsWith(today)).length;if(canc)alerts.push(["Cancellation activity",`${canc} cancellation${canc===1?"":"s"} recorded today.`]);
+    const alertBox=document.getElementById("gmAlerts");if(alertBox)alertBox.innerHTML=alerts.length?alerts.map(a=>`<div class="gm-alert"><span class="dot"></span><div><b>${escapeHtml(a[0])}</b><span>${escapeHtml(a[1])}</span></div></div>`).join(""):`<div class="gm-alert ok"><span class="dot"></span><div><b>No critical operational alerts</b><span>Current hotel activity is within the dashboard thresholds.</span></div></div>`;
 }
-
+window.gmSetPeriod=function(kind){window.__gmPeriod=kind;renderDashboard();};
 
 /* =========================================================
    REPORTS
@@ -11337,6 +11343,7 @@ function renderAll(){
     const calendar=document.getElementById("reservationCalendarView");
     if(calendar && calendar.style.display!=="none") renderReservationCalendar();
     renderExperiences();
+    renderExperienceBookings();
 }
 
 /* =========================================================
