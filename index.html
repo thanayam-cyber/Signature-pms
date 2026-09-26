@@ -1620,7 +1620,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.150 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.177 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -10276,7 +10276,7 @@ function printDailyOnePage(){
             (byOutlet[o]=byOutlet[o]||{n:0,t:0}).n++;byOutlet[o].t+=Number(x.total||0);
             (byMethod[m]=byMethod[m]||{n:0,t:0}).n++;byMethod[m].t+=Number(x.total||0);
         });
-        const tbl=(head,obj)=>{const keys=Object.keys(obj);return "<table><thead><tr><th>"+head+"</th><th class='r'>Bills</th><th class='r'>Total</th></tr></thead><tbody>"+(keys.length?keys.map(k=>"<tr><td>"+escapeHtml(k)+"</td><td class='r'>"+obj[k].n+"</td><td class='r'>"+money(obj[k].t)+"</td></tr>").join(""):"<tr><td colspan='3' class='e'>No restaurant sales</td></tr>")+"</tbody></table>";};
+        const tbl=(head,obj)=>{const keys=Object.keys(obj);return "<table><thead><tr><th>"+head+"</th><th class='r'>Bills</th><th class='r'>Total</th></tr></thead><tbody>"+(keys.length?keys.map(k=>"<tr><td>"+escapeHtml(k)+"</td><td class='r'>"+obj[k].n+"</td><td class='r'>"+dailyReportDualMoney(obj[k].t)+"</td></tr>").join(""):"<tr><td colspan='3' class='e'>No restaurant sales</td></tr>")+"</tbody></table>";};
         const invs=daySales.map(x=>x.invoiceNo).filter(Boolean).sort();
         const noInv=daySales.length-invs.length;
         const invLine=daySales.length?"<div class='sub'>Invoices: "+(invs.length?"<b>"+escapeHtml(invs[0])+"</b>"+(invs.length>1?" → <b>"+escapeHtml(invs[invs.length-1])+"</b>":""):"none issued")+(noInv?" &nbsp;·&nbsp; "+noInv+" bill(s) without invoice no.":"")+"</div>":"";
@@ -10296,7 +10296,7 @@ function printDailyOnePage(){
         const dep=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).map(r=>["Departure",r]);
         const all=arr.concat(dep),cap=10;
         moves=box("Arrivals & Departures","<table><thead><tr><th>Type</th><th>Guest</th><th>Booking</th><th>Room</th><th>Status</th><th class='r'>Balance</th></tr></thead><tbody>"
-            +(all.length?all.slice(0,cap).map(([t,r])=>"<tr><td>"+t+"</td><td>"+escapeHtml(r.guestName||"")+"</td><td>"+escapeHtml(r.bookingNo||"")+"</td><td>"+escapeHtml(room(r))+"</td><td>"+escapeHtml(r.status||"")+"</td><td class='r'>"+money(getBalance(r.id))+"</td></tr>").join(""):"<tr><td colspan='6' class='e'>No arrivals or departures for this date</td></tr>")
+            +(all.length?all.slice(0,cap).map(([t,r])=>"<tr><td>"+t+"</td><td>"+escapeHtml(r.guestName||"")+"</td><td>"+escapeHtml(r.bookingNo||"")+"</td><td>"+escapeHtml(room(r))+"</td><td>"+escapeHtml(r.status||"")+"</td><td class='r'>"+dailyReportDualMoney(getBalance(r.id))+"</td></tr>").join(""):"<tr><td colspan='6' class='e'>No arrivals or departures for this date</td></tr>")
             +"</tbody></table>"+(all.length>cap?"<div class='sub'>+ "+(all.length-cap)+" more — see Arrival / Departure Lists.</div>":""));
     }
     const audit="Business date: <b>"+escapeHtml(formatDate(settings?.businessDate||selected))+"</b> &nbsp;·&nbsp; Last night audit: <b>"+escapeHtml(settings?.lastNightAuditAt?String(settings.lastNightAuditAt):"Not run yet")+"</b>";
@@ -10318,6 +10318,32 @@ function printDailyOnePage(){
 }
 function printSelectedReport(){
  const type=document.getElementById("printReportType")?.value; if(type && !requireReportAccess("printable_"+type)) return;if(!canDo("reports.print")){alert("You do not have permission to print reports.");return;}renderPrintableReport();window.print();}
+
+function dailyReportDualMoney(value){
+    const v=Number(value||0);
+    const rate=Math.max(0,Number(settings?.postingRate||getProperty()?.postingRate||320));
+    const base=String(settings?.baseCurrency||getProperty()?.baseCurrency||"LKR").toUpperCase();
+    const guest=String(settings?.guestCurrency||settings?.currency||getProperty()?.guestCurrency||"USD").toUpperCase();
+    if(guest===base || !rate) return `${guest} ${v.toFixed(2)}`;
+    return `${guest} ${v.toFixed(2)} / ${base} ${(v*rate).toFixed(2)}`;
+}
+function dailyReportActualAccommodation(selected){
+    return reservations.filter(r=>
+        r.bookingType==="room" &&
+        ["Checked-In","Checked-Out"].includes(r.status) &&
+        String(r.checkIn||"")<=selected && String(r.checkOut||"")>=selected
+    ).reduce((sum,r)=>{
+        const nights=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);
+        return sum+Math.max(0,Number(r.total||0)/nights);
+    },0) + reservations.filter(r=>
+        r.bookingType==="villa" &&
+        ["Checked-In","Checked-Out"].includes(r.status) &&
+        String(r.checkIn||"")<=selected && String(r.checkOut||"")>=selected
+    ).reduce((sum,r)=>{
+        const nights=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);
+        return sum+Math.max(0,Number(r.total||0)/nights);
+    },0);
+}
 
 function renderReports(){
 
@@ -10431,16 +10457,9 @@ function renderReports(){
         );
 
 
-    const accommodationRevenue=
-        arrivals
-        .filter(
-            r=>r.status!=="Cancelled"
-        )
-        .reduce(
-            (sum,r)=>
-                sum+Number(r.total||0),
-            0
-        );
+    // Daily report revenue is posted/operational revenue, not the value of a new
+    // Reserved arrival. Future reservation values belong in the dashboard outlook.
+    const accommodationRevenue=dailyReportActualAccommodation(selected);
 
 
     const restaurantRevenue=
@@ -10971,17 +10990,17 @@ setTimeout(fnbRefreshCashierShift,0);
     document.getElementById(
         "reportAccommodation"
     ).textContent=
-        money(accommodationRevenue);
+        dailyReportDualMoney(accommodationRevenue);
 
     document.getElementById(
         "reportRestaurant"
     ).textContent=
-        money(restaurantRevenue);
+        dailyReportDualMoney(restaurantRevenue);
 
     document.getElementById(
         "reportPayments"
     ).textContent=
-        money(paymentTotal);
+        dailyReportDualMoney(paymentTotal);
 
     document.getElementById(
         "reportReservations"
@@ -11040,58 +11059,58 @@ setTimeout(fnbRefreshCashierShift,0);
     document.getElementById(
         "dailyAccommodation"
     ).textContent=
-        money(accommodationRevenue);
+        dailyReportDualMoney(accommodationRevenue);
 
     document.getElementById(
         "dailyRestaurant"
     ).textContent=
-        money(restaurantRevenue);
+        dailyReportDualMoney(restaurantRevenue);
 
     document.getElementById(
         "dailyOther"
     ).textContent=
-        money(otherCharges);
+        dailyReportDualMoney(otherCharges);
 
     document.getElementById(
         "dailyDiscounts"
     ).textContent=
-        money(discounts);
+        dailyReportDualMoney(discounts);
 
     document.getElementById(
         "dailyRevenue"
     ).textContent=
-        money(totalRevenue);
+        dailyReportDualMoney(totalRevenue);
 
 
     document.getElementById(
         "paymentCash"
     ).textContent=
-        money(paymentCash);
+        dailyReportDualMoney(paymentCash);
 
     document.getElementById(
         "paymentCard"
     ).textContent=
-        money(paymentCard);
+        dailyReportDualMoney(paymentCard);
 
     document.getElementById(
         "paymentBank"
     ).textContent=
-        money(paymentBank);
+        dailyReportDualMoney(paymentBank);
 
     document.getElementById(
         "paymentOnline"
     ).textContent=
-        money(paymentOnline);
+        dailyReportDualMoney(paymentOnline);
 
     document.getElementById(
         "paymentOther"
     ).textContent=
-        money(paymentOther);
+        dailyReportDualMoney(paymentOther);
 
     document.getElementById(
         "paymentMethodTotal"
     ).textContent=
-        money(paymentTotal);
+        dailyReportDualMoney(paymentTotal);
 
 
     const opening=
@@ -11103,22 +11122,22 @@ setTimeout(fnbRefreshCashierShift,0);
     document.getElementById(
         "closingOpening"
     ).textContent=
-        money(opening);
+        dailyReportDualMoney(opening);
 
     document.getElementById(
         "closingRevenue"
     ).textContent=
-        money(totalRevenue);
+        dailyReportDualMoney(totalRevenue);
 
     document.getElementById(
         "closingPayments"
     ).textContent=
-        money(paymentTotal);
+        dailyReportDualMoney(paymentTotal);
 
     document.getElementById(
         "closingOutstanding"
     ).textContent=
-        money(outstanding);
+        dailyReportDualMoney(outstanding);
 
     document.getElementById(
         "closingPosition"
