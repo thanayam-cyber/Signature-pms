@@ -5177,7 +5177,25 @@ function saveRoomTypesConfiguration(){
     alert("Room types saved successfully.");
 }
 
+/* v2.1.158: protect live Room / Unit Configuration edits from background hydration/render cycles. */
+function isRoomConfigurationEditing(){
+    if(window.__signatureRoomConfigEditing) return true;
+    const a=document.activeElement;
+    return !!(a && a.closest && a.closest("#roomConfigurationTable"));
+}
+(function(){
+    if(window.__signatureRoomConfigEditGuardBound) return;
+    window.__signatureRoomConfigEditGuardBound=true;
+    document.addEventListener("input",function(e){
+        if(e.target && e.target.closest && e.target.closest("#roomConfigurationTable")) window.__signatureRoomConfigEditing=true;
+    },true);
+    document.addEventListener("change",function(e){
+        if(e.target && e.target.closest && e.target.closest("#roomConfigurationTable")) window.__signatureRoomConfigEditing=true;
+    },true);
+})();
+
 function renderRoomConfiguration(){
+    if(isRoomConfigurationEditing()) return;
     const tbody=document.getElementById("roomConfigurationTable");
     const summary=document.getElementById("roomConfigurationSummary");
     if(!tbody)return;
@@ -5318,6 +5336,7 @@ async function saveRoomConfiguration(){
             return;
         }
     }
+    window.__signatureRoomConfigEditing=false;
     alert("Room / unit configuration saved successfully and synchronized to the cloud.");
 }
 
@@ -8802,6 +8821,26 @@ function getRoomStatus(roomId){
 
 
     if(!booking){
+        // A checked-in guest departing today remains occupied in the Rooms
+        // window until the actual checkout is completed. Future availability
+        // logic is intentionally left unchanged.
+        const departureToday=(reservations||[]).find(r=>{
+            const sameRoom =
+                String(r.bookingType||"").toLowerCase()==="room" &&
+                (Number(r.roomId)===Number(roomId) ||
+                 String(r.roomId||"").trim().toLowerCase()===String(roomId||"").trim().toLowerCase());
+            return sameRoom &&
+                String(r.status||"").trim().toLowerCase().replace(/_/g,"-")==="checked-in" &&
+                String(r.checkOut||"")===today;
+        });
+        if(departureToday){
+            return {
+                status:"occupied",
+                label:"Occupied — Departure Today",
+                guest:departureToday.guestName,
+                reservation:departureToday
+            };
+        }
 
         return {
 
@@ -16612,6 +16651,10 @@ async function forceHydrateSupabaseRooms(){
 
 async function hydrateSupabaseRooms(){
     try{
+        if(isRoomConfigurationEditing()){
+            console.debug("Supabase room hydration skipped while Room / Unit Configuration is being edited.");
+            return false;
+        }
         const client=initSupabaseClient();
         if(!client || !currentPropertyId) return false;
         const authUser=await getSupabaseSessionUser();
