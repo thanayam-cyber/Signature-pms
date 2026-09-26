@@ -385,20 +385,20 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
     <div class="gm-kpi"><div class="gm-label">Occupancy</div><div class="gm-value" id="dashOccupancy">0%</div><div class="gm-sub" id="gmOccSub">0 / 0 rooms</div></div>
     <div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average Daily Rate</div></div>
     <div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Revenue per available room</div></div>
-    <div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">$0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Room-night revenue basis</div></div>
+    <div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">$0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Actual occupied-room revenue basis</div></div>
     <div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">$0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
     <div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
   </div>
 
   <div class="gm-section"><h3>Commercial Outlook — Next 7 Days</h3>
     <div class="gm-strip" style="margin-bottom:10px">
-      <div class="gm-cell"><span>Next 7 Days Avg. Occ.</span><strong id="gm7AvgOcc">0%</strong></div>
-      <div class="gm-cell"><span>Next 30 Days Occ.</span><strong id="gm30Occ">—</strong></div>
-      <div class="gm-cell"><span>7-Day Rooms Revenue</span><strong id="gm7Revenue">$0.00</strong></div>
+      <div class="gm-cell"><span>Next 7 Days Avg. Booked Occ.</span><strong id="gm7AvgOcc">0%</strong></div>
+      <div class="gm-cell"><span>Next 30 Days Booked Occ.</span><strong id="gm30Occ">—</strong></div>
+      <div class="gm-cell"><span>7-Day Forecast Rooms Revenue</span><strong id="gm7Revenue">$0.00</strong></div>
       <div class="gm-cell"><span>Pickup — Last 7 Days</span><strong id="gmPickup">—</strong></div>
     </div>
     <div id="dashboard7Day"></div>
-    <div class="gm-note">Forecast revenue is based on booked room nights and their configured reservation value. It is an outlook, not a posted accounting figure.</div>
+    <div class="gm-note">Booked occupancy and forecast revenue are based on active reservations and configured reservation values. They are an outlook, not posted accounting figures.</div>
   </div>
 
   <div class="gm-section"><h3>Today's Hotel — Operational Snapshot</h3>
@@ -10170,7 +10170,14 @@ function renderDashboard(){
     let occupied=0; roomIds.forEach(roomId=>{const b=getBookingForRoom(roomId,today); if(b&&b.status==="Checked-In") occupied++;}); const villaToday=getVillaBooking(today); if(villaToday&&villaToday.status==="Checked-In") occupied=roomCount; const reserved=reservations.filter(r=>r.checkIn===today&&["Reserved","Confirmed"].includes(r.status)).length,available=Math.max(0,roomCount-occupied-reserved),oos=0;
     roomIds.forEach(roomId=>{if(getRoomOperationalConfig(roomId)?.housekeepingStatus==="oos")oos++;});
     const occPct=Math.round((occupied/roomCount)*100);
-    const roomRevenueToday=roomRevenueForDate(today),restaurantRevenue=restaurantForDate(today),totalRevenueToday=roomRevenueToday+restaurantRevenue;
+    // Dashboard KPIs use actual occupied/in-house room activity. Reservation values for
+    // future bookings remain in the Commercial Outlook only.
+    const actualRoomRevenueForDate=d=>{
+        const rooms=activeRoomRes.filter(r=>overlaps(r,d)&&["Checked-In","Checked-Out"].includes(r.status));
+        const villa=villaRes.find(r=>overlaps(r,d)&&["Checked-In","Checked-Out"].includes(r.status));
+        return rooms.reduce((s,r)=>s+nightlyValue(r),0)+(villa?Math.max(0,Number(villa.total||0)/Math.max(1,Number(villa.nights||1))):0);
+    };
+    const roomRevenueToday=actualRoomRevenueForDate(today),restaurantRevenue=restaurantForDate(today),totalRevenueToday=roomRevenueToday+restaurantRevenue;
     const adr=occupied>0?roomRevenueToday/occupied:0,revpar=roomRevenueToday/roomCount;
     const apOutstanding=apTotals(today).total;
     const outstanding=reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((s,r)=>s+getBalance(r.id),0);
@@ -10180,15 +10187,15 @@ function renderDashboard(){
     window.__gmPeriod=window.__gmPeriod||"today";
     const kind=window.__gmPeriod, ps=periodStart(kind), pe=periodEnd(kind);
     const days=[];for(let d=new Date(ps+"T00:00:00");d<=new Date(pe+"T00:00:00");d.setDate(d.getDate()+1))days.push(localDateString(new Date(d)));
-    const periodRooms=days.reduce((s,d)=>s+roomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0);
+    const periodRooms=days.reduce((s,d)=>s+actualRoomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
     set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",money(periodAdr));set("dashRevPAR",money(periodRevpar));set("dashRevenue",money(periodRooms));set("dashTotalRevenue",money(periodRooms+periodFnb));set("gmGop","—");set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",money(apOutstanding));set("dashOutstanding",money(outstanding));set("dashRestaurant",money(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
-    set("gmRoomRevenueSub",kind==="today"?"Estimated room-night revenue":"Period room-night revenue");
+    set("gmRoomRevenueSub",kind==="today"?"Actual occupied-room revenue basis":"Actual occupied-room revenue basis");
     ["today","mtd","ytd"].forEach(k=>{const e=document.getElementById("gm"+({today:"Today",mtd:"Mtd",ytd:"Ytd"}[k])+"Btn");if(e)e.classList.toggle("active",k===kind);});
 
     const outlook=[];let rev7=0,occ7=0;for(let i=0;i<7;i++){const d=new Date(today+"T00:00:00");d.setDate(d.getDate()+i);const ds=localDateString(d),sold=bookedForDate(ds),occ=Math.round(sold/roomCount*100),arr=reservations.filter(r=>r.checkIn===ds&&r.status!=="Cancelled"&&r.status!=="No-Show").length,dep=reservations.filter(r=>r.checkOut===ds&&["Reserved","Confirmed","Checked-In","Checked-Out"].includes(r.status)).length,rr=roomRevenueForDate(ds),a=sold?rr/sold:0;rev7+=rr;occ7+=occ;outlook.push({ds,sold,occ,arr,dep,adr:a,rr});}
     set("gm7AvgOcc",Math.round(occ7/7)+"%");set("gm7Revenue",money(rev7));set("gm30Occ",(()=>{let total=0;for(let i=0;i<30;i++){const d=new Date(today+"T00:00:00");d.setDate(d.getDate()+i);total+=bookedForDate(localDateString(d))/roomCount*100;}return Math.round(total/30)+"%";})());set("gmPickup","—");
-    const seven=document.getElementById("dashboard7Day");if(seven)seven.innerHTML=`<table class="gm-table"><thead><tr><th>Date</th><th>Occ.</th><th>Rooms Sold</th><th>Arrivals</th><th>Departures</th><th>ADR</th><th>Rooms Revenue</th></tr></thead><tbody>${outlook.map((x,i)=>`<tr class="${x.occ===Math.min(...outlook.map(o=>o.occ))?"gm-low":""}"><td><b>${i===0?"Today":formatDate(x.ds)}</b></td><td>${x.occ}%</td><td>${x.sold} / ${roomCount}</td><td>${x.arr}</td><td>${x.dep}</td><td>${money(x.adr)}</td><td>${money(x.rr)}</td></tr>`).join("")}</tbody></table>`;
+    const seven=document.getElementById("dashboard7Day");if(seven)seven.innerHTML=`<table class="gm-table"><thead><tr><th>Date</th><th>Booked Occ.</th><th>Booked Rooms</th><th>Arrivals</th><th>Departures</th><th>Booked ADR</th><th>Forecast Rooms Revenue</th></tr></thead><tbody>${outlook.map((x,i)=>`<tr class="${x.occ===Math.min(...outlook.map(o=>o.occ))?"gm-low":""}"><td><b>${i===0?"Today":formatDate(x.ds)}</b></td><td>${x.occ}%</td><td>${x.sold} / ${roomCount}</td><td>${x.arr}</td><td>${x.dep}</td><td>${money(x.adr)}</td><td>${money(x.rr)}</td></tr>`).join("")}</tbody></table>`;
 
     const hkBox=document.getElementById("dashboardHousekeeping");if(hkBox){const c={clean:0,dirty:0,inspected:0,oos:0};roomIds.forEach(id=>{const st=getRoomOperationalConfig(id)?.housekeepingStatus||"clean";c[st]=(c[st]||0)+1;});const ready=(c.clean||0)+(c.inspected||0);const occupiedSet=new Set();roomIds.forEach(id=>{const b=getBookingForRoom(id,today);if(b&&b.status==="Checked-In")occupiedSet.add(String(id));});const vacantClean=roomIds.filter(id=>!occupiedSet.has(String(id))&&["clean","inspected"].includes(getRoomOperationalConfig(id)?.housekeepingStatus||"clean")).length;hkBox.innerHTML=`<div class="gm-strip"><div class="gm-cell"><span>Ready / Inspected</span><strong>${ready}</strong></div><div class="gm-cell"><span>Dirty</span><strong>${c.dirty||0}</strong></div><div class="gm-cell"><span>Occupied</span><strong>${occupied}</strong></div><div class="gm-cell"><span>Vacant Clean</span><strong>${vacantClean}</strong></div><div class="gm-cell"><span>Out of Order</span><strong>${c.oos||0}</strong></div><div class="gm-cell"><span>Out of Service</span><strong>0</strong></div></div>`;set("gmReadinessNote",arrivals.length?`${arrivals.length} arrival${arrivals.length===1?"":"s"} today — ${ready} room${ready===1?"":"s"} ready / inspected.`:"No arrivals today.");}
 
@@ -10196,7 +10203,7 @@ function renderDashboard(){
     const alerts=[];
     const arrivalRoomIds=arrivals.map(r=>r.roomId).filter(x=>x!==undefined&&x!==null);const notReady=arrivalRoomIds.filter(id=>!(["clean","inspected"].includes(getRoomOperationalConfig(id)?.housekeepingStatus||"clean"))).length;if(notReady)alerts.push(["Arrival readiness",`${notReady} arrival room${notReady===1?"":"s"} not yet ready.`]);
     const pendingDeposits=reservations.filter(r=>r.status!=="Cancelled"&&getBalance(r.id)>0&&r.checkIn>=today).length;if(pendingDeposits)alerts.push(["Outstanding guest balances",`${pendingDeposits} upcoming / in-house reservation${pendingDeposits===1?"":"s"} with balance pending.`]);
-    const lowest=outlook.reduce((a,b)=>b.occ<a.occ?b:a,outlook[0]);if(lowest&&lowest.occ<50)alerts.push(["Low occupancy date",`${formatDate(lowest.ds)} occupancy is only ${lowest.occ}%.`]);
+    const lowest=outlook.reduce((a,b)=>b.occ<a.occ?b:a,outlook[0]);if(lowest&&lowest.occ<50)alerts.push(["Low booked occupancy date",`${formatDate(lowest.ds)} booked occupancy is only ${lowest.occ}%.`]);
     const canc=reservations.filter(r=>r.status==="Cancelled"&&String(r.cancelledAt||"").startsWith(today)).length;if(canc)alerts.push(["Cancellation activity",`${canc} cancellation${canc===1?"":"s"} recorded today.`]);
     const alertBox=document.getElementById("gmAlerts");if(alertBox)alertBox.innerHTML=alerts.length?alerts.map(a=>`<div class="gm-alert"><span class="dot"></span><div><b>${escapeHtml(a[0])}</b><span>${escapeHtml(a[1])}</span></div></div>`).join(""):`<div class="gm-alert ok"><span class="dot"></span><div><b>No critical operational alerts</b><span>Current hotel activity is within the dashboard thresholds.</span></div></div>`;
 }
