@@ -389,8 +389,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
     <div class="gm-kpi"><div class="gm-label">Occupancy</div><div class="gm-value" id="dashOccupancy">0%</div><div class="gm-sub" id="gmOccSub">0 / 0 rooms</div></div>
     <div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average Daily Rate</div></div>
     <div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Revenue per available room</div></div>
-    <div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">$0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Actual occupied-room revenue basis</div></div>
-    <div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">$0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
+    <div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">LKR 0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Actual occupied-room revenue basis</div></div>
+    <div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">LKR 0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
     <div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
   </div>
 
@@ -398,7 +398,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
     <div class="gm-strip" style="margin-bottom:10px">
       <div class="gm-cell"><span>Next 7 Days Avg. Occ.</span><strong id="gm7AvgOcc">0%</strong></div>
       <div class="gm-cell"><span>Next 30 Days Occ.</span><strong id="gm30Occ">—</strong></div>
-      <div class="gm-cell"><span>7-Day Forecast Rooms Revenue</span><strong id="gm7Revenue">$0.00</strong></div>
+      <div class="gm-cell"><span>7-Day Forecast Rooms Revenue</span><strong id="gm7Revenue">LKR 0.00</strong></div>
       <div class="gm-cell"><span>Pickup — Last 7 Days</span><strong id="gmPickup">—</strong></div>
     </div>
     <div id="dashboard7Day"></div>
@@ -787,7 +787,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="summary-box" style="margin-top:15px">
 <div style="display:flex;justify-content:space-between">
 <strong>Total</strong>
-<strong id="posTotal">$0.00</strong>
+<strong id="posTotal">LKR 0.00</strong>
 </div>
 </div>
 <button class="btn btn-success" onclick="savePOSOrder()" style="width:100%;margin-top:12px">
@@ -807,12 +807,12 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="toolbar"><button class="btn btn-secondary" onclick="paymentFilterToday()">Today</button><button class="btn btn-primary" onclick="openStandalonePaymentModal()">+ New Payment</button></div>
 </div>
 <div class="grid-6" style="margin-bottom:15px">
-<div class="card payment-kpi"><div class="card-title">Gross Received</div><div class="card-value" id="paymentGrossReceived">$0.00</div></div>
-<div class="card payment-kpi"><div class="card-title">Refunds</div><div class="card-value" id="paymentRefunds">$0.00</div></div>
-<div class="card payment-kpi"><div class="card-title">Net Received</div><div class="card-value" id="paymentNetReceived">$0.00</div></div>
-<div class="card payment-kpi"><div class="card-title">Cash</div><div class="card-value" id="paymentCashTotal">$0.00</div></div>
-<div class="card payment-kpi"><div class="card-title">Card</div><div class="card-value" id="paymentCardTotal">$0.00</div></div>
-<div class="card payment-kpi"><div class="card-title">Bank / Online</div><div class="card-value" id="paymentBankTotal">$0.00</div></div>
+<div class="card payment-kpi"><div class="card-title">Gross Received</div><div class="card-value" id="paymentGrossReceived">LKR 0.00</div></div>
+<div class="card payment-kpi"><div class="card-title">Refunds</div><div class="card-value" id="paymentRefunds">LKR 0.00</div></div>
+<div class="card payment-kpi"><div class="card-title">Net Received</div><div class="card-value" id="paymentNetReceived">LKR 0.00</div></div>
+<div class="card payment-kpi"><div class="card-title">Cash</div><div class="card-value" id="paymentCashTotal">LKR 0.00</div></div>
+<div class="card payment-kpi"><div class="card-title">Card</div><div class="card-value" id="paymentCardTotal">LKR 0.00</div></div>
+<div class="card payment-kpi"><div class="card-title">Bank / Online</div><div class="card-value" id="paymentBankTotal">LKR 0.00</div></div>
 </div>
 <div class="section" style="padding:14px;background:#f8faf9">
 <div class="payment-filter">
@@ -830,14 +830,15 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="report-line"><span>Pending Payments (not counted)</span><strong id="cashierPendingPayments">$0.00</strong></div>
 <div class="report-line"><strong>Net Cash to Account</strong><strong id="cashierNetCash">$0.00</strong></div>
 <div class="report-line"><span>Opening Float</span><strong id="cashierOpeningFloatDisplay">$0.00</strong></div>
-<div class="report-line"><span>Expected Cash</span><strong id="cashierExpectedCash">$0.00</strong></div>
+<div class="report-line"><span>Expected Cash</span><strong id="cashierExpectedCash">LKR 0.00</strong></div>
 <div class="report-line"><span>Actual Cash Counted</span><strong id="cashierActualCashDisplay">—</strong></div>
-<div class="report-line"><span>Cash Variance</span><strong id="cashierVariance">$0.00</strong></div>
+<div class="report-line"><span>Cash Variance</span><strong id="cashierVariance">LKR 0.00</strong></div>
 <div id="cashierCloseMessage" style="font-size:12px;color:#6b7280;margin-top:8px">Cashier opening, cash count, reconciliation and closing are controlled in Accounting → Cashier Shift &amp; Daily Closing.</div>
 </div></div>
 </section>
 <!-- CASHIER SHIFT & DAILY CLOSING — v1.8.4 -->
 <section class="page" id="cashiershift">
+<div style="font-size:12px;color:#6b7280;margin-bottom:10px">Cashier reconciliation is recorded in the hotel accounting currency: LKR.</div>
 <div class="section">
 <div class="section-header"><div><h3>Cashier Shift &amp; Daily Closing</h3><div style="font-size:12px;color:#6b7280">Open cashier shift, reconcile collections, count cash and close the business-date cashier day.</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="cashierShiftRefresh()">Refresh</button><button class="btn btn-primary" onclick="printCashierSummary()">Print Daily Cashier Report</button></div></div>
 <div class="grid-4" style="margin-bottom:15px">
@@ -849,7 +850,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" style="padding:14px;background:#f8faf9">
 <div class="section-header" style="margin-bottom:8px"><h3>1. Cashier Shift Opening</h3></div>
 <div class="form-grid">
-<div class="form-group"><label>Opening Float</label><input id="csOpeningFloat" min="0" step="0.01" type="number" value="0"/></div>
+<div class="form-group"><label>Opening Float (LKR)</label><input id="csOpeningFloat" min="0" step="0.01" type="number" value="0"/></div>
 <div class="form-group"><label>Cashier</label><input id="csCashierName" readonly="" type="text"/></div>
 </div>
 <div id="csShiftMessage" style="font-size:12px;color:#6b7280;margin-top:8px"></div>
@@ -868,8 +869,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" style="padding:14px;background:#f8faf9;margin-top:14px">
 <div class="section-header" style="margin-bottom:8px"><h3>3. Cash Count &amp; Reconciliation</h3></div>
 <div class="form-grid">
-<div class="form-group"><label>Expected Cash</label><input id="csExpectedCash" readonly="" type="text"/></div>
-<div class="form-group"><label>Actual Cash Counted</label><input id="csActualCash" min="0" onchange="window.calculateCashierVariance(true)" onblur="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
+<div class="form-group"><label>Expected Cash (LKR)</label><input id="csExpectedCash" readonly="" type="text"/></div>
+<div class="form-group"><label>Actual Cash Counted (LKR)</label><input id="csActualCash" min="0" onchange="window.calculateCashierVariance(true)" onblur="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
 <div class="form-group"><label>Variance</label><input id="csVariance" readonly="" type="text"/></div>
 </div>
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-secondary" onclick="window.calculateCashierVariance()">Calculate Variance</button><button class="btn btn-success" onclick="window.closeCashierDay()">Close Cashier Day</button></div>
@@ -903,15 +904,15 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="report-grid">
 <div class="card">
 <div class="card-title">Accommodation Revenue</div>
-<div class="card-value" id="reportAccommodation">$0.00</div>
+<div class="card-value" id="reportAccommodation">LKR 0.00</div>
 </div>
 <div class="card">
 <div class="card-title">Restaurant Revenue</div>
-<div class="card-value" id="reportRestaurant">$0.00</div>
+<div class="card-value" id="reportRestaurant">LKR 0.00</div>
 </div>
 <div class="card">
 <div class="card-title">Payments Received</div>
-<div class="card-value" id="reportPayments">$0.00</div>
+<div class="card-value" id="reportPayments">LKR 0.00</div>
 </div>
 <div class="card">
 <div class="card-title">Reservations</div>
@@ -928,15 +929,15 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="report-line"><span>Occupied Rooms</span><strong id="reportOccupiedRooms">0 / 4</strong></div>
 <div class="report-line"><span>Occupancy</span><strong id="reportOccupancy">0%</strong></div>
 <div class="report-line"><span>Room Nights</span><strong id="reportRoomNights">0</strong></div>
-<div class="report-line"><span>ADR</span><strong id="reportADR">$0.00</strong></div>
+<div class="report-line"><span>ADR</span><strong id="reportADR">LKR 0.00</strong></div>
 </div>
 <div class="report-section" id="revenueSummaryReportSection">
 <h3>Revenue Summary</h3>
-<div class="report-line"><span>Accommodation</span><strong id="dailyAccommodation">$0.00</strong></div>
-<div class="report-line"><span>Restaurant / POS</span><strong id="dailyRestaurant">$0.00</strong></div>
-<div class="report-line"><span>Other Charges</span><strong id="dailyOther">$0.00</strong></div>
-<div class="report-line"><span>Discounts</span><strong id="dailyDiscounts">$0.00</strong></div>
-<div class="report-line"><strong>Total Revenue</strong><strong id="dailyRevenue">$0.00</strong></div>
+<div class="report-line"><span>Accommodation</span><strong id="dailyAccommodation">LKR 0.00</strong></div>
+<div class="report-line"><span>Restaurant / POS</span><strong id="dailyRestaurant">LKR 0.00</strong></div>
+<div class="report-line"><span>Other Charges</span><strong id="dailyOther">LKR 0.00</strong></div>
+<div class="report-line"><span>Discounts</span><strong id="dailyDiscounts">LKR 0.00</strong></div>
+<div class="report-line"><strong>Total Revenue</strong><strong id="dailyRevenue">LKR 0.00</strong></div>
 </div>
 <div class="report-section" id="fnbOutletPerformanceSection">
 <h3>Restaurant / Outlet Performance</h3>
@@ -984,20 +985,20 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="report-section" id="paymentReportSection">
 <h3>Payments by Method</h3>
-<div class="report-line"><span>Cash</span><strong id="paymentCash">$0.00</strong></div>
-<div class="report-line"><span>Card</span><strong id="paymentCard">$0.00</strong></div>
-<div class="report-line"><span>Bank Transfer</span><strong id="paymentBank">$0.00</strong></div>
-<div class="report-line"><span>Online Payment</span><strong id="paymentOnline">$0.00</strong></div>
-<div class="report-line"><span>Other</span><strong id="paymentOther">$0.00</strong></div>
-<div class="report-line"><strong>Total Payments</strong><strong id="paymentMethodTotal">$0.00</strong></div>
+<div class="report-line"><span>Cash</span><strong id="paymentCash">LKR 0.00</strong></div>
+<div class="report-line"><span>Card</span><strong id="paymentCard">LKR 0.00</strong></div>
+<div class="report-line"><span>Bank Transfer</span><strong id="paymentBank">LKR 0.00</strong></div>
+<div class="report-line"><span>Online Payment</span><strong id="paymentOnline">LKR 0.00</strong></div>
+<div class="report-line"><span>Other</span><strong id="paymentOther">LKR 0.00</strong></div>
+<div class="report-line"><strong>Total Payments</strong><strong id="paymentMethodTotal">LKR 0.00</strong></div>
 </div>
 <div class="report-section" id="closingReportSection">
 <h3>Daily Closing / Reconciliation</h3>
-<div class="report-line"><span>Opening Balance</span><strong id="closingOpening">$0.00</strong></div>
-<div class="report-line"><span>Revenue</span><strong id="closingRevenue">$0.00</strong></div>
-<div class="report-line"><span>Payments Received</span><strong id="closingPayments">$0.00</strong></div>
-<div class="report-line"><span>Outstanding Guest Balance</span><strong id="closingOutstanding">$0.00</strong></div>
-<div class="report-line"><strong>Closing Position</strong><strong id="closingPosition">$0.00</strong></div>
+<div class="report-line"><span>Opening Balance</span><strong id="closingOpening">LKR 0.00</strong></div>
+<div class="report-line"><span>Revenue</span><strong id="closingRevenue">LKR 0.00</strong></div>
+<div class="report-line"><span>Payments Received</span><strong id="closingPayments">LKR 0.00</strong></div>
+<div class="report-line"><span>Outstanding Guest Balance</span><strong id="closingOutstanding">LKR 0.00</strong></div>
+<div class="report-line"><strong>Closing Position</strong><strong id="closingPosition">LKR 0.00</strong></div>
 </div>
 <div class="report-section" id="reservationReportSection">
 <h3>Reservation Report</h3>
@@ -2662,6 +2663,48 @@ function money(value){
     const currency=settings?.currency || getProperty()?.currency || "$";
     return currency+Number(value||0).toFixed(2);
 }
+
+/* POS is operationally LKR. Existing menu/sale records may retain their original
+   guest/display currency internally; POS screens and invoices convert using the
+   current hotel posting rate without changing accounting data. */
+function posRate(){
+    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
+    const cur=String(settings?.currency||getProperty()?.currency||"USD").toUpperCase();
+    if(cur===base || cur==="LKR") return 1;
+    return Number(settings?.postingRate||settings?.settlementRate||320)||320;
+}
+function posAmountLKR(value){ return Number(value||0)*posRate(); }
+function posMoney(value){ return "LKR "+Number(posAmountLKR(value)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function posSaleMoney(sale,value){ return "LKR "+Number(fnbSaleAmountLKR(sale,value)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* v2.1.151 — LKR settlement display/input helpers.
+   Guest charges may remain in USD, while hotel settlement/cash handling is LKR.
+   Existing payment amounts remain in their original guest currency for compatibility;
+   settlementAmountLKR stores the actual LKR received for new payments. */
+function reservationSettlementRate(r){
+    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
+    const cur=String(r?.currency||r?.guestCurrency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();
+    if(cur===base || cur==="LKR") return 1;
+    return Number(r?.postingRateAtBooking||r?.postingRateAtCalculation||r?.accountingRate||settings?.settlementRate||settings?.postingRate||320)||320;
+}
+function reservationAmountLKR(r,amount){
+    return Number(amount||0)*reservationSettlementRate(r);
+}
+function paymentAmountLKR(p,r){
+    if(p?.settlementAmountLKR!=null && Number.isFinite(Number(p.settlementAmountLKR))) return Number(p.settlementAmountLKR);
+    if(p?.saleId){
+        const sale=(sales||[]).find(s=>String(s.id||"")===String(p.saleId||""));
+        if(sale) return fnbSaleAmountLKR(sale,Number(p?.amount||0));
+    }
+    return reservationAmountLKR(r,Number(p?.amount||0));
+}
+function fnbSaleRate(s){
+    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
+    const cur=String(s?.currency||s?.guestCurrency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();
+    if(cur===base || cur==="LKR") return 1;
+    return Number(s?.postingRateAtBooking||s?.postingRateAtCalculation||s?.accountingRate||settings?.postingRate||320)||320;
+}
+function fnbSaleAmountLKR(s,amount){ return Number(amount||0)*fnbSaleRate(s); }
 
 function normalizeMealPlan(value){
     return ["RO","BB","HB","FB","AI"].includes(String(value||"").toUpperCase())
@@ -5902,7 +5945,7 @@ function renderRestaurantMenuManager(){
                         <td><strong>${escapeHtml(item.name)}</strong></td>
                         <td><span class="badge badge-blue">${escapeHtml(item.outletName||"")}</span></td>
                         <td>${escapeHtml(item.category||"General")}</td>
-                        <td><strong>${money(item.price)}</strong></td>
+                        <td><strong>${posMoney(item.price)}</strong></td>
                         <td>${rc?'<span class="badge badge-success">Configured</span>':'<span class="badge badge-red">No Recipe</span>'}</td>
                         <td>${rc?`${money(cost)} ${pct!=null?pctBadge(pct,target):''}`:'—'}</td>
                         <td>${rc?money(margin):'—'}</td>
@@ -8086,7 +8129,7 @@ function viewFolio(reservationId){
 
         <div class="report-line">
             <span>Accommodation</span>
-            <strong>${money(r.total)}</strong>
+            <div style="text-align:right"><strong>${money(r.total)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,r.total))}</div></div>
         </div>
 
         <div class="report-line">
@@ -8120,17 +8163,17 @@ function viewFolio(reservationId){
 
         <div class="report-line">
             <strong>Total</strong>
-            <strong>${money(total)}</strong>
+            <div style="text-align:right"><strong>${money(total)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,total))}</div></div>
         </div>
 
         <div class="report-line">
             <span>Paid</span>
-            <strong>${money(paid)}</strong>
+            <div style="text-align:right"><strong>${money(paid)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(guestPayments.filter(paymentIsReceived).reduce((s,p)=>s+paymentAmountLKR(p,r),0))}</div></div>
         </div>
 
         <div class="report-line">
             <strong>Balance</strong>
-            <strong>${money(balance)}</strong>
+            <div style="text-align:right"><strong>${money(balance)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,balance))}</div></div>
         </div>
 
     </div>
@@ -8294,6 +8337,7 @@ function viewFolio(reservationId){
 
                         <td>
                             <strong>${money(p.amount)}</strong>
+                            <div style="font-size:11px;color:#6b7280">Settled: ${accMoney(paymentAmountLKR(p,r))}</div>
                         </td>
 
                     </tr>
@@ -8480,6 +8524,7 @@ function openPaymentModal(reservationId){
 
             ${escapeHtml(r.bookingNo)}
             · Balance ${money(balance)}
+            · <strong>${accMoney(reservationAmountLKR(r,balance))}</strong> payable in LKR
 
         </div>
 
@@ -8524,13 +8569,16 @@ function openPaymentModal(reservationId){
 
         <div class="form-group">
 
-            <label>Amount *</label>
+            <label>Amount Received (LKR) *</label>
 
             <input type="number"
                    id="paymentAmount"
                    min="0.01"
                    step="0.01"
-                   value="${balance.toFixed(2)}">
+                   value="${reservationAmountLKR(r,balance).toFixed(2)}">
+            <div style="font-size:11px;color:#6b7280;margin-top:5px">
+                1 ${escapeHtml(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase())} = ${reservationSettlementRate(r).toFixed(4)} LKR · Folio balance ${money(balance)}
+            </div>
 
         </div>
 
@@ -8710,22 +8758,20 @@ function savePayment(reservationId){
         ).value;
 
 
-    const amount=
-        Number(
-            document.getElementById(
-                "paymentAmount"
-            ).value||0
-        );
+    const settlementAmountLKR=Number(document.getElementById("paymentAmount").value||0);
+    const reservation=reservations.find(x=>x.id===reservationId);
+    const settlementRate=reservationSettlementRate(reservation);
+    const amount=settlementRate>0 ? settlementAmountLKR/settlementRate : settlementAmountLKR;
 
 
     const balance=
         getBalance(reservationId);
 
 
-    if(amount<=0){
+    if(settlementAmountLKR<=0){
 
         error.textContent=
-            "Enter a valid payment amount.";
+            "Enter a valid LKR payment amount.";
 
         return;
 
@@ -8791,7 +8837,6 @@ function savePayment(reservationId){
 
     try {
 
-    const reservation=reservations.find(x=>x.id===reservationId);
     if(!reservation){
         error.textContent="Reservation could not be found.";
         return;
@@ -8816,6 +8861,9 @@ function savePayment(reservationId){
         method,
 
         amount,
+        settlementAmountLKR:Number(settlementAmountLKR.toFixed(2)),
+        settlementRate,
+        settlementCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
 
         status:
             document.getElementById(
@@ -8858,7 +8906,7 @@ function savePayment(reservationId){
 
     logAudit("PAYMENT_CREATED",reference,"Payment recorded: "+amount,currentPropertyId);
     alert(
-        "Payment recorded successfully."
+        "Payment recorded successfully.\n\nReceived: LKR "+Number(settlementAmountLKR).toFixed(2)+"\nFolio value: "+money(amount)
     );
 
     } catch (err) {
@@ -9786,7 +9834,7 @@ function renderPOS(){
                 </h4>
 
                 <div class="pos-price">
-                    ${money(item.price)}
+                    ${posMoney(item.price)}
                 </div>
 
                 <button class="btn btn-primary btn-small"
@@ -9919,7 +9967,7 @@ function renderPOSOrder(){
 
         document.getElementById(
             "posTotal"
-        ).textContent="$0.00";
+        ).textContent="LKR 0.00";
 
         return;
 
@@ -9957,7 +10005,7 @@ function renderPOSOrder(){
                         font-size:11px;
                         color:#6b7280">
 
-                        ${money(item.price)}
+                        ${posMoney(item.price)}
                         × ${item.qty}
 
                     </div>
@@ -9968,7 +10016,7 @@ function renderPOSOrder(){
                 <div>
 
                     <strong>
-                        ${money(line)}
+                        ${posMoney(line)}
                     </strong>
 
                     <br>
@@ -9992,7 +10040,7 @@ function renderPOSOrder(){
 
     document.getElementById(
         "posTotal"
-    ).textContent=money(total);
+    ).textContent=posMoney(total);
 
 }
 
@@ -10025,7 +10073,7 @@ function printPOSInvoice(saleId){
     const r=reservations.find(x=>x.id===sale.reservationId);
     const rows=(sale.items||[]).map(i=>{
         const q=Number(i.qty||0),pr=Number(i.price||0);
-        return "<tr><td>"+escapeHtml(i.name||"Item")+"</td><td class='r'>"+q+"</td><td class='r'>"+money(pr)+"</td><td class='r'>"+money(pr*q)+"</td></tr>";
+        return "<tr><td>"+escapeHtml(i.name||"Item")+"</td><td class='r'>"+q+"</td><td class='r'>"+posSaleMoney(sale,pr)+"</td><td class='r'>"+posSaleMoney(sale,pr*q)+"</td></tr>";
     }).join("");
     const method=sale.paymentMethod||"Cash";
     const payLine=method==="Room Charge"?"Charged to room folio"+(r?" — "+escapeHtml(r.bookingNo||""):""):"Paid by "+escapeHtml(method);
@@ -10042,7 +10090,7 @@ function printPOSInvoice(saleId){
       +"<div><span>Customer</span><span>"+escapeHtml(customer)+"</span></div>"
       +"<div><span>Cashier</span><span>"+escapeHtml(sale.cashier||"")+"</span></div></div>"
       +"<table><thead><tr><th>Item</th><th class='r'>Qty</th><th class='r'>Price</th><th class='r'>Amount</th></tr></thead><tbody>"+rows+"</tbody></table>"
-      +"<div class='tot'><span>TOTAL</span><span>"+money(Number(sale.total||0))+"</span></div>"
+      +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
       +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div></body></html>";
@@ -10057,7 +10105,7 @@ function renderPOSInvoices(){
         const voided=!!(x.voided||x.isVoided||x.status==="Voided");
          const statusBadge=voided?" <span class='badge badge-red'>VOIDED</span>":"";
          const action=(voided?"":"<button class='btn btn-danger btn-small' onclick=\"fnbVoidInvoice('"+escapeHtml(x.id)+"')\">Void / Refund</button> ")+"<button class='btn btn-secondary btn-small' onclick=\"printPOSInvoice('"+escapeHtml(x.id)+"')\">"+(x.invoiceNo?"Print Invoice":"Create &amp; Print")+"</button>";
-         return "<tr><td><strong>"+escapeHtml(x.invoiceNo||"—")+"</strong>"+statusBadge+"</td><td>"+escapeHtml(x.dateTime||x.date||"")+"</td><td>"+escapeHtml(x.outletName||"")+"</td><td>"+escapeHtml(cust)+"</td><td>"+escapeHtml(x.paymentMethod||"")+"</td><td style='text-align:right'>"+money(Number(x.total||0))+"</td><td>"+action+"</td></tr>";
+         return "<tr><td><strong>"+escapeHtml(x.invoiceNo||"—")+"</strong>"+statusBadge+"</td><td>"+escapeHtml(x.dateTime||x.date||"")+"</td><td>"+escapeHtml(x.outletName||"")+"</td><td>"+escapeHtml(cust)+"</td><td>"+escapeHtml(x.paymentMethod||"")+"</td><td style='text-align:right'>"+posSaleMoney(x,Number(x.total||0))+"</td><td>"+action+"</td></tr>";
     }).join(""):"<tr><td colspan='7' class='empty'>No restaurant invoices yet.</td></tr>";
 }
 /* =========================================================
@@ -10080,7 +10128,7 @@ function fnbVoidInvoice(saleId){
   const reason=prompt("Enter the reason for void / refund:");
   if(reason===null)return;
   if(!String(reason).trim()){alert("Void / refund reason is required.");return;}
-  if(!confirm("Void / refund invoice "+(sale.invoiceNo||sale.id)+" for "+money(Number(sale.total||0))+"?\n\nThis will reverse the restaurant sale and restore recipe stock."))return;
+  if(!confirm("Void / refund invoice "+(sale.invoiceNo||sale.id)+" for "+posSaleMoney(sale,Number(sale.total||0))+"?\n\nThis will reverse the restaurant sale and restore recipe stock."))return;
   try{
     const bizDate=String(sale.businessDate||sale.date||cashierBusinessDate()).slice(0,10);
     const originalMoves=window.__fnbRdMv().filter(m=>String(m.propertyId||currentPropertyId)===String(currentPropertyId)&&String(m.type)==="sale"&&String(m.saleId||"")===String(sale.id));
@@ -10141,7 +10189,7 @@ function fnbVoidInvoice(saleId){
 }
 
 /* v2.1.131 — Reception / Front Office may post normal Restaurant POS orders; preserve selected in-house guest during POS refresh. */
-function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}folio.restaurant=Number(folio.restaurant||0)+total;folio.total=Number(folio.accommodation||0)+Number(folio.restaurant||0)+Number(folio.extras||0)+Number(folio.taxes||0)+Number(folio.serviceCharges||0)-Number(folio.discounts||0);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
+function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}folio.restaurant=Number(folio.restaurant||0)+total;folio.total=Number(folio.accommodation||0)+Number(folio.restaurant||0)+Number(folio.extras||0)+Number(folio.taxes||0)+Number(folio.serviceCharges||0)-Number(folio.discounts||0);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
 if(guest && typeof syncReservationToSupabase==='function'){
   // v2.1.133 — explicitly sync the updated guest reservation snapshot after
   // the POS sale/folio/payment arrays have been committed locally.
@@ -10162,10 +10210,11 @@ if(guest && typeof syncReservationToSupabase==='function'){
 clearPOSOrder();renderAll();logAudit("POS_SALE",saleId,"Restaurant order saved ["+invoiceNo+"]: "+total+" — "+outlet.name+" — "+customerType,currentPropertyId);try{if(typeof storesOnPOSSale==="function")storesOnPOSSale(saleId);}catch(e){console.warn("Stock deduction failed",e);}
 if(confirm("Restaurant order saved successfully.\nInvoice No: "+invoiceNo+"\n\nPrint invoice now?"))printPOSInvoice(saleId);}
 
-function renderPayments(){const tbody=document.getElementById('paymentTable');if(!tbody)return;const filtered=payments.filter(paymentMatchesFilters),sum=paymentSummary(filtered),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);};set('paymentGrossReceived',sum.gross);set('paymentRefunds',sum.refunds);set('paymentNetReceived',sum.net);set('paymentCashTotal',sum.cash-sum.cashRefunds);set('paymentCardTotal',sum.card);set('paymentBankTotal',sum.bank);/* Cashier Daily Summary must use the same business-date cashier collection set as Cashier Shift & Daily Closing. */
+function renderPayments(){const tbody=document.getElementById('paymentTable');if(!tbody)return;const filtered=payments.filter(paymentMatchesFilters),sum=paymentSummary(filtered),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);};const filteredLKR=typeof cashierPaymentSummaryLKR==='function'?cashierPaymentSummaryLKR(filtered):{gross:0,refunds:0,net:0,cash:0,cashRefunds:0,card:0,bank:0};
+set('paymentGrossReceived',filteredLKR.gross);set('paymentRefunds',filteredLKR.refunds);set('paymentNetReceived',filteredLKR.net);set('paymentCashTotal',filteredLKR.cash-filteredLKR.cashRefunds);set('paymentCardTotal',filteredLKR.card);set('paymentBankTotal',filteredLKR.bank);/* Cashier Daily Summary must use the same business-date cashier collection set as Cashier Shift & Daily Closing. */
 const cashierList=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
-const cashierSum=typeof paymentSummary==='function'?paymentSummary(cashierList):{cash:0,cashRefunds:0,pending:0};
-set('cashierCashReceived',cashierSum.cash);set('cashierCashRefunds',cashierSum.cashRefunds);set('cashierNetCash',cashierSum.cash-cashierSum.cashRefunds);set('cashierPendingPayments',cashierSum.pending);if(!filtered.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No payments match the selected filters.</td></tr>';return;}tbody.innerHTML=filtered.slice().reverse().map(p=>{const r=reservations.find(x=>x.id===p.reservationId),refund=paymentIsRefund(p),status=refund?'Refund':(p.status||'Received'),cls=refund?'payment-status-refund':status==='Pending'?'payment-status-pending':'payment-status-received';return `<tr><td>${escapeHtml(p.date||'-')}</td><td>${escapeHtml(p.reference||'-')}</td><td>${escapeHtml(r?.guestName||p.guestName||'-')}</td><td>${escapeHtml(r?.bookingNo||'-')}</td><td><span class="badge ${refund?'badge-red':'badge-green'}">${escapeHtml(p.type||'-')}</span></td><td>${escapeHtml(p.method||'-')}</td><td>${paymentDetailsHtml(p)}<br><span class="badge ${cls}">${status}</span></td><td><strong class="${refund?'payment-refund':''}">${refund?'-':''}${money(Math.abs(Number(p.amount||0)))}</strong></td><td>${(()=>{const a=[];if(!refund&&paymentIsReceived(p)&&Number(p.amount||0)>0)a.push(`<button class="btn btn-danger btn-small" onclick="openRefundModal('${p.reservationId}','${p.id}')">Refund</button>`);if(p.invoiceNo&&p.saleId)a.push(`<button class="btn btn-secondary btn-small" onclick="printPOSInvoice('${escapeHtml(p.saleId)}')">Invoice</button>`);return a.length?a.join(' '):'-';})()}</td></tr>`;}).join('');
+const cashierSum=typeof cashierPaymentSummaryLKR==='function'?cashierPaymentSummaryLKR(cashierList):{cash:0,cashRefunds:0,pending:0};
+set('cashierCashReceived',cashierSum.cash);set('cashierCashRefunds',cashierSum.cashRefunds);set('cashierNetCash',cashierSum.cash-cashierSum.cashRefunds);set('cashierPendingPayments',cashierSum.pending);if(!filtered.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No payments match the selected filters.</td></tr>';return;}tbody.innerHTML=filtered.slice().reverse().map(p=>{const r=reservations.find(x=>x.id===p.reservationId),refund=paymentIsRefund(p),status=refund?'Refund':(p.status||'Received'),cls=refund?'payment-status-refund':status==='Pending'?'payment-status-pending':'payment-status-received';return `<tr><td>${escapeHtml(p.date||'-')}</td><td>${escapeHtml(p.reference||'-')}</td><td>${escapeHtml(r?.guestName||p.guestName||'-')}</td><td>${escapeHtml(r?.bookingNo||'-')}</td><td><span class="badge ${refund?'badge-red':'badge-green'}">${escapeHtml(p.type||'-')}</span></td><td>${escapeHtml(p.method||'-')}</td><td>${paymentDetailsHtml(p)}<br><span class="badge ${cls}">${status}</span></td><td><strong class="${refund?'payment-refund':''}">${refund?'-':''}${reportMoney(Math.abs(paymentAmountLKR(p,r)))}</strong></td><td>${(()=>{const a=[];if(!refund&&paymentIsReceived(p)&&Number(p.amount||0)>0)a.push(`<button class="btn btn-danger btn-small" onclick="openRefundModal('${p.reservationId}','${p.id}')">Refund</button>`);if(p.invoiceNo&&p.saleId)a.push(`<button class="btn btn-secondary btn-small" onclick="printPOSInvoice('${escapeHtml(p.saleId)}')">Invoice</button>`);return a.length?a.join(' '):'-';})()}</td></tr>`;}).join('');
 /* Cashier summary on Payments page: calculate directly from today's settled cashier payments and the open shift. */
 try{
  const todayList=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
@@ -10181,8 +10230,8 @@ try{
  set('cashierExpectedCash',expected);
  const actualDisplay=document.getElementById('cashierActualCashDisplay');
  if(actualDisplay) actualDisplay.textContent=(closing && Number.isFinite(Number(closing.actualCash))) ? money(Number(closing.actualCash)) : '—';
- set('cashierVariance',variance);
- set('csVarianceTop',variance);
+ const cvEl=document.getElementById('cashierVariance');if(cvEl)cvEl.textContent=accMoney(variance);
+ const cvTopEl=document.getElementById('csVarianceTop');if(cvTopEl)cvTopEl.textContent=accMoney(variance);
 }catch(e){console.error('Payments cashier summary refresh failed',e);}
 }
 function openStandalonePaymentModal(){if(!requireRole('Admin','Manager','Front Office','Cashier'))return;const select=document.getElementById('standalonePaymentReservation');if(!select)return;const active=reservations.filter(r=>!['Cancelled','Checked-Out'].includes(r.status));select.innerHTML=active.length?active.map(r=>{const fp=getFinancialPosition(r.id);const label=fp.status==='Overpaid'?`Credit ${money(fp.credit)}`:fp.status==='Paid'?'Paid':`Balance ${money(fp.balance)}`;return `<option value="${r.id}">${escapeHtml(r.bookingNo)} — ${escapeHtml(r.guestName)} — ${label}</option>`;}).join(''):'<option value="">No active reservations</option>';document.getElementById('standalonePaymentReceivedBy').value=currentUser?.username||'';updateStandalonePaymentAmountRule();document.getElementById('standalonePaymentModal').classList.add('show');}
@@ -10390,6 +10439,10 @@ function otherOpenCashierShifts(){
     const user=String(currentUser?.username||'Cashier').trim().toLowerCase();
     return cashierShiftRows().filter(x=>String(x.propertyId??'')===prop && String(x.businessDate||'')===bd && String(x.status||'').toLowerCase()==='open' && String(x.cashier||'').trim().toLowerCase()!==user);
 }
+/* v2.1.179 — all cashier/report settlement displays are base-currency (LKR).
+   Legacy closing records are left untouched; newly calculated values use the
+   same LKR settlement basis as Daily Payment Posting and Accounting. */
+/* v2.1.179 — settlement/cashier reporting uses base currency LKR. */
 function cashierClosingForBusinessDate(){
     const bd=String(cashierBusinessDate()||'');
     return readArray(STORAGE.cashierClosings).find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.date||'')===bd)||null;
@@ -10472,9 +10525,9 @@ function calculateCashierVariance(silent=false){
   if(!hasActionPermission('cashier.reconcile')){ if(!silent) alert('Access denied. Cash count / reconciliation has not been assigned to your user account.'); return {expected:0,actual:null,variance:null,error:'permission'}; }
   try{
     const list=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
-    const sum=typeof paymentSummary==='function'?paymentSummary(list):{cash:0,cashRefunds:0};
+    const sum=typeof cashierPaymentSummaryLKR==='function'?cashierPaymentSummaryLKR(list):{cash:0,cashRefunds:0};
     const sh=(typeof currentCashierShift==='function'?currentCashierShift():null)||(typeof cashierClosingForBusinessDate==='function'?cashierClosingForBusinessDate():null);
-    if(!sh){ const expected=Number(sum.cash||0)-Number(sum.cashRefunds||0); ['csActualCash','cashierActualCash'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const z=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);}; z('csVarianceTop',0); z('cashierVariance',0); return {expected,actual:null,variance:0}; }
+    if(!sh){ const expected=Number(sum.cash||0)-Number(sum.cashRefunds||0); ['csActualCash','cashierActualCash'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const z=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);}; z('csVarianceTop',0); z('cashierVariance',0); return {expected,actual:null,variance:0}; }
     const opening=Number(sh&&sh.openingFloat!=null?sh.openingFloat:(document.getElementById('csOpeningFloat')?.value||document.getElementById('cashierOpeningFloat')?.value||0));
     const cashReceived=Number(sum.cash||0), cashRefunds=Number(sum.cashRefunds||0);
     const expected=opening+cashReceived-cashRefunds;
@@ -10484,7 +10537,7 @@ function calculateCashierVariance(silent=false){
     const actual=Number(raw);
     if(!Number.isFinite(actual)){ if(!silent) alert('Actual cash counted must be a valid number.'); return {expected,actual:null,variance:null}; }
     const variance=actual-expected;
-    const moneyFn=(typeof money==='function')?money:(v=>'LKR '+Number(v||0).toFixed(2));
+    const moneyFn=(typeof accMoney==='function')?accMoney:(v=>'LKR '+Number(v||0).toFixed(2));
     const putValue=(id,v)=>{const e=document.getElementById(id);if(e){e.value=Number(v||0).toFixed(2);e.dispatchEvent(new Event('input',{bubbles:true}));}};
     const putText=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=moneyFn(v);};
     putValue('csExpectedCash',expected); putText('cashierExpectedCash',expected);
@@ -10536,15 +10589,15 @@ function closeCashierDay(){
     if(remaining.length){
         logAudit('CASHIER_SHIFT_CLOSED','CS_'+sh.id,'Cashier shift closed. Expected '+result.expected+', actual '+result.actual+', variance '+result.variance,currentPropertyId);
         cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender();
-        alert('Cashier shift closed successfully. Variance: '+money(result.variance)+'\n\nOther cashier shift(s) remain open: '+remaining.map(x=>x.cashier||'another cashier').join(', ')+'. The business date remains open.');
+        alert('Cashier shift closed successfully. Variance: '+accMoney(result.variance)+'\n\nOther cashier shift(s) remain open: '+remaining.map(x=>x.cashier||'another cashier').join(', ')+'. The business date remains open.');
         return;
     }
     // This was the last open shift, so now the cashier day can be closed.
-    const record={id:'CC_'+Date.now(),propertyId:currentPropertyId,date:d,closedAt:now,closedBy:currentUser?.username||'Cashier',openingFloat:Number(sh.openingFloat||0),cashReceived:paymentSummary(getTodayCashierPayments()).cash,cashRefunds:paymentSummary(getTodayCashierPayments()).cashRefunds,expectedCash:result.expected,actualCash:result.actual,variance:result.variance};
+    const record={id:'CC_'+Date.now(),propertyId:currentPropertyId,date:d,closedAt:now,closedBy:currentUser?.username||'Cashier',openingFloat:Number(sh.openingFloat||0),cashReceived:cashierPaymentSummaryLKR(getTodayCashierPayments()).cash,cashRefunds:cashierPaymentSummaryLKR(getTodayCashierPayments()).cashRefunds,expectedCash:result.expected,actualCash:result.actual,variance:result.variance};
     const closings=readArray(STORAGE.cashierClosings); closings.push(record); localStorage.setItem(STORAGE.cashierClosings,JSON.stringify(closings));
     const finalRows=updatedRows.map(x=>x.id===sh.id?({...x,closingId:record.id}):x); saveCashierShiftRows(finalRows);
     logAudit('CASHIER_DAY_CLOSED','CC_'+d,'Cashier closing. Expected '+result.expected+', actual '+result.actual+', variance '+result.variance,currentPropertyId);
-    cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender(); alert('Cashier day closed successfully. Variance: '+money(result.variance));
+    cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender(); alert('Cashier day closed successfully. Variance: '+accMoney(result.variance));
 }
 function reopenCashierDay(){
     if(!currentUser || currentUser.role!=='Admin'){ alert('Only an Admin can reopen a closed cashier day.'); return; }
@@ -10569,23 +10622,36 @@ function reopenCashierDay(){
 }
 window.reopenCashierDay=reopenCashierDay;
 
+function cashierPaymentSummaryLKR(list){
+    const settled=(list||[]).filter(paymentIsReceived);
+    const amountOf=p=>{
+        const r=reservations.find(x=>String(x.id)===String(p.reservationId));
+        return Math.abs(paymentAmountLKR(p,r));
+    };
+    const gross=settled.filter(p=>!paymentIsRefund(p)).reduce((s,p)=>s+amountOf(p),0);
+    const refunds=settled.filter(paymentIsRefund).reduce((s,p)=>s+amountOf(p),0);
+    const pending=(list||[]).filter(p=>!paymentIsRefund(p)&&!paymentIsReceived(p)).reduce((s,p)=>s+amountOf(p),0);
+    const by=(m,r=false)=>settled.filter(p=>p.method===m&&paymentIsRefund(p)===r).reduce((s,p)=>s+amountOf(p),0);
+    return {gross,refunds,net:gross-refunds,pending,cash:by('Cash'),card:by('Card'),bank:by('Bank Transfer')+by('Online Payment'),cashRefunds:by('Cash',true)};
+}
+
 function cashierShiftRefresh(){
-    const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=paymentSummary(list),sh=currentCashierShift(),cl=cashierClosingForBusinessDate();
+    const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=cashierPaymentSummaryLKR(list),sh=currentCashierShift(),cl=cashierClosingForBusinessDate();
     const expected=Number((sh||cl)?.openingFloat||0)+sum.cash-sum.cashRefunds; const actualInput=cashierActualEl(); const rawActual=actualInput?String(actualInput.value??'').trim():''; const hasActual=rawActual!==''&&Number.isFinite(Number(rawActual)); const actual=cl ? Number(cl.actualCash||0) : (sh&&hasActual ? Number(rawActual) : 0); const variance=cl ? Number(cl.variance||0) : (sh&&hasActual ? actual-expected : 0);
-    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v}; set('csBusinessDate',formatDate(d));set('csCashier',currentUser?.username||'Cashier');set('csCashierName',currentUser?.username||'Cashier');set('csShiftStatus',cl?'Closed':(sh?'Open':(anyCashierShift()?'Another Cashier Open':'Not Open')));set('csVarianceTop',money(variance));
-    set('csGross',money(sum.gross));set('csCash',money(sum.cash));set('csCard',money(sum.card));set('csBank',money(sum.bank));set('csRefunds',money(sum.refunds));set('csNet',money(sum.net));
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v}; set('csBusinessDate',formatDate(d));set('csCashier',currentUser?.username||'Cashier');set('csCashierName',currentUser?.username||'Cashier');set('csShiftStatus',cl?'Closed':(sh?'Open':(anyCashierShift()?'Another Cashier Open':'Not Open')));set('csVarianceTop',accMoney(variance));
+    set('csGross',accMoney(sum.gross));set('csCash',accMoney(sum.cash));set('csCard',accMoney(sum.card));set('csBank',accMoney(sum.bank));set('csRefunds',accMoney(sum.refunds));set('csNet',accMoney(sum.net));
     const of=document.getElementById('csOpeningFloat');if(of)of.value=String(Number((sh||cl)?.openingFloat||0));
     const legacyOf=document.getElementById('cashierOpeningFloat');if(legacyOf)legacyOf.value=String(Number((sh||cl)?.openingFloat||0));
-    const ce=document.getElementById('csExpectedCash');if(ce)ce.value=money(expected);
+    const ce=document.getElementById('csExpectedCash');if(ce)ce.value=accMoney(expected);
     const ae=document.getElementById('csActualCash');if(ae){if(!(sh||cl))ae.value='';else if(cl)ae.value=String(actual);else if(hasActual)ae.value=String(actual);}
     const av=document.getElementById('cashierActualCash');if(av){if(!(sh||cl))av.value='';else if(cl)av.value=String(actual);else if(hasActual)av.value=String(actual);}
-    const cv=document.getElementById('csVariance');if(cv)cv.value=money(variance);
+    const cv=document.getElementById('csVariance');if(cv)cv.value=accMoney(variance);
     const cm=document.getElementById('csShiftMessage');if(cm)cm.textContent=cl?'Cashier day is closed.':sh?'Shift opened by '+sh.cashier+' at '+sh.openedAt+'.':anyCashierShift()?'Another cashier has an open cashier shift.':'No cashier shift is open for this business date.';
-    const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+money(cl.expectedCash)+' | Actual: '+money(cl.actualCash)+' | Variance: '+money(cl.variance)):'No cashier closing recorded for this business date.'; const rw=document.getElementById('csReopenWrap'); if(rw)rw.style.display=(cl&&currentUser?.role==='Admin')?'block':'none';
+    const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+accMoney(cl.expectedCash)+' | Actual: '+accMoney(cl.actualCash)+' | Variance: '+accMoney(cl.variance)):'No cashier closing recorded for this business date.'; const rw=document.getElementById('csReopenWrap'); if(rw)rw.style.display=(cl&&currentUser?.role==='Admin')?'block':'none';
 }
 bindCashierOpeningFloatPersistence();
 
-function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=paymentSummary(list),w=window.open('','_blank');if(!w)return;const cl=cashierClosingForBusinessDate(),sh=currentCashierShift()||cl;const expected=Number(sh?.openingFloat||0)+sum.cash-sum.cashRefunds;w.document.write(`<html><head><title>Cashier Report ${d}</title><style>body{font-family:Arial;padding:30px}.line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #ddd}</style></head><body><h2>Signature PMS — Daily Cashier Report</h2><div>Business Date: ${d}</div><div>Cashier: ${currentUser?.username||''}</div><div class='line'><span>Opening Float</span><strong>${money(sh?.openingFloat||0)}</strong></div><div class='line'><span>Gross Received</span><strong>${money(sum.gross)}</strong></div><div class='line'><span>Cash Received</span><strong>${money(sum.cash)}</strong></div><div class='line'><span>Card</span><strong>${money(sum.card)}</strong></div><div class='line'><span>Bank / Online</span><strong>${money(sum.bank)}</strong></div><div class='line'><span>Refunds</span><strong>${money(sum.refunds)}</strong></div><div class='line'><span>Net Collections</span><strong>${money(sum.net)}</strong></div><div class='line'><span>Expected Cash</span><strong>${money(cl?.expectedCash??expected)}</strong></div><div class='line'><span>Actual Cash</span><strong>${money(cl?.actualCash??Number(document.getElementById('csActualCash')?.value||0))}</strong></div><div class='line'><span>Variance</span><strong>${money(cl?.variance??(Number(document.getElementById('csActualCash')?.value||0)-expected))}</strong></div></body></html>`);w.document.close();w.focus();w.print();}
+function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=cashierPaymentSummaryLKR(list),w=window.open('','_blank');if(!w)return;const cl=cashierClosingForBusinessDate(),sh=currentCashierShift()||cl;const expected=Number(sh?.openingFloat||0)+sum.cash-sum.cashRefunds;w.document.write(`<html><head><title>Cashier Report ${d}</title><style>body{font-family:Arial;padding:30px}.line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #ddd}</style></head><body><h2>Signature PMS — Daily Cashier Report</h2><div>Business Date: ${d}</div><div>Cashier: ${currentUser?.username||''}</div><div class='line'><span>Opening Float</span><strong>${accMoney(sh?.openingFloat||0)}</strong></div><div class='line'><span>Gross Received</span><strong>${accMoney(sum.gross)}</strong></div><div class='line'><span>Cash Received</span><strong>${accMoney(sum.cash)}</strong></div><div class='line'><span>Card</span><strong>${accMoney(sum.card)}</strong></div><div class='line'><span>Bank / Online</span><strong>${accMoney(sum.bank)}</strong></div><div class='line'><span>Refunds</span><strong>${accMoney(sum.refunds)}</strong></div><div class='line'><span>Net Collections</span><strong>${accMoney(sum.net)}</strong></div><div class='line'><span>Expected Cash</span><strong>${accMoney(cl?.expectedCash??expected)}</strong></div><div class='line'><span>Actual Cash</span><strong>${accMoney(cl?.actualCash??Number(document.getElementById('csActualCash')?.value||0))}</strong></div><div class='line'><span>Variance</span><strong>${accMoney(cl?.variance??(Number(document.getElementById('csActualCash')?.value||0)-expected))}</strong></div></body></html>`);w.document.close();w.focus();w.print();}
 
 
 /* =========================================================
@@ -10609,7 +10675,7 @@ function renderDashboard(){
     const nightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);return dashboardBaseAmount(r)/n;};
     const roomNightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);const a=getReservationRevenueAllocation(r);return Number(a.room||0)*Number(r?.postingRateAtBooking&&String(r.currency||"USD").toUpperCase()!==String(r.baseCurrency||settings?.baseCurrency||"LKR").toUpperCase()?r.postingRateAtBooking:1)/n;};
     const roomRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>s+roomNightlyValue(r),0)+((villaRes.find(r=>overlaps(r,d)))?Math.max(0,Number(villaRes.find(r=>overlaps(r,d)).total||0)/Math.max(1,Number(villaRes.find(r=>overlaps(r,d)).nights||1))):0):0;
-    const restaurantForDate=d=>sales.filter(s=>String(s.date||"").slice(0,10)===d&&Number(s.total||0)>0).reduce((s,x)=>s+Number(x.total||0),0);
+    const restaurantForDate=d=>sales.filter(s=>String(s.date||"").slice(0,10)===d&&Number(s.total||0)>0).reduce((s,x)=>s+fnbSaleAmountLKR(x,Number(x.total||0)),0);
     const occupiedForDate=d=>bookedForDate(d);
     const arrivals=reservations.filter(r=>r.checkIn===today&&r.status!=="Cancelled"&&r.status!=="No-Show");
     const departures=reservations.filter(r=>r.checkOut===today&&["Checked-In","Checked-Out"].includes(r.status));
@@ -10618,8 +10684,8 @@ function renderDashboard(){
     roomIds.forEach(roomId=>{if(getRoomOperationalConfig(roomId)?.housekeepingStatus==="oos")oos++;});
     const occPct=Math.round((occupied/roomCount)*100);
     const roomRevenueToday=roomRevenueForDate(today),restaurantRevenue=restaurantForDate(today);
-    const packageFnbRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const n=Math.max(1,Number(r.nights||1));const a=getReservationRevenueAllocation(r);return s+Number(a.breakfast||0)+Number(a.lunch||0)+Number(a.dinner||0);},0):0;
-    const packageExperienceRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);return s+Number(a.experience||0);},0):0;
+    const packageFnbRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();const rate=(cur===base||cur==="LKR")?1:Number(r?.postingRateAtBooking||settings?.postingRate||320)||320;return s+(Number(a.breakfast||0)+Number(a.lunch||0)+Number(a.dinner||0))*rate;},0):0;
+    const packageExperienceRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();const rate=(cur===base||cur==="LKR")?1:Number(r?.postingRateAtBooking||settings?.postingRate||320)||320;return s+Number(a.experience||0)*rate;},0):0;
     const totalRevenueToday=roomRevenueToday+restaurantRevenue+packageFnbRevenueForDate(today)+packageExperienceRevenueForDate(today);
     const adr=occupied>0?roomRevenueToday/occupied:0,revpar=roomRevenueToday/roomCount;
     const apOutstanding=apTotals(today).total;
@@ -10630,9 +10696,9 @@ function renderDashboard(){
     window.__gmPeriod=window.__gmPeriod||"today";
     const kind=window.__gmPeriod, ps=periodStart(kind), pe=periodEnd(kind);
     const days=[];for(let d=new Date(ps+"T00:00:00");d<=new Date(pe+"T00:00:00");d.setDate(d.getDate()+1))days.push(localDateString(new Date(d)));
-    const periodRooms=days.reduce((s,d)=>s+roomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0);
+    const periodRooms=days.reduce((s,d)=>s+roomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0),periodPackageFnb=days.reduce((s,d)=>s+packageFnbRevenueForDate(d)+packageExperienceRevenueForDate(d),0);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-    set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",accMoney(periodAdr));set("dashRevPAR",accMoney(periodRevpar));set("dashRevenue",accMoney(periodRooms));set("dashTotalRevenue",accMoney(periodRooms+periodFnb));set("gmGop","—");set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",accMoney(apOutstanding));set("dashOutstanding",accMoney(outstanding));set("dashRestaurant",accMoney(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
+    set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",accMoney(periodAdr));set("dashRevPAR",accMoney(periodRevpar));set("dashRevenue",accMoney(periodRooms));set("dashTotalRevenue",accMoney(periodRooms+periodPackageFnb+periodFnb));set("gmGop","—");set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",accMoney(apOutstanding));set("dashOutstanding",accMoney(outstanding));set("dashRestaurant",accMoney(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
     set("gmRoomRevenueSub",kind==="today"?"Estimated room-night revenue":"Period room-night revenue");
     ["today","mtd","ytd"].forEach(k=>{const e=document.getElementById("gm"+({today:"Today",mtd:"Mtd",ytd:"Ytd"}[k])+"Btn");if(e)e.classList.toggle("active",k===kind);});
 
@@ -10680,7 +10746,7 @@ else if(type==="oos"){const rows=(getProperty()?.rooms||[]).filter(r=>r.housekee
 else if(type==="reservations"){const rows=reservations.filter(r=>r.checkIn===selected||r.checkOut===selected||(r.checkIn<selected&&r.checkOut>selected)).map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),r.nights||0,money(r.total),money(getPaymentsTotal(r.id)),money(getBalance(r.id)),statusBadge(r.status)]);title="Reservations List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Nights","Total","Paid","Balance","Status"],rows);}
 else if(["creditcard","banktransfer","advance","dailycash","cashtransactions"].includes(type)){let list=pay;if(type==="creditcard")list=pay.filter(p=>p.method==="Card");if(type==="banktransfer")list=pay.filter(p=>p.method==="Bank Transfer");if(type==="advance")list=pay.filter(p=>p.type==="Deposit");if(type==="dailycash"||type==="cashtransactions")list=pay.filter(p=>p.method==="Cash");title=type==="creditcard"?"Credit Card Payments":type==="banktransfer"?"Bank Transfers":type==="advance"?"Advance Payments":type==="dailycash"?"Daily Cash":"Cash Transactions";body=reportRowsTable(["Date / Time","Reference","Guest","Booking","Type","Method","Amount","Received By"],list.map(p=>[escapeHtml(p.date||""),escapeHtml(p.reference||""),escapeHtml(p.guestName||""),escapeHtml(p.bookingNo||""),escapeHtml(p.type||""),escapeHtml(p.method||""),money(p.amount),escapeHtml(p.receivedBy||"")]));}
 else if(type==="dailychange"||type==="cashexpenses"){let list=pay.filter(p=>String(p.type||"").toLowerCase().includes(type==="dailychange"?"change":"expense"));title=type==="dailychange"?"Daily Cash Change":"Cash Expenses";body=reportRowsTable(["Date / Time","Reference","Guest","Details","Amount","Method","Received By"],list.map(p=>[escapeHtml(p.date||""),escapeHtml(p.reference||""),escapeHtml(p.guestName||""),escapeHtml(p.notes||p.details||""),money(p.amount),escapeHtml(p.method||""),escapeHtml(p.receivedBy||"")]));}
-else if(type==="nightaudit"){const a=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").length,d=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).length,h=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=selected&&r.checkOut>selected).length;const rev=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").reduce((x,r)=>x+Number(r.total||0),0)+sales.filter(x=>x.date===selected).reduce((x,r)=>x+Number(r.total||0),0);title="Night Audit";body=`<div class="report-section"><div class="report-line"><span>Arrivals</span><strong>${a}</strong></div><div class="report-line"><span>Departures</span><strong>${d}</strong></div><div class="report-line"><span>In-House Guests</span><strong>${h}</strong></div><div class="report-line"><span>Accommodation + POS Revenue</span><strong>${money(rev)}</strong></div><div class="report-line"><span>Payments Received</span><strong>${money(pay.reduce((x,p)=>x+Number(p.amount||0),0))}</strong></div><div class="report-line"><strong>Outstanding Guest Balance</strong><strong>${money(reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((x,r)=>x+getBalance(r.id),0))}</strong></div></div>`;}
+else if(type==="nightaudit"){const a=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").length,d=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).length,h=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=selected&&r.checkOut>selected).length;const rev=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").reduce((x,r)=>x+reservationAmountLKR(r,Number(r.total||0)),0)+sales.filter(x=>String(x.date||x.businessDate||"").slice(0,10)===String(selected)&&!(typeof fnbSaleIsVoided==="function"&&fnbSaleIsVoided(x))).reduce((x,r)=>x+fnbSaleAmountLKR(r,Number(r.total||0)),0);title="Night Audit";body=`<div class="report-section"><div class="report-line"><span>Arrivals</span><strong>${a}</strong></div><div class="report-line"><span>Departures</span><strong>${d}</strong></div><div class="report-line"><span>In-House Guests</span><strong>${h}</strong></div><div class="report-line"><span>Accommodation + POS Revenue</span><strong>${reportMoney(rev)}</strong></div><div class="report-line"><span>Payments Received</span><strong>${reportMoney(pay.reduce((x,p)=>x+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),0))}</strong></div><div class="report-line"><strong>Outstanding Guest Balance</strong><strong>${reportMoney(reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((x,r)=>x+reservationAmountLKR(r,getBalance(r.id)),0))}</strong></div></div>`;}
 box.innerHTML=reportHeader(title,selected)+body+`<div style="margin-top:30px;display:flex;justify-content:space-between"><span>Prepared by: ${escapeHtml(currentUser?.username||"")}</span><span>Signature: ____________________</span></div>`;}
 function printDailyOnePage(){
     if(!canDo("reports.print")){alert("You do not have permission to print reports.");return;}
@@ -10716,10 +10782,10 @@ function printDailyOnePage(){
         const byOutlet={},byMethod={};
         daySales.forEach(x=>{
             const o=String(x.outletName||"Restaurant"),m=String(x.paymentMethod||"Cash");
-            (byOutlet[o]=byOutlet[o]||{n:0,t:0}).n++;byOutlet[o].t+=Number(x.total||0);
-            (byMethod[m]=byMethod[m]||{n:0,t:0}).n++;byMethod[m].t+=Number(x.total||0);
+            (byOutlet[o]=byOutlet[o]||{n:0,t:0}).n++;byOutlet[o].t+=fnbSaleAmountLKR(x,Number(x.total||0));
+            (byMethod[m]=byMethod[m]||{n:0,t:0}).n++;byMethod[m].t+=fnbSaleAmountLKR(x,Number(x.total||0));
         });
-        const tbl=(head,obj)=>{const keys=Object.keys(obj);return "<table><thead><tr><th>"+head+"</th><th class='r'>Bills</th><th class='r'>Total</th></tr></thead><tbody>"+(keys.length?keys.map(k=>"<tr><td>"+escapeHtml(k)+"</td><td class='r'>"+obj[k].n+"</td><td class='r'>"+money(obj[k].t)+"</td></tr>").join(""):"<tr><td colspan='3' class='e'>No restaurant sales</td></tr>")+"</tbody></table>";};
+        const tbl=(head,obj)=>{const keys=Object.keys(obj);return "<table><thead><tr><th>"+head+"</th><th class='r'>Bills</th><th class='r'>Total</th></tr></thead><tbody>"+(keys.length?keys.map(k=>"<tr><td>"+escapeHtml(k)+"</td><td class='r'>"+obj[k].n+"</td><td class='r'>"+reportMoney(obj[k].t)+"</td></tr>").join(""):"<tr><td colspan='3' class='e'>No restaurant sales</td></tr>")+"</tbody></table>";};
         const invs=daySales.map(x=>x.invoiceNo).filter(Boolean).sort();
         const noInv=daySales.length-invs.length;
         const invLine=daySales.length?"<div class='sub'>Invoices: "+(invs.length?"<b>"+escapeHtml(invs[0])+"</b>"+(invs.length>1?" → <b>"+escapeHtml(invs[invs.length-1])+"</b>":""):"none issued")+(noInv?" &nbsp;·&nbsp; "+noInv+" bill(s) without invoice no.":"")+"</div>":"";
@@ -10729,7 +10795,7 @@ function printDailyOnePage(){
     if(can("closing_report")){
         const closing=readArray(STORAGE.cashierClosings).find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.date||"")===selected);
         const cashierPart=closing
-            ? line("Cashier day","Closed by "+escapeHtml(closing.closedBy||"")+"<br>"+escapeHtml(closing.closedAt||""))+line("Opening float",money(Number(closing.openingFloat||0)))+line("Expected cash",money(Number(closing.expectedCash||0)))+line("Actual cash counted",money(Number(closing.actualCash||0)))+line("Cash variance",money(Number(closing.variance||0)),true)
+            ? line("Cashier day","Closed by "+escapeHtml(closing.closedBy||"")+"<br>"+escapeHtml(closing.closedAt||""))+line("Opening float",reportMoney(Number(closing.openingFloat||0)))+line("Expected cash",reportMoney(Number(closing.expectedCash||0)))+line("Actual cash counted",reportMoney(Number(closing.actualCash||0)))+line("Cash variance",reportMoney(Number(closing.variance||0)),true)
             : line("Cashier day","<b>Not closed</b>");
         cash=box("Daily Closing / Reconciliation",line("Opening Balance",g("closingOpening"))+line("Revenue",g("closingRevenue"))+line("Payments Received",g("closingPayments"))+line("Outstanding Guest Balance",g("closingOutstanding"))+line("Closing Position",g("closingPosition"),true)+"<div class='gap'></div>"+cashierPart);
     }
@@ -10887,7 +10953,7 @@ function renderReports(){
         )
         .reduce(
             (sum,r)=>
-                sum+Number(r.total||0),
+                sum+reservationAmountLKR(r,Number(r.total||0)),
             0
         );
 
@@ -10895,11 +10961,11 @@ function renderReports(){
     const restaurantRevenue=
         sales
         .filter(
-            s=>s.date===selected
+            s=>String(s.date||s.businessDate||"").slice(0,10)===String(selected) && !(typeof fnbSaleIsVoided==="function" && fnbSaleIsVoided(s))
         )
         .reduce(
             (sum,s)=>
-                sum+Number(s.total||0),
+                sum+fnbSaleAmountLKR(s,Number(s.total||0)),
             0
         );
 
@@ -10916,7 +10982,7 @@ function renderReports(){
                     getFolio(r.id);
 
                 return sum+
-                    Number(f?.extras||0);
+                    reservationAmountLKR(r,Number(f?.extras||0));
 
             },
             0
@@ -10935,7 +11001,7 @@ function renderReports(){
                     getFolio(r.id);
 
                 return sum+
-                    Number(f?.discounts||0);
+                    reservationAmountLKR(r,Number(f?.discounts||0));
 
             },
             0
@@ -10962,7 +11028,7 @@ if(outletPerfBox){
   (sales||[]).filter(s=>String(s.date||s.businessDate||"").slice(0,10)===String(selected) && !(typeof fnbSaleIsVoided==="function" && fnbSaleIsVoided(s))).forEach(s=>{
     const id=String(s.outletId||"legacy");
     if(!rows[id]) rows[id]={id,name:String(s.outletName||"Other"),orders:0,sales:0,cost:0};
-    rows[id].orders+=1; rows[id].sales+=Number(s.total||0);
+    rows[id].orders+=1; rows[id].sales+=fnbSaleAmountLKR(s,Number(s.total||0));
   });
   try{
     const mv=typeof mine==='function'&&typeof rd==='function'&&typeof K!=='undefined'?mine(rd(K.mv)):[];
@@ -10980,7 +11046,7 @@ if(outletPerfBox){
       const saleCurrency=String(s.currency||s.guestCurrency||settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
       const baseCurrency=String(settings?.baseCurrency||'LKR').toUpperCase();
       const rate=(saleCurrency===baseCurrency||saleCurrency==='LKR')?1:Number(s.postingRateAtBooking||s.postingRateAtCalculation||s.accountingRate||settings?.postingRate||320)||320;
-      rows[id].cost+=baseCost/rate;
+      rows[id].cost+=baseCost;
     });
   }catch(e){console.warn("Outlet food cost report unavailable",e);}
   const data=Object.values(rows).filter(r=>r.orders>0||r.cost>0).sort((a,b)=>b.sales-a.sales);
@@ -11008,13 +11074,14 @@ if(fnbMenuEngBox){
     const baseCur=String(settings?.baseCurrency||'LKR').toUpperCase();
     const guestCur=String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
     const costRate=(guestCur===baseCur||guestCur==='LKR')?1:(Number(settings?.postingRate)||320);
-    const saleCost=costRate>0?saleCostBase/costRate:saleCostBase;
+    const saleCost=saleCostBase;
     const items=Array.isArray(s.items)?s.items:[];
-    const itemRevenue=items.reduce((a,it)=>a+Math.max(0,Number(it.price||0)*Number(it.qty||0)),0)||Math.max(0,Number(s.total||0));
+    const itemRevenueGuest=items.reduce((a,it)=>a+Math.max(0,Number(it.price||0)*Number(it.qty||0)),0)||Math.max(0,Number(s.total||0));
+    const itemRevenue=fnbSaleAmountLKR(s,itemRevenueGuest);
     items.forEach(it=>{
       const name=String(it.name||it.menuItemName||"Unnamed Item");
       const key=outletId+"|"+name;
-      const lineSales=Math.max(0,Number(it.price||0)*Number(it.qty||0));
+      const lineSales=fnbSaleAmountLKR(s,Math.max(0,Number(it.price||0)*Number(it.qty||0)));
       const allocatedCost=itemRevenue>0?saleCost*(lineSales/itemRevenue):0;
       if(!itemRows[key])itemRows[key]={name,outletId,outletName,qty:0,sales:0,cost:0};
       itemRows[key].qty+=Number(it.qty||0);
@@ -11053,7 +11120,7 @@ if(fnbPCBox){
     const key=outletName+"|"+customerType+"|"+paymentMethod;
     if(!fnbRows[key])fnbRows[key]={outletName,customerType,paymentMethod,orders:0,sales:0};
     fnbRows[key].orders+=1;
-    fnbRows[key].sales+=Number(s.total||0);
+    fnbRows[key].sales+=fnbSaleAmountLKR(s,Number(s.total||0));
   });
   const rows=Object.values(fnbRows).sort((a,b)=>b.sales-a.sales);
   fnbPCBox.innerHTML=rows.length?rows.map(r=>`<tr><td><strong>${escapeHtml(r.outletName)}</strong></td><td>${escapeHtml(r.customerType)}</td><td>${escapeHtml(r.paymentMethod)}</td><td style="text-align:right">${r.orders}</td><td style="text-align:right">${reportMoney(r.sales)}</td></tr>`).join(""):`<tr><td class="empty" colspan="5">No F&amp;B sales for selected date.</td></tr>`;
@@ -11085,13 +11152,14 @@ if(menuItemBox&&menuItemFilter){
     const baseCur=String(settings?.baseCurrency||'LKR').toUpperCase();
     const guestCur=String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
     const costRate=(guestCur===baseCur||guestCur==='LKR')?1:(Number(settings?.postingRate)||320);
-    const saleCost=costRate>0?saleCostBase/costRate:saleCostBase;
+    const saleCost=saleCostBase;
     const items=Array.isArray(s.items)?s.items:[];
-    const itemRevenue=items.reduce((a,it)=>a+Math.max(0,Number(it.price||0)*Number(it.qty||0)),0)||Math.max(0,Number(s.total||0));
+    const itemRevenueGuest=items.reduce((a,it)=>a+Math.max(0,Number(it.price||0)*Number(it.qty||0)),0)||Math.max(0,Number(s.total||0));
+    const itemRevenue=fnbSaleAmountLKR(s,itemRevenueGuest);
     items.forEach(it=>{
       const name=String(it.name||it.menuItemName||"Unnamed Item");
       const key=outletId+"|"+name;
-      const lineSales=Math.max(0,Number(it.price||0)*Number(it.qty||0));
+      const lineSales=fnbSaleAmountLKR(s,Math.max(0,Number(it.price||0)*Number(it.qty||0)));
       const allocatedCost=itemRevenue>0?saleCost*(lineSales/itemRevenue):0;
       if(!itemRows[key])itemRows[key]={name,outletId,outletName:String(s.outletName||getPOSOutlets().find(o=>String(o.id)===outletId)?.name||"Other"),qty:0,sales:0,cost:0};
       itemRows[key].qty+=Number(it.qty||0);
@@ -11113,9 +11181,11 @@ if(fnbDailyBox){
   (sales||[]).filter(s=>String(s.date||s.businessDate||"").slice(0,10)===String(selected) && !(typeof fnbSaleIsVoided==='function' && fnbSaleIsVoided(s))).forEach(s=>{
     const id=String(s.outletId||"legacy");
     if(!rows[id])rows[id]={id,name:String(s.outletName||"Other"),orders:0,gross:0,discounts:0,net:0,cost:0,cash:0,card:0,room:0,other:0};
-    const gross=Number(s.subtotal||s.grossTotal||s.totalBeforeDiscount||s.total||0);
-    const discount=Number(s.discount||s.discountAmount||0);
-    const net=Number(s.total||Math.max(0,gross-discount));
+    const grossGuest=Number(s.subtotal||s.grossTotal||s.totalBeforeDiscount||s.total||0);
+    const discountGuest=Number(s.discount||s.discountAmount||0);
+    const gross=fnbSaleAmountLKR(s,grossGuest);
+    const discount=fnbSaleAmountLKR(s,discountGuest);
+    const net=fnbSaleAmountLKR(s,Number(s.total||Math.max(0,grossGuest-discountGuest)));
     rows[id].orders+=1; rows[id].gross+=gross; rows[id].discounts+=discount; rows[id].net+=net;
     const method=String(s.paymentMethod||s.payment_method||"").toLowerCase();
     if(method.includes("cash"))rows[id].cash+=net;
@@ -11131,7 +11201,7 @@ if(fnbDailyBox){
       const baseCur=String(settings?.baseCurrency||'LKR').toUpperCase();
       const guestCur=String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
       const costRate=(guestCur===baseCur||guestCur==='LKR')?1:(Number(settings?.postingRate)||320);
-      rows[id].cost+=costRate>0?costBase/costRate:costBase;
+      rows[id].cost+=costBase;
     }catch(e){}
   });
   const data=Object.values(rows).filter(r=>r.orders>0);
@@ -11270,7 +11340,7 @@ function fnbCloseCashierShift(id){
   if(!shift){alert("F&B cashier shift not found.");return;}
   if(shift.status!=="Open"){alert("This F&B cashier shift is already closed.");return;}
   const sum=fnbShiftSales(shift),expected=Number(shift.openingFloat||0)+Number(sum.cash||0);
-  const raw=prompt("Actual cash counted for "+shift.outletName+" — "+shift.cashier+"\nExpected cash: "+money(expected)+"\n\nEnter actual cash counted:",expected.toFixed(2));
+  const raw=prompt("Actual cash counted for "+shift.outletName+" — "+shift.cashier+"\nExpected cash: "+reportMoney(expected)+"\n\nEnter actual cash counted:",expected.toFixed(2));
   if(raw===null)return;
   const actual=Number(raw); if(!Number.isFinite(actual)||actual<0){alert("Actual cash counted must be a valid non-negative number.");return;}
   shift.status="Closed";shift.closedAt=localDateTime();shift.closedBy=currentUser?.username||"Cashier";shift.orders=sum.orders;shift.netSales=sum.net;shift.cashSales=sum.cash;shift.cardSales=sum.card;shift.roomChargeSales=sum.room;shift.otherSales=sum.other;shift.expectedCash=expected;shift.actualCash=actual;shift.variance=actual-expected;
@@ -11284,7 +11354,7 @@ function fnbRefreshCashierShift(){
   const date=String(document.getElementById("reportDate")?.value||cashierBusinessDate()||localDateString());
   const selected=String(select.value||"");
   const rows=fnbCashierShiftRows().filter(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.date||"")===date&&(!selected||String(x.outletId||"")===selected));
-  box.innerHTML=rows.length?rows.map(shift=>{const live=fnbShiftSales(shift);const expected=shift.status==="Open"?Number(shift.openingFloat||0)+live.cash:Math.max(0,Number(shift.openingFloat||0)+live.cash);const actual=shift.status==="Open"?"—":money(Number(shift.actualCash||0));const variance=shift.status==="Open"?"—":money(Number(shift.actualCash||0)-expected);const action=shift.status==="Open"?`<button class="btn btn-primary btn-small" onclick="fnbCloseCashierShift('${escapeHtml(String(shift.id))}')">Close Shift</button>`:`<span class="badge badge-green">Closed</span>`;return `<tr><td><strong>${escapeHtml(shift.outletName||"")}</strong></td><td>${escapeHtml(shift.cashier||"")}</td><td>${escapeHtml(shift.status||"")}</td><td style="text-align:right">${live.orders}</td><td style="text-align:right">${money(live.net)}</td><td style="text-align:right">${money(live.cash)}</td><td style="text-align:right">${money(live.card)}</td><td style="text-align:right">${money(live.room)}</td><td style="text-align:right">${money(live.other)}</td><td style="text-align:right">${money(shift.openingFloat||0)}</td><td style="text-align:right">${money(expected)}</td><td style="text-align:right">${actual}</td><td style="text-align:right">${variance}</td><td>${action}</td></tr>`;}).join(""):`<tr><td class="empty" colspan="14">No F&amp;B cashier shift for the selected outlet/date.</td></tr>`;
+  box.innerHTML=rows.length?rows.map(shift=>{const live=fnbShiftSales(shift);const expected=shift.status==="Open"?Number(shift.openingFloat||0)+live.cash:Math.max(0,Number(shift.openingFloat||0)+live.cash);const actual=shift.status==="Open"?"—":reportMoney(Number(shift.actualCash||0));const variance=shift.status==="Open"?"—":reportMoney(Number(shift.actualCash||0)-expected);const action=shift.status==="Open"?`<button class="btn btn-primary btn-small" onclick="fnbCloseCashierShift('${escapeHtml(String(shift.id))}')">Close Shift</button>`:`<span class="badge badge-green">Closed</span>`;return `<tr><td><strong>${escapeHtml(shift.outletName||"")}</strong></td><td>${escapeHtml(shift.cashier||"")}</td><td>${escapeHtml(shift.status||"")}</td><td style="text-align:right">${live.orders}</td><td style="text-align:right">${reportMoney(live.net)}</td><td style="text-align:right">${reportMoney(live.cash)}</td><td style="text-align:right">${reportMoney(live.card)}</td><td style="text-align:right">${reportMoney(live.room)}</td><td style="text-align:right">${reportMoney(live.other)}</td><td style="text-align:right">${reportMoney(shift.openingFloat||0)}</td><td style="text-align:right">${reportMoney(expected)}</td><td style="text-align:right">${actual}</td><td style="text-align:right">${variance}</td><td>${action}</td></tr>`;}).join(""):`<tr><td class="empty" colspan="14">No F&amp;B cashier shift for the selected outlet/date.</td></tr>`;
 }
 window.fnbOpenCashierShift=fnbOpenCashierShift;window.fnbCloseCashierShift=fnbCloseCashierShift;window.fnbRefreshCashierShift=fnbRefreshCashierShift;
 setTimeout(fnbRefreshCashierShift,0);
@@ -11337,7 +11407,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,p)=>
-                sum+Number(p.amount||0),
+                sum+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),
             0
         );
 
@@ -11349,7 +11419,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,p)=>
-                sum+Number(p.amount||0),
+                sum+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),
             0
         );
 
@@ -11361,7 +11431,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,p)=>
-                sum+Number(p.amount||0),
+                sum+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),
             0
         );
 
@@ -11373,7 +11443,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,p)=>
-                sum+Number(p.amount||0),
+                sum+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),
             0
         );
 
@@ -11385,7 +11455,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,p)=>
-                sum+Number(p.amount||0),
+                sum+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),
             0
         );
 
@@ -11406,7 +11476,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,r)=>
-                sum+getBalance(r.id),
+                sum+reservationAmountLKR(r,getBalance(r.id)),
             0
         );
 
@@ -11420,17 +11490,17 @@ setTimeout(fnbRefreshCashierShift,0);
     document.getElementById(
         "reportAccommodation"
     ).textContent=
-        money(accommodationRevenue);
+        reportMoney(accommodationRevenue);
 
     document.getElementById(
         "reportRestaurant"
     ).textContent=
-        money(restaurantRevenue);
+        reportMoney(restaurantRevenue);
 
     document.getElementById(
         "reportPayments"
     ).textContent=
-        money(paymentTotal);
+        reportMoney(paymentTotal);
 
     document.getElementById(
         "reportReservations"
@@ -11483,64 +11553,64 @@ setTimeout(fnbRefreshCashierShift,0);
     document.getElementById(
         "reportADR"
     ).textContent=
-        money(adr);
+        reportMoney(adr);
 
 
     document.getElementById(
         "dailyAccommodation"
     ).textContent=
-        money(accommodationRevenue);
+        reportMoney(accommodationRevenue);
 
     document.getElementById(
         "dailyRestaurant"
     ).textContent=
-        money(restaurantRevenue);
+        reportMoney(restaurantRevenue);
 
     document.getElementById(
         "dailyOther"
     ).textContent=
-        money(otherCharges);
+        reportMoney(otherCharges);
 
     document.getElementById(
         "dailyDiscounts"
     ).textContent=
-        money(discounts);
+        reportMoney(discounts);
 
     document.getElementById(
         "dailyRevenue"
     ).textContent=
-        money(totalRevenue);
+        reportMoney(totalRevenue);
 
 
     document.getElementById(
         "paymentCash"
     ).textContent=
-        money(paymentCash);
+        reportMoney(paymentCash);
 
     document.getElementById(
         "paymentCard"
     ).textContent=
-        money(paymentCard);
+        reportMoney(paymentCard);
 
     document.getElementById(
         "paymentBank"
     ).textContent=
-        money(paymentBank);
+        reportMoney(paymentBank);
 
     document.getElementById(
         "paymentOnline"
     ).textContent=
-        money(paymentOnline);
+        reportMoney(paymentOnline);
 
     document.getElementById(
         "paymentOther"
     ).textContent=
-        money(paymentOther);
+        reportMoney(paymentOther);
 
     document.getElementById(
         "paymentMethodTotal"
     ).textContent=
-        money(paymentTotal);
+        reportMoney(paymentTotal);
 
 
     const opening=
@@ -11552,27 +11622,27 @@ setTimeout(fnbRefreshCashierShift,0);
     document.getElementById(
         "closingOpening"
     ).textContent=
-        money(opening);
+        reportMoney(opening);
 
     document.getElementById(
         "closingRevenue"
     ).textContent=
-        money(totalRevenue);
+        reportMoney(totalRevenue);
 
     document.getElementById(
         "closingPayments"
     ).textContent=
-        money(paymentTotal);
+        reportMoney(paymentTotal);
 
     document.getElementById(
         "closingOutstanding"
     ).textContent=
-        money(outstanding);
+        reportMoney(outstanding);
 
     document.getElementById(
         "closingPosition"
     ).textContent=
-        money(
+        reportMoney(
             opening+
             paymentTotal
         );
@@ -12746,7 +12816,7 @@ function dailyRevenueRows(date){
     const nights=Math.max(1,Math.round((new Date(r.checkOut+'T12:00:00')-new Date(r.checkIn+'T12:00:00'))/86400000));
     const alloc=getReservationRevenueAllocation(r);
     const labels=[['room','Room Revenue','Room'],['breakfast','Restaurant Revenue','Breakfast'],['lunch','Restaurant Revenue','Lunch'],['dinner','Restaurant Revenue','Dinner'],['experience','Experience / Recreation Revenue','Included Experience']];
-    labels.forEach(([key,account,label])=>{const amount=Number(alloc[key]||0);if(amount>0)rows.push({date:d,source:'Room Package',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+label,amount:toAccountingAmount(amount,r),account});});
+    labels.forEach(([key,account,label])=>{const amount=Number(alloc[key]||0);if(amount>0)rows.push({date:d,source:'Room Package',revenueSource:key==='room'?'Room Revenue':'Meal Plan Food Allocation',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+label,amount:toAccountingAmount(amount,r),account});});
   });
   /* Include legacy F&B sales created before outlet/property metadata was added.
      Only infer the current property when the sale has an outletId that belongs
@@ -12777,14 +12847,14 @@ function dailyRevenueRows(date){
     const outletName=String(x.outletName||outlet?.name||'').toLowerCase();
     const isBar=outletType==='bar' || outletName.includes('bar') || itemBar;
     const revenueAccount=isBar?'Bar Revenue':'Restaurant Revenue';
-    rows.push({date:d,source:'F&B POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,r||x),account:revenueAccount});
+    rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,r||x),account:revenueAccount});
   });
   accProp(folios||[]).forEach(f=>{
     const updated=String(f.updatedAt||f.createdAt||'').slice(0,10);
     const other=Number(f.extras||0);
     if(updated===d && other>0){
       const r=reservations.find(z=>z.id===f.reservationId);
-      rows.push({date:d,source:'Folio',reference:r?.bookingNo||f.id,description:r?.guestName||'Folio Extra',amount:toAccountingAmount(other,r||f),account:'Other Operating Revenue'});
+      rows.push({date:d,source:'Folio',revenueSource:'Folio Extra',reference:r?.bookingNo||f.id,description:r?.guestName||'Folio Extra',amount:toAccountingAmount(other,r||f),account:'Other Operating Revenue'});
     }
   });
   return rows;
@@ -12852,21 +12922,24 @@ window.postDailyRevenue=function(){
   let description='Daily Revenue Posting';
   if(alreadyPosted){
     if(!dailyRevenueHasUnpostedFNB(d)){alert('Daily revenue for '+d+' has already been fully posted.');return;}
-    if(fnbDelta['Restaurant Revenue']>0.009)lines.push({account:'Restaurant Revenue',debit:0,credit:fnbDelta['Restaurant Revenue']});
-    if(fnbDelta['Bar Revenue']>0.009)lines.push({account:'Bar Revenue',debit:0,credit:fnbDelta['Bar Revenue']});
+    if(fnbDelta['Restaurant Revenue']>0.009)lines.push({account:'Restaurant Revenue',debit:0,credit:fnbDelta['Restaurant Revenue'],revenueSource:'Restaurant POS'});
+    if(fnbDelta['Bar Revenue']>0.009)lines.push({account:'Bar Revenue',debit:0,credit:fnbDelta['Bar Revenue'],revenueSource:'Bar POS'});
     gross=lines.reduce((sum,x)=>sum+Number(x.credit||0),0);
     ref='REV-FNB-'+d.replace(/-/g,'')+'-'+Date.now();
     description='Daily F&B Revenue Posting (Incremental)';
   }else{
     gross=Object.values(totals).reduce((s,v)=>s+Number(v||0),0);
     if(gross<=0){alert('No revenue is available to post for business date '+d+'.');return;}
-    if(totals['Room Revenue']>0)lines.push({account:'Room Revenue',debit:0,credit:totals['Room Revenue']});
-    if(totals['Restaurant Revenue']>0)lines.push({account:'Restaurant Revenue',debit:0,credit:totals['Restaurant Revenue']});
-    if(totals['Bar Revenue']>0)lines.push({account:'Bar Revenue',debit:0,credit:totals['Bar Revenue']});
-    if(totals['Experience / Recreation Revenue']>0)lines.push({account:'Experience / Recreation Revenue',debit:0,credit:totals['Experience / Recreation Revenue']});
-    if(totals['Other Operating Revenue']>0)lines.push({account:'Other Operating Revenue',debit:0,credit:totals['Other Operating Revenue']});
+    const grouped={};
+    rows.forEach(r=>{
+      const amount=Number(r.amount||0); if(amount<=0)return;
+      const key=String(r.account||'Other Operating Revenue')+'||'+String(r.revenueSource||r.source||'Operational Revenue');
+      if(!grouped[key])grouped[key]={account:r.account||'Other Operating Revenue',debit:0,credit:0,revenueSource:r.revenueSource||r.source||'Operational Revenue'};
+      grouped[key].credit+=amount;
+    });
+    lines=Object.values(grouped);
   }
-  lines.unshift({account:'Accounts Receivable',debit:gross,credit:0});
+  lines.unshift({account:'Accounts Receivable',debit:gross,credit:0,revenueSource:'Daily Revenue Receivable'});
   try{
     postJournal(d,ref,description,lines,'Daily Revenue');
     const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
@@ -12892,7 +12965,8 @@ function dailyPaymentRows(date){
   accProp(payments||[]).filter(p=>accIsoDate(p.businessDate||p.date||p.dateTime)===d).forEach(p=>{
     const amount=Number(p.amount||0); if(amount<=0)return;
     const r=reservations.find(z=>z.id===p.reservationId);
-    rows.push({date:d,reference:p.reference||p.id||'',description:p.guestName||r?.guestName||'Payment',type:p.type||'Payment',method:p.method||'Other',amount:toAccountingAmount(amount,p),reservationId:p.reservationId});
+    const accountingAmount=p.settlementAmountLKR!=null ? Number(p.settlementAmountLKR||0) : toAccountingAmount(amount,p);
+    rows.push({date:d,reference:p.reference||p.id||'',description:p.guestName||r?.guestName||'Payment',type:p.type||'Payment',method:p.method||'Other',amount:accountingAmount,reservationId:p.reservationId});
   });
   return rows;
 }
@@ -13119,7 +13193,7 @@ function renderGeneralLedger(){
   let running=0;
   if(selected){ledgerLines().filter(x=>datePart(x.date)<(document.getElementById('acctFromDate')?.value||'0000-01-01')).filter(match).forEach(x=>running += ['Asset','Expense'].includes(selected.type)?Number(x.debit||0)-Number(x.credit||0):Number(x.credit||0)-Number(x.debit||0));}
   let debit=0,credit=0;
-  tb.innerHTML=rows.map(x=>{const d=Number(x.debit||0),c=Number(x.credit||0);debit+=d;credit+=c;if(selected)running += ['Asset','Expense'].includes(selected.type)?d-c:c-d;else running+=d-c;return `<tr><td>${datePart(x.date)}</td><td>${escapeHtml(x.reference||'')}</td><td>${escapeHtml(x.account||x.accountCode||'')}</td><td>${escapeHtml(x.description||'')}</td><td class="right">${accMoney(d)}</td><td class="right">${accMoney(c)}</td><td class="right">${accMoney(running)}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">No ledger transactions for the selected period.</td></tr>';
+  tb.innerHTML=rows.map(x=>{const d=Number(x.debit||0),c=Number(x.credit||0);debit+=d;credit+=c;if(selected)running += ['Asset','Expense'].includes(selected.type)?d-c:c-d;else running+=d-c;const detail=x.revenueSource?String(x.description||'')+' — '+String(x.revenueSource):String(x.description||'');return `<tr><td>${datePart(x.date)}</td><td>${escapeHtml(x.reference||'')}</td><td>${escapeHtml(x.account||x.accountCode||'')}</td><td>${escapeHtml(detail)}</td><td class="right">${accMoney(d)}</td><td class="right">${accMoney(c)}</td><td class="right">${accMoney(running)}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">No ledger transactions for the selected period.</td></tr>';
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;}; set('glTotalDebit',accMoney(debit));set('glTotalCredit',accMoney(credit));set('glNetMovement',accMoney(debit-credit));set('glTxnCount',rows.length);
 }
 
