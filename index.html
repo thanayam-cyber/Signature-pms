@@ -347,6 +347,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="nav-btn" data-page="pmrooms" onclick="showPage('pmrooms',this)">PM Rooms / Posting</button>
 <button class="nav-btn" data-page="pos" onclick="showPage('pos',this)">Restaurant POS</button>
 <button class="nav-btn" data-page="experiences" onclick="showPage('experiences',this)">Experiences</button>
+<button class="nav-btn" data-page="eventbookings" onclick="showPage('eventbookings',this)">Event Booking</button>
 <button class="nav-btn" data-page="payments" onclick="showPage('payments',this)">Payments</button>
 <button class="nav-btn" data-page="reports" onclick="showPage('reports',this)">Reports</button>
 <button class="nav-btn" data-page="nightaudit" onclick="showPage('nightaudit',this)">Night Audit</button>
@@ -1037,6 +1038,27 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div id="experiencesList"><div class="empty">No experiences configured for this property.</div></div>
 </section>
+
+<!-- EVENT / FUNCTION BOOKING -->
+<section class="page" id="eventbookings">
+<div class="section-header">
+<div>
+<h2>Event Booking</h2>
+<div style="font-size:13px;color:#6b7280">Manage functions, private events, meetings, dinners and other event bookings under the property.</div>
+</div>
+<button class="btn btn-primary" onclick="openEventBookingModal()">+ New Event Booking</button>
+</div>
+<div class="grid-4" style="margin-bottom:14px">
+<div class="card"><div class="card-title">Upcoming Events</div><div class="card-value" id="eventUpcomingCount">0</div></div>
+<div class="card"><div class="card-title">Confirmed Events</div><div class="card-value" id="eventConfirmedCount">0</div></div>
+<div class="card"><div class="card-title">Expected Guests</div><div class="card-value" id="eventGuestCount">0</div></div>
+<div class="card"><div class="card-title">Event Revenue</div><div class="card-value" id="eventRevenueTotal">LKR0.00</div></div>
+</div>
+<div class="section">
+<div class="section-header"><h3>Event Register</h3><button class="btn btn-secondary" onclick="renderEventBookings()">Refresh</button></div>
+<div class="table-wrap"><table><thead><tr><th>Event</th><th>Customer</th><th>Date</th><th>Time</th><th>Venue</th><th>Guests</th><th>Package / Service</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody id="eventBookingTable"><tr><td class="empty" colspan="10">No event bookings.</td></tr></tbody></table></div>
+</div>
+</section>
 <!-- =========================================================
      PURCHASING
 ========================================================= -->
@@ -1232,11 +1254,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="toolbar" style="margin-bottom:12px"><input id="arCustomerSearch" placeholder="Search customer / company / contact" style="min-width:280px"/><select id="arCustomerStatus"><option value="All">All Status</option><option value="Open">Open</option><option value="Closed">Closed</option></select></div>
 <div class="table-wrap"><table><thead><tr><th>Customer / Company</th><th>Type</th><th>Contact</th><th style="text-align:right">Credit Limit</th><th style="text-align:right">Balance</th><th>Status</th><th>Action</th></tr></thead><tbody id="arCustomerAccountsTable"><tr><td class="empty" colspan="7">No AR customer accounts.</td></tr></tbody></table></div>
 <div id="arCustomerStatement" style="margin-top:14px"></div>
-</div></section>
-<div class="section" id="budgetAccountSetupPanel" style="display:none;margin-top:14px">
-<div class="section-header"><div><h3>Budget Account Setup</h3><div style="font-size:12px;color:#6b7280">Create hotel budget accounts and load a standard hotel account structure. Accounts are linked to the existing Chart of Accounts / General Ledger.</div></div><div class="toolbar"><button class="btn btn-primary" type="button" onclick="loadStandardHotelBudgetAccounts();return false;">Load Standard Hotel Accounts</button><button class="btn btn-secondary" type="button" onclick="addCustomBudgetAccount();return false;">+ Create Budget Account</button><button class="btn btn-secondary" type="button" onclick="refreshBudgetAccountSetup();return false;">Refresh</button></div></div>
-<div style="font-size:12px;color:#6b7280;margin-bottom:10px">Standard structure covers Rooms, Housekeeping, F&amp;B, Engineering, Sales &amp; Marketing, Administration, HR, IT, Security, Utilities and other hotel operations.</div>
-<div class="table-wrap"><table><thead><tr><th>Code</th><th>Budget / GL Account</th><th>Type</th><th>Department</th><th>Status</th></tr></thead><tbody id="budgetAccountSetupTable"><tr><td colspan="5" class="empty">No budget accounts loaded.</td></tr></tbody></table></div>
 </div>
 <div class="section" id="operationsBudgetPanel" style="display:none;margin-top:14px">
 <div class="section-header"><div><h3>Operations Budget &amp; Forecast</h3><div style="font-size:12px;color:#6b7280">Property-level annual operating budget, monthly plan, actuals and variance.</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="obNewBudget()">New Budget</button><button class="btn btn-primary" onclick="obSaveBudget()">Save Budget</button><button class="btn btn-secondary" onclick="obRefresh()">Refresh</button></div></div>
@@ -1250,6 +1267,12 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="table-wrap"><table><thead><tr><th>Type</th><th>Department</th><th>Account</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th><th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dec</th><th>Annual</th><th>Actual</th><th>Variance</th><th></th></tr></thead><tbody id="obLines"></tbody></table></div></div>
 <div class="grid-4" style="margin-top:14px"><div class="card"><div class="card-label">Budget Expense</div><div class="card-value" id="obExpenseTotal">0.00</div></div><div class="card"><div class="card-label">Actual Revenue</div><div class="card-value" id="obActualRevenue">0.00</div></div><div class="card"><div class="card-label">Actual Expense</div><div class="card-value" id="obActualExpense">0.00</div></div><div class="card"><div class="card-label">Budget GOP</div><div class="card-value" id="obGop">0.00</div></div></div>
 </div>
+<div class="section" id="budgetAccountSetupPanel" style="display:none;margin-top:14px">
+<div class="section-header"><div><h3>Budget Account Setup</h3><div style="font-size:12px;color:#6b7280">Create hotel budget accounts and load a standard hotel account structure. Accounts are linked to the existing Chart of Accounts / General Ledger.</div></div><div class="toolbar"><button class="btn btn-primary" type="button" onclick="loadStandardHotelBudgetAccounts();return false;">Load Standard Hotel Accounts</button><button class="btn btn-secondary" type="button" onclick="addCustomBudgetAccount();return false;">+ Create Budget Account</button><button class="btn btn-secondary" type="button" onclick="refreshBudgetAccountSetup();return false;">Refresh</button></div></div>
+<div style="font-size:12px;color:#6b7280;margin-bottom:10px">Standard structure covers Rooms, Housekeeping, F&amp;B, Engineering, Sales &amp; Marketing, Administration, HR, IT, Security, Utilities and other hotel operations.</div>
+<div class="table-wrap"><table><thead><tr><th>Code</th><th>Budget / GL Account</th><th>Type</th><th>Department</th><th>Status</th></tr></thead><tbody id="budgetAccountSetupTable"><tr><td colspan="5" class="empty">No budget accounts loaded.</td></tr></tbody></table></div>
+</div>
+</section>
 <section class="page" id="engineering">
 <div class="section">
 <div class="section-header"><div><h3>Engineering &amp; Maintenance</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Maintenance requests, engineering jobs, assignments, room history and operational follow-up.</div></div><button class="btn btn-primary" id="engineeringNewJobBtn" onclick="openEngineeringJob()">+ New Maintenance Job</button></div>
@@ -1368,6 +1391,14 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-primary" onclick="saveRatePlans()">Save Rate Plans</button>
 </div>
 <div id="dynamicRoomRatePlans"></div>
+<div class="section" id="mealPlanRevenueAllocationSection" style="margin-top:12px">
+<div class="section-header">
+<div><h3>Meal Plan Revenue Allocation</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Allocate a percentage of each package to Restaurant Revenue. The guest/package total remains unchanged. Room and Restaurant revenue are posted separately in accounting.</div></div>
+<button class="btn btn-secondary" type="button" onclick="saveMealPlanRevenuePercentages()">Save Meal Plan Percentages</button>
+</div>
+<div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Food / Restaurant %</th><th>Room Revenue %</th><th>Example at $170</th></tr></thead><tbody id="mealPlanRevenueAllocationBody"></tbody></table></div>
+<div style="font-size:11px;color:#6b7280;margin-top:8px">Default: RO 0%, BB 15%, HB 30%, FB 45%, AI 55%. Change the percentages to suit the property's accounting policy.</div>
+</div>
 <div style="font-size:11px;color:#6b7280;margin-top:8px">Rates are configured by Room Type + Meal Plan + Occupancy. The reservation will automatically use the selected room's Room Type rate. If a specific rate is blank, that room's Base Rate is used.</div>
 </div>
 <div class="section" id="restaurantOutletSection"><div class="section-header"><div><h3>Restaurant / Outlet Management</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Create multiple restaurants or outlets under the same property. Each outlet has its own menu and revenue reporting.</div></div><button class="btn btn-primary" onclick="addRestaurantOutlet()">+ New Restaurant / Outlet</button></div><div id="restaurantOutletEditor"><div class="empty">No restaurant outlets configured.</div></div></div><div class="section" id="restaurantMenuSection">
@@ -1656,6 +1687,27 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <!-- =========================================================
      RESERVATION MODAL
 ========================================================= -->
+<div class="modal" id="eventBookingModal">
+<div class="modal-box" style="max-width:900px">
+<div class="modal-header"><h3 id="eventBookingModalTitle">New Event Booking</h3><button class="close-btn" onclick="closeEventBookingModal()">×</button></div>
+<div class="form-grid">
+<div class="form-group"><label>Event / Function Name *</label><input id="eventName" placeholder="e.g. Wedding Dinner, Corporate Meeting"></div>
+<div class="form-group"><label>Customer / Company *</label><input id="eventCustomer" placeholder="Customer or company name"></div>
+<div class="form-group"><label>Contact Number</label><input id="eventContact" placeholder="Phone / WhatsApp"></div>
+<div class="form-group"><label>Email</label><input id="eventEmail" type="email" placeholder="customer@example.com"></div>
+<div class="form-group"><label>Event Date *</label><input id="eventDate" type="date"></div>
+<div class="form-group"><label>Start Time *</label><input id="eventStartTime" type="time"></div>
+<div class="form-group"><label>End Time</label><input id="eventEndTime" type="time"></div>
+<div class="form-group"><label>Venue / Function Space *</label><input id="eventVenue" placeholder="Restaurant, Garden, Conference Room"></div>
+<div class="form-group"><label>Expected Guests *</label><input id="eventGuests" type="number" min="1" step="1" value="1"></div>
+<div class="form-group"><label>Package / Service *</label><input id="eventPackage" placeholder="Wedding package / meeting package / dinner"></div>
+<div class="form-group"><label>Amount (LKR)</label><input id="eventAmount" type="number" min="0" step="0.01" value="0"></div>
+<div class="form-group"><label>Status</label><select id="eventStatus"><option>Inquiry</option><option>Tentative</option><option selected>Confirmed</option><option>Completed</option><option>Cancelled</option></select></div>
+<div class="form-group full"><label>Notes</label><textarea id="eventNotes" placeholder="Menu, setup, special requirements, deposit notes, etc."></textarea></div>
+</div>
+<div id="eventBookingError" style="color:#b91c1c;font-size:13px;margin-top:10px"></div>
+<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="closeEventBookingModal()">Cancel</button><button class="btn btn-primary" onclick="saveEventBooking()">Save Event Booking</button></div>
+</div></div>
 <div class="modal" id="experienceModal">
 <div class="modal-box" style="max-width:720px">
 <div class="modal-header"><h3 id="experienceModalTitle">Add Experience</h3><button class="close-btn" onclick="closeExperienceModal()">×</button></div>
@@ -1969,6 +2021,224 @@ function getConfiguredRate(mealPlan,adults,children,roomId=null){
     return null;
 }
 
+function normalizeRevenueAllocation(value, fallbackTotal=0){
+    const x=(value&&typeof value==="object")?value:{};
+    const out={
+        room:Math.max(0,Number(x.room||0)),
+        breakfast:Math.max(0,Number(x.breakfast||0)),
+        lunch:Math.max(0,Number(x.lunch||0)),
+        dinner:Math.max(0,Number(x.dinner||0)),
+        experience:Math.max(0,Number(x.experience||0))
+    };
+    const total=Object.values(out).reduce((a,b)=>a+b,0);
+    if(total<=0 && Number(fallbackTotal)>0) out.room=Number(fallbackTotal);
+    return out;
+}
+function getRateAllocationMatrix(guestType='foreign'){
+    const key=String(guestType||'foreign').toLowerCase()==='local'?'rateAllocationMatrixLocal':'rateAllocationMatrixForeign';
+    const direct=settings?.[key];
+    if(direct&&typeof direct==='object') return direct;
+    const legacy=settings?.rateAllocationMatrix;
+    return (legacy&&typeof legacy==='object')?legacy:{};
+}
+function rateAllocationKey(mealPlan,adults,children){
+    const a=Number(adults||0), c=Number(children||0);
+    if(a===2 && c===2)return "2A2C";
+    if(a===2 && c===1)return "2A1C";
+    if(a===3 && c===0)return "3A";
+    return "2A";
+}
+const DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES={RO:0,BB:15,HB:30,FB:45,AI:55};
+function getMealPlanFoodPercentages(){
+    const src=(settings?.mealPlanFoodPercentages && typeof settings.mealPlanFoodPercentages==="object")?settings.mealPlanFoodPercentages:{};
+    const out={...DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES};
+    Object.keys(out).forEach(k=>{
+        if(src[k]!==undefined) out[k]=Math.max(0,Math.min(100,Number(src[k])||0));
+    });
+    return out;
+}
+function renderMealPlanRevenuePercentages(){
+    const body=document.getElementById("mealPlanRevenueAllocationBody");
+    if(!body) return;
+    const vals=getMealPlanFoodPercentages();
+    const labels={RO:"Room Only",BB:"Bed & Breakfast",HB:"Half Board",FB:"Full Board",AI:"All Inclusive"};
+    body.innerHTML=["RO","BB","HB","FB","AI"].map(code=>{
+        const food=Number(vals[code]||0), room=100-food;
+        return `<tr><td><strong>${code}</strong> — ${labels[code]}</td><td><input id="mealAlloc_${code}" type="number" min="0" max="100" step="0.01" value="${food}" style="width:110px"> %</td><td><strong>${room.toFixed(2)}%</strong></td><td>Food $${(170*food/100).toFixed(2)} + Room $${(170*room/100).toFixed(2)}</td></tr>`;
+    }).join("");
+}
+function saveMealPlanRevenuePercentages(){
+    if(!requireRole("Admin","Manager")) return;
+    if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
+    const next={...DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES};
+    ["RO","BB","HB","FB","AI"].forEach(code=>{
+        const value=Number(document.getElementById("mealAlloc_"+code)?.value);
+        next[code]=Math.max(0,Math.min(100,Number.isFinite(value)?value:DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES[code]));
+    });
+    settings.mealPlanFoodPercentages=next;
+    saveData();
+    renderMealPlanRevenuePercentages();
+    renderAll();
+    setTimeout(renderMealPlanRevenuePercentages,0);
+    alert("Meal plan food percentages saved successfully.");
+}
+function getReservationRevenueAllocation(r){
+    const total=Math.max(0,Number(r?.total||0));
+    const nights=Math.max(1,Number(r?.nights||1));
+    const foodPct=getMealPlanFoodPercentages()[String(r?.mealPlan||"RO").trim().toUpperCase()] ?? 0;
+    const nightly=total/nights;
+    const food=nightly*(Number(foodPct)||0)/100;
+    const room=nightly-food;
+    return {room:Math.max(0,room),breakfast:Math.max(0,food),lunch:0,dinner:0,experience:0};
+}
+function updateRateAllocationRow(rowId, rate){
+    const row=document.getElementById(rowId);
+    if(!row) return;
+    const fields=['room','breakfast','lunch','dinner','experience'];
+    const total=fields.reduce((sum,k)=>sum+Math.max(0,Number(row.querySelector('[data-part="'+k+'"]')?.value||0)),0);
+    const diff=total-Number(rate||0);
+    const totalEl=row.querySelector('[data-allocation-total]');
+    const diffEl=row.querySelector('[data-allocation-diff]');
+    if(totalEl) totalEl.textContent=money(total);
+    if(diffEl){
+      if(Number(rate||0)<=0){
+        diffEl.textContent='—'; diffEl.className='ra-status ra-neutral';
+      }else if(Math.abs(diff)<=0.01){
+        diffEl.textContent='✓ Balanced'; diffEl.className='ra-status ra-ok';
+      }else if(diff<0){
+        diffEl.textContent='Remaining '+money(Math.abs(diff)); diffEl.className='ra-status ra-warn';
+      }else{
+        diffEl.textContent='Over by '+money(diff); diffEl.className='ra-status ra-error';
+      }
+    }
+}
+function renderRateRevenueAllocation(){
+    const box=document.getElementById("rateRevenueAllocation");
+    if(!box || !settings) return;
+    const types=(settings.roomTypes||[]).filter(t=>t.active!==false);
+    const plans=["BB","HB","FB","AI"];
+    const keys=[["2A","2 Adults"],["3A","3 Adults"],["2A1C","2 Adults + 1 Child"],["2A2C","2 Adults + 2 Children"]];
+    const localRates=settings.roomRateMatrixLocal||{};
+    const foreignRates=settings.roomRateMatrixForeign||normalizeRoomRateMatrix(settings.roomRateMatrix);
+    const lm=getRateAllocationMatrix('local'), fm=getRateAllocationMatrix('foreign');
+    if(!document.getElementById('signatureRateAllocationStyles')){
+      const st=document.createElement('style'); st.id='signatureRateAllocationStyles';
+      st.textContent=`
+        .ra-intro{padding:10px 12px;margin-bottom:14px;border:1px solid #dbe3ee;border-radius:8px;background:#f8fafc;font-size:12px;line-height:1.5}
+        .ra-plan{margin:0 0 18px;border:1px solid #dbe3ee;border-radius:10px;overflow:hidden;background:#fff}
+        .ra-plan-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:#f8fafc;border-bottom:1px solid #dbe3ee}
+        .ra-plan-title{font-weight:700;font-size:14px}.ra-plan-note{font-size:11px;color:#64748b}
+        .ra-scroll{overflow-x:auto}.ra-table{width:100%;min-width:1080px;border-collapse:separate;border-spacing:0}
+        .ra-table th{padding:8px 7px;background:#f8fafc;border-bottom:1px solid #dbe3ee;font-size:11px;text-align:left;white-space:nowrap}
+        .ra-table td{padding:7px;border-bottom:1px solid #edf2f7;vertical-align:middle;font-size:12px}
+        .ra-table tr:last-child td{border-bottom:0}.ra-occ{font-weight:600;white-space:nowrap}.ra-rate{font-weight:700;white-space:nowrap}
+        .ra-input{width:92px;min-width:92px;box-sizing:border-box;padding:7px 8px;border:1px solid #94a3b8;border-radius:6px;background:#fff;font-weight:600;font-size:12px;color:#111827}
+        .ra-input:focus{outline:2px solid #93c5fd;border-color:#2563eb;background:#eff6ff}.ra-input:disabled{background:#f1f5f9;color:#94a3b8}
+        .ra-total{font-weight:700;white-space:nowrap}.ra-status{display:inline-block;padding:4px 7px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}.ra-ok{background:#dcfce7;color:#166534}.ra-warn{background:#fef3c7;color:#92400e}.ra-error{background:#fee2e2;color:#991b1b}.ra-neutral{background:#f1f5f9;color:#64748b}
+        .ra-rate-badge{display:inline-block;padding:3px 6px;border-radius:5px;background:#eef2ff;color:#3730a3;font-size:10px;margin-left:5px}
+        @media(max-width:900px){.ra-input{width:82px;min-width:82px}.ra-table{min-width:1000px}}
+      `; document.head.appendChild(st);
+    }
+    box.innerHTML=types.length?`<div class="ra-intro"><strong>How to use:</strong> enter the revenue components for each package. The <strong>Allocated Total</strong> must equal the package rate. The guest selling price is unchanged. Room revenue is separated from F&amp;B and included Experience revenue for reporting and accounting.</div>`+types.map(t=>{
+      const id=String(t.id);
+      return `<div class="card" style="margin-bottom:18px;padding:12px"><div style="font-weight:700;font-size:16px;margin-bottom:10px">${escapeHtml(t.code||"")} — ${escapeHtml(t.name||"")}</div>${plans.map(plan=>{
+        const rows=keys.map(([key,label])=>{
+          const lt=Number(localRates[id]?.[plan]?.[key]||0), ft=Number(foreignRates[id]?.[plan]?.[key]||0);
+          const normalizeForConfiguredRate=(value,rate)=>{
+            const n=normalizeRevenueAllocation(value,0);
+            const sum=Object.values(n).reduce((a,b)=>a+b,0);
+            const target=Math.max(0,Number(rate||0));
+            if(target<=0) return {room:0,breakfast:0,lunch:0,dinner:0,experience:0};
+            // If a rate was changed after an older allocation was saved, do not carry
+            // an impossible total into the editor. Reset to the current package rate
+            // as Room revenue so the user can then split it into the desired components.
+            if(Math.abs(sum-target)>0.01) return {room:target,breakfast:0,lunch:0,dinner:0,experience:0};
+            return n;
+          };
+          const la=normalizeForConfiguredRate(lm[id]?.[plan]?.[key],lt), fa=normalizeForConfiguredRate(fm[id]?.[plan]?.[key],ft);
+          const localRow=`ra_local_${id}_${plan}_${key}`, foreignRow=`ra_foreign_${id}_${plan}_${key}`;
+          const input=(row,part,val,rate)=>`<input class="ra-input" data-part="${part}" id="${row}_${part}" type="number" min="0" step="0.01" value="${Number(val||0)}" ${Number(rate||0)<=0?'disabled':''} oninput="updateRateAllocationRow('${row}',${Number(rate||0)})">`;
+          return `<tr>
+            <td class="ra-occ">${label}</td>
+            <td class="ra-rate">${money(lt)}<span class="ra-rate-badge">LKR</span></td>
+            <td>${input(localRow,'room',la.room,lt)}</td><td>${input(localRow,'breakfast',la.breakfast,lt)}</td><td>${input(localRow,'lunch',la.lunch,lt)}</td><td>${input(localRow,'dinner',la.dinner,lt)}</td><td>${input(localRow,'experience',la.experience,lt)}</td>
+            <td class="ra-total" data-allocation-total>${money(la.room+la.breakfast+la.lunch+la.dinner+la.experience)}</td><td data-allocation-diff class="ra-status ${lt>0&&Math.abs((la.room+la.breakfast+la.lunch+la.dinner+la.experience)-lt)<=.01?'ra-ok':(lt>0?'ra-warn':'ra-neutral')}">${lt>0?(Math.abs((la.room+la.breakfast+la.lunch+la.dinner+la.experience)-lt)<=.01?'✓ Balanced':'Check total'):'—'}</td>
+            <td class="ra-rate">${money(ft)}<span class="ra-rate-badge">USD</span></td>
+            <td>${input(foreignRow,'room',fa.room,ft)}</td><td>${input(foreignRow,'breakfast',fa.breakfast,ft)}</td><td>${input(foreignRow,'lunch',fa.lunch,ft)}</td><td>${input(foreignRow,'dinner',fa.dinner,ft)}</td><td>${input(foreignRow,'experience',fa.experience,ft)}</td>
+            <td class="ra-total" data-allocation-total>${money(fa.room+fa.breakfast+fa.lunch+fa.dinner+fa.experience)}</td><td data-allocation-diff class="ra-status ${ft>0&&Math.abs((fa.room+fa.breakfast+fa.lunch+fa.dinner+fa.experience)-ft)<=.01?'ra-ok':(ft>0?'ra-warn':'ra-neutral')}">${ft>0?(Math.abs((fa.room+fa.breakfast+fa.lunch+fa.dinner+fa.experience)-ft)<=.01?'✓ Balanced':'Check total'):'—'}</td>
+          </tr>`;
+        }).join('');
+        return `<div class="ra-plan"><div class="ra-plan-head"><div class="ra-plan-title">${plan} <span style="font-weight:400;color:#64748b">— ${plan==='BB'?'Bed & Breakfast':plan==='HB'?'Half Board':plan==='FB'?'Full Board':'All Inclusive'}</span></div><div class="ra-plan-note">Edit the white boxes below, then click <strong>Save Revenue Allocation</strong>.</div></div><div class="ra-scroll"><table class="ra-table"><thead><tr><th rowspan="2">Occupancy</th><th rowspan="2">Local Rate</th><th colspan="5">Local Revenue Allocation (LKR)</th><th rowspan="2">Allocated</th><th rowspan="2">Status</th><th rowspan="2">Foreign Rate</th><th colspan="5">Foreign Revenue Allocation (USD)</th><th rowspan="2">Allocated</th><th rowspan="2">Status</th></tr><tr><th>Room</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th><th>Experience</th><th>Room</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th><th>Experience</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      }).join('')}</div>`;
+    }).join(""):"<div class='empty'>Create at least one active Room Type before setting revenue allocations.</div>";
+}
+function saveRateRevenueAllocation(){
+    if(!requireRole("Admin","Manager")) return;
+    if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
+    const plans=["BB","HB","FB","AI"], keys=["2A","3A","2A1C","2A2C"], local={}, foreign={}, localRates=settings.roomRateMatrixLocal||{}, foreignRates=settings.roomRateMatrixForeign||normalizeRoomRateMatrix(settings.roomRateMatrix);
+    let errors=[];
+    const read=(prefix)=>({room:Math.max(0,Number(document.getElementById(prefix+"_room")?.value||0)),breakfast:Math.max(0,Number(document.getElementById(prefix+"_breakfast")?.value||0)),lunch:Math.max(0,Number(document.getElementById(prefix+"_lunch")?.value||0)),dinner:Math.max(0,Number(document.getElementById(prefix+"_dinner")?.value||0)),experience:Math.max(0,Number(document.getElementById(prefix+"_experience")?.value||0))});
+    (settings.roomTypes||[]).forEach(t=>{const id=String(t.id);local[id]={};foreign[id]={};plans.forEach(plan=>{local[id][plan]={};foreign[id][plan]={};keys.forEach(key=>{
+      const lt=Number(localRates[id]?.[plan]?.[key]||0), ft=Number(foreignRates[id]?.[plan]?.[key]||0);
+      const la=read(`ra_local_${id}_${plan}_${key}`), fa=read(`ra_foreign_${id}_${plan}_${key}`);
+      let ls=Object.values(la).reduce((a,b)=>a+b,0), fs=Object.values(fa).reduce((a,b)=>a+b,0);
+      /*
+         Rate plans can be changed after an older allocation was saved. In that
+         case the allocation editor may still contain the old package total.
+         If the row is effectively just an old Room Revenue amount (all other
+         components are zero), safely rebase it to the current package rate.
+         This prevents stale 100,000 LKR / 250 USD values from blocking Save
+         when the current rates are 65,000 LKR / 170 USD. Deliberate multi-
+         component edits are still validated strictly below.
+      */
+      const rebaseAllocation=(alloc,total,rate,prefix)=>{
+        const target=Math.max(0,Number(rate||0));
+        if(target<=0) return 0;
+        if(Math.abs(total-target)<=0.01) return total;
+        const parts=['room','breakfast','lunch','dinner','experience'];
+        if(total<=0){
+          alloc.room=target;
+          parts.forEach(part=>{ if(part!=='room') alloc[part]=0; });
+        }else{
+          // Preserve the user's entered revenue split, but scale it to the
+          // current package rate. This also repairs stale allocations when
+          // the Room Rate was changed after the allocation was saved.
+          const factor=target/total;
+          parts.forEach(part=>{ alloc[part]=Math.round(Math.max(0,Number(alloc[part]||0))*factor*100)/100; });
+          const rounded=parts.reduce((sum,part)=>sum+Number(alloc[part]||0),0);
+          const correction=Math.round((target-rounded)*100)/100;
+          alloc.room=Math.max(0,Number(alloc.room||0)+correction);
+        }
+        parts.forEach(part=>{
+          const el=document.getElementById(prefix+'_'+part);
+          if(el) el.value=String(alloc[part]);
+        });
+        updateRateAllocationRow(prefix,target);
+        return parts.reduce((sum,part)=>sum+Number(alloc[part]||0),0);
+      };
+      if(lt>0 && Math.abs(ls-lt)>0.01) ls=rebaseAllocation(la,ls,lt,`ra_local_${id}_${plan}_${key}`);
+      if(ft>0 && Math.abs(fs-ft)>0.01) fs=rebaseAllocation(fa,fs,ft,`ra_foreign_${id}_${plan}_${key}`);
+      if(lt>0 && Math.abs(ls-lt)>0.01) errors.push(`${t.code||t.name} Local ${plan} ${key}: allocation ${ls.toFixed(2)} must equal rate ${lt.toFixed(2)}`);
+      if(ft>0 && Math.abs(fs-ft)>0.01) errors.push(`${t.code||t.name} Foreign ${plan} ${key}: allocation ${fs.toFixed(2)} must equal rate ${ft.toFixed(2)}`);
+      if(lt<=0 && ls>0) errors.push(`${t.code||t.name} Local ${plan} ${key}: allocation cannot be entered when rate is 0`);
+      if(ft<=0 && fs>0) errors.push(`${t.code||t.name} Foreign ${plan} ${key}: allocation cannot be entered when rate is 0`);
+      local[id][plan][key]=la;foreign[id][plan][key]=fa;
+    });});});
+    if(errors.length){
+      errors.slice(0,12).forEach(msg=>{
+        const m=msg.match(/^(\S+) (Local|Foreign) (BB|HB|FB|AI) (2A|3A|2A1C|2A2C):/);
+        if(m){
+          const prefix=`ra_${m[2].toLowerCase()}_${String((settings.roomTypes||[]).find(t=>(t.code||t.name)===m[1])?.id||'')}_${m[3]}_${m[4]}`;
+          document.getElementById(prefix+'_room')?.focus();
+        }
+      });
+      alert("Revenue allocation cannot be saved:\n\n"+errors.slice(0,12).join("\n")+(errors.length>12?`\n…and ${errors.length-12} more.`:""));
+      return;
+    }
+    settings.rateAllocationMatrixLocal=local; settings.rateAllocationMatrixForeign=foreign; settings.rateAllocationMatrix=foreign;
+    saveData(); renderAll(); setTimeout(renderRateRevenueAllocation,0); alert("Local and Foreign rate plan revenue allocations saved successfully.");
+}
+
 function renderRoomRatePlans(){
     const box=document.getElementById("dynamicRoomRatePlans");
     if(!box || !settings) return;
@@ -1981,6 +2251,7 @@ function renderRoomRatePlans(){
         const id=String(t.id), m=matrix[id]||normalizeRateMatrix(null);
         return `<div class="card" style="margin-bottom:12px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||"")} — ${escapeHtml(t.name||"")}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>2 Adults</th><th>3 Adults</th><th>2 Adults + 1 Child</th><th>2 Adults + 2 Children</th></tr></thead><tbody>${plans.map(([code,label])=>`<tr><td><strong>${code}</strong> — ${label}</td><td><input id="rr_${id}_${code}_2A" type="number" min="0" step="0.01" value="${Number(m[code]?.["2A"]||0)}"></td><td><input id="rr_${id}_${code}_3A" type="number" min="0" step="0.01" value="${Number(m[code]?.["3A"]||0)}"></td><td><input id="rr_${id}_${code}_2A1C" type="number" min="0" step="0.01" value="${Number(m[code]?.["2A1C"]||0)}"></td><td><input id="rr_${id}_${code}_2A2C" type="number" min="0" step="0.01" value="${Number(m[code]?.["2A2C"]||0)}"></td></tr>`).join("")}</tbody></table></div></div>`;
     }).join("") : '<div class="empty">Create at least one active Room Type before setting rates.</div>';
+    setTimeout(renderRateRevenueAllocation,0);
 }
 
 function saveRatePlans(){
@@ -1995,9 +2266,16 @@ function saveRatePlans(){
         }));
     });
     settings.roomRateMatrix=matrix;
+    const mealPct={...DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES};
+    ["RO","BB","HB","FB","AI"].forEach(code=>{
+        const value=Number(document.getElementById("mealAlloc_"+code)?.value);
+        mealPct[code]=Math.max(0,Math.min(100,Number.isFinite(value)?value:DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES[code]));
+    });
+    settings.mealPlanFoodPercentages=mealPct;
     saveData(); renderAll();
     setTimeout(renderRoomRatePlans,0);
-    alert("Room Type Rate Plans saved successfully.");
+    setTimeout(renderMealPlanRevenuePercentages,0);
+    alert("Room Type Rate Plans and Meal Plan Percentages saved successfully.");
 }
 
 function renderExperiences(){
@@ -2010,7 +2288,7 @@ function renderExperiences(){
 }
 
 function addExperienceToFolio(reservationId,experienceId){
-    if(!requireRole("Admin","Manager","Front Office","Cashier")) return;
+    if(!requireModuleAction("experiences.post_folio")) return;
     const r=reservations.find(x=>x.id===reservationId);
     if(!r) return;
     const list=settings?.experiences||[];
@@ -2025,8 +2303,21 @@ function addExperienceToFolio(reservationId,experienceId){
     }
     f.extras=Number(f.extras||0)+price;
     f.experienceItems=Array.isArray(f.experienceItems)?f.experienceItems:[];
-    f.experienceItems.push({id:Date.now(),experienceId:e.id,name:e.name,amount:price,addedAt:localDateTime()});
-    saveData(); renderAll();
+    f.experienceItems.push({id:Date.now(),experienceId:e.id,name:e.name,amount:price,addedAt:localDateTime(),addedBy:currentUser?.username||currentUser?.role||"User"});
+    f.total=getFolioTotal(reservationId);
+    saveData();
+    try{
+        const ref="EXP-"+String(e.id)+"-"+String(r.id)+"-"+Date.now();
+        const already=journalEntries().some(j=>String(j.reference)===ref);
+        if(!already){
+            const amt=toAccountingAmount(price,r);
+            postJournal(accountingBusinessDate(),ref,"Experience charge — "+e.name,[
+                {account:"Accounts Receivable",debit:amt,credit:0},
+                {account:"Other Operating Revenue",debit:0,credit:amt}
+            ],"Experience");
+        }
+    }catch(err){ console.warn("Experience accounting posting failed",err); }
+    renderAll();
 }
 
 
@@ -2217,7 +2508,7 @@ const MASTER_PROPERTY_NEUTRAL=true;
 
 const APP_NAME="Signature PMS";
 const APP_EDITION="Hotel Edition";
-const APP_VERSION="2.1.0";
+const APP_VERSION="2.1.0-event-booking";
 
 let properties=[];
 let currentPropertyId=null;
@@ -2244,12 +2535,12 @@ const USER_ROLES=[
 ];
 
 const ROLE_PAGES={
-    "Admin":["dashboard","reservations","guests","rooms","checkin","checkout","folios","pmrooms","pos","experiences","payments","reports","accounting","purchasing","hr","settings","users"],
+    "Admin":["dashboard","reservations","guests","rooms","checkin","checkout","folios","pmrooms","pos","experiences","eventbookings","payments","reports","accounting","purchasing","hr","settings","users"],
     "Manager":[],"Front Office":[],"Housekeeping":[],"Cashier":[],"Viewer":[],"Department Supervisor":[]
 };
 
 const PERMISSION_PAGES=[
- ["dashboard","Dashboard"],["frontoffice","Front Office Dashboard"],["reservations","Reservations"],["guests","Guest Profiles"],["rooms","Rooms"],["engineering","Engineering"],["availability","Availability"],["checkin","Check-In"],["checkout","Check-Out"],["folios","Guest Folios"],["pmrooms","PM Rooms / Posting"],["pos","Restaurant POS"],["experiences","Experiences"],["payments","Payments"],["cashiershift","Cashier Shift & Daily Closing"],["reports","Reports"],["nightaudit","Night Audit"],["accounting","Accounting"],["purchasing","Purchasing"],["stores","Stores & Recipes"],["hr","HR & Payroll"],["settings","Settings"],["users","Users Management"]
+ ["dashboard","Dashboard"],["frontoffice","Front Office Dashboard"],["reservations","Reservations"],["guests","Guest Profiles"],["rooms","Rooms"],["engineering","Engineering"],["availability","Availability"],["checkin","Check-In"],["checkout","Check-Out"],["folios","Guest Folios"],["pmrooms","PM Rooms / Posting"],["pos","Restaurant POS"],["experiences","Experiences"],["eventbookings","Event Booking"],["payments","Payments"],["cashiershift","Cashier Shift & Daily Closing"],["reports","Reports"],["nightaudit","Night Audit"],["accounting","Accounting"],["purchasing","Purchasing"],["stores","Stores & Recipes"],["hr","HR & Payroll"],["settings","Settings"],["users","Users Management"]
 ];
 const REPORT_PERMISSION_OPTIONS=[
  ["daily_summary","Daily / Operational Summary"],["revenue_summary","Revenue Summary"],["reservation_report","Reservation Report"],["payment_report","Payments by Method"],["closing_report","Daily Closing / Reconciliation"],
@@ -2283,6 +2574,12 @@ const ACTION_PERMISSION_GROUPS={
  "Cashiering":[
   ["cashier.shift_openclose","Open / close cashier shift and cashier day"],["cashier.reconcile","Cash count / physical cash reconciliation / variance"],["cashier.petty_cash","Petty cash expenses / payouts"]
  ],
+ "Experiences":[
+  ["experiences.view","View Experiences"],["experiences.create","Create Experience"],["experiences.edit","Edit Experience"],["experiences.delete","Delete Experience"],["experiences.post_folio","Post Experience to Guest Folio"]
+ ],
+ "Event Booking":[
+  ["events.view","View Event Bookings"],["events.create","Create Event Booking"],["events.edit","Edit Event Booking"],["events.cancel","Cancel Event Booking"],["events.delete","Delete Event Booking"],["events.confirm","Confirm Event Booking"],["events.post_accounting","Post Event Charge to Accounting"],["events.payment","Take Event Payment"],["events.refund","Refund Event Payment"]
+ ],
  "Accounting / Finance":[
   ["accounting.coa","Chart of Accounts / GL"],["accounting.reports","Trial Balance / P&L / financial reports"],["accounting.ap","Supplier invoices / AP / bank reconciliation"],["purchasing.request_po","Purchase Requests / PO"],["purchasing.grn","GRN"],["inventory.adjust","Stock counts / inventory adjustments / recipe costing"]
  ],
@@ -2297,7 +2594,7 @@ const ACTION_PERMISSION_OPTIONS=Object.entries(ACTION_PERMISSION_GROUPS).flatMap
 const ACTION_PERMISSION_KEYS=ACTION_PERMISSION_OPTIONS.map(x=>x[0]);
 const ROLE_ACTION_DEFAULTS={
  "Admin":ACTION_PERMISSION_KEYS,
- "Manager":["reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.room_override","reservations.rate_override","reservations.discount","folios.split","folios.merge","folios.transfer","folios.close","folios.manual_charge","payments.deposit","payments.refund","reservations.view_guests","nightaudit.run","housekeeping.room_status","housekeeping.oos","maintenance.manage","pos.use","pos.room_post","pos.settlement","pos.void","pos.discount","cashier.petty_cash","cashier.reconcile","accounting.reports","purchasing.request_po","purchasing.grn","inventory.adjust","hr.approve","security.audit"],
+ "Manager":["experiences.view","experiences.create","experiences.edit","experiences.post_folio","events.view","events.create","events.edit","events.confirm","events.post_accounting","reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.room_override","reservations.rate_override","reservations.discount","folios.split","folios.merge","folios.transfer","folios.close","folios.manual_charge","payments.deposit","payments.refund","reservations.view_guests","nightaudit.run","housekeeping.room_status","housekeeping.oos","maintenance.manage","pos.use","pos.room_post","pos.settlement","pos.void","pos.discount","cashier.petty_cash","cashier.reconcile","accounting.reports","purchasing.request_po","purchasing.grn","inventory.adjust","hr.approve","security.audit"],
  "Front Office":["reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.view_guests","folios.manual_charge","payments.deposit"],
  "Housekeeping":["housekeeping.room_status","housekeeping.oos","housekeeping.roster","housekeeping.minibar","housekeeping.lost_found","maintenance.manage"],
  "Cashier":["payments.deposit","payments.refund","cashier.shift_openclose","cashier.reconcile","cashier.petty_cash","pos.settlement","pos.room_post"],
@@ -2423,6 +2720,9 @@ function ensurePropertyShape(p){
     out.bookingTypes=Array.isArray(out.bookingTypes)&&out.bookingTypes.length ? out.bookingTypes : ["room"];
     out.rateMatrix=normalizeRateMatrix(out.rateMatrix);
     out.roomRateMatrix=(out.roomRateMatrix&&typeof out.roomRateMatrix==="object")?out.roomRateMatrix:{};
+    out.rateAllocationMatrix=(out.rateAllocationMatrix&&typeof out.rateAllocationMatrix==="object")?out.rateAllocationMatrix:{};
+    out.rateAllocationMatrixLocal=(out.rateAllocationMatrixLocal&&typeof out.rateAllocationMatrixLocal==="object")?out.rateAllocationMatrixLocal:{};
+    out.rateAllocationMatrixForeign=(out.rateAllocationMatrixForeign&&typeof out.rateAllocationMatrixForeign==="object")?out.rateAllocationMatrixForeign:{};
     out.roomTypes=Array.isArray(out.roomTypes)&&out.roomTypes.length ? out.roomTypes : [
         {id:"rt_std",code:"STD",name:"Standard",maxAdults:2,maxChildren:1,baseOccupancy:2,active:true},
         {id:"rt_dlx",code:"DLX",name:"Deluxe",maxAdults:3,maxChildren:2,baseOccupancy:2,active:true}
@@ -2441,6 +2741,7 @@ function ensurePropertyShape(p){
     out.roomRateMatrix={};
     out.roomTypes.forEach(t=>{ const id=String(t.id); out.roomRateMatrix[id]=existingRoomMatrix[id]?normalizeRateMatrix(existingRoomMatrix[id]):JSON.parse(JSON.stringify(legacyMatrix)); });
     out.experiences=Array.isArray(out.experiences)?out.experiences:[];
+    out.eventBookings=Array.isArray(out.eventBookings)?out.eventBookings:[];
     out.rooms=Array.isArray(out.rooms)&&out.rooms.length ? out.rooms : [{id:1,name:"Room 01",type:"Guest Room",rate:out.roomRate,active:true}];
     out.rooms=out.rooms.map((r,i)=>{const rid=Number(r.id)||i+1;const fallback=`Room ${String(rid).padStart(2,"0")}`;const code=String(r.code||r.number||r.name||fallback);return {...r,id:rid,code,number:String(r.number||code),name:r.name||code,type:r.type||"Guest Room",rate:Number(r.rate ?? out.roomRate),active:r.active!==false,housekeepingStatus:["clean","dirty","inspected","oos"].includes(r.housekeepingStatus)?r.housekeepingStatus:"clean",maintenanceNote:r.maintenanceNote||"",oosReason:r.oosReason||""};});
     out.posMenu=normalizePOSMenu(Array.isArray(out.posMenu) ? out.posMenu : JSON.parse(JSON.stringify(DEFAULT_POS_MENU)));
@@ -3856,6 +4157,8 @@ function renderUsers(){
 const USER_MODULE_ACTION_GROUPS={
   reservations:{title:"Reservations Action Rights",items:ACTION_PERMISSION_GROUPS["Front Office / Reservations"]||[]},
   pos:{title:"Restaurant POS Action Rights",items:ACTION_PERMISSION_GROUPS["POS / Outlet"]||[]},
+  experiences:{title:"Experiences Action Rights",items:ACTION_PERMISSION_GROUPS["Experiences"]||[]},
+  eventbookings:{title:"Event Booking Action Rights",items:ACTION_PERMISSION_GROUPS["Event Booking"]||[]},
   purchasing:{title:"Purchasing Action Rights",items:[
     ["purchasing.po","Purchase Order"],["purchasing.ap","Supplier Payment"],["purchasing.grn","GRN"],
     ["purchasing.suppliers","Suppliers"],["purchasing.articles","Articles"],["purchasing.request","Purchase Request"],["purchasing.refresh","Refresh"]
@@ -4905,6 +5208,7 @@ function showPage(page,button=null){
     if(page==="users") setTimeout(renderUsers,0);
     if(page==="hr") setTimeout(()=>{if(typeof applyHRRoleVisibility==='function')applyHRRoleVisibility();},0);
     if(page==="engineering") setTimeout(()=>{renderEngineering();if(typeof refreshEngineeringJobOrderRights==='function')refreshEngineeringJobOrderRights();},0);
+    if(page==="eventbookings") setTimeout(renderEventBookings,0);
 
     // Refresh module data whenever the page is opened so newly saved
     // purchasing records (including Purchase Requests) are always visible.
@@ -4952,6 +5256,7 @@ function showPage(page,button=null){
         nightaudit:"Night Audit",
         settings:"Settings",
     experiences:"Experiences",
+        eventbookings:"Event Booking",
         purchasing:"Purchasing",
         hr:"HR & Payroll",
         users:"Users Management"
@@ -5845,6 +6150,7 @@ function normalizeRateMatrix(matrix){
 
 function loadRatePlans(){
     renderRoomRatePlans();
+    renderMealPlanRevenuePercentages();
     const matrix=normalizeRateMatrix(settings?.rateMatrix);
     ["BB","HB","FB","AI"].forEach(plan=>["2A","3A","2A1C","2A2C"].forEach(key=>{
         const el=document.getElementById(`rate_${plan}_${key}`);
@@ -5874,9 +6180,78 @@ function updateChildrenAgeFields(existingAges=[]){
     container.innerHTML=Array.from({length:count},(_,i)=>`<div class="form-group"><label>Child ${i+1} Age</label><input class="child-age-input" data-child-index="${i}" type="number" min="0" max="17" value="${Number(existingAges?.[i]??"")}" placeholder="Age"></div>`).join("");
 }
 
+let editingEventBookingId=null;
+function getEventBookings(){
+    if(!settings) return [];
+    settings.eventBookings=Array.isArray(settings.eventBookings)?settings.eventBookings:[];
+    return settings.eventBookings;
+}
+function openEventBookingModal(id=null){
+    if(!requireModuleAction("events.view")) return;
+    if(id==null && !requireModuleAction("events.create")) return;
+    if(id!=null && !requireModuleAction("events.edit")) return;
+    editingEventBookingId=id;
+    const e=getEventBookings().find(x=>x.id===id);
+    document.getElementById("eventBookingModalTitle").textContent=e?"Edit Event Booking":"New Event Booking";
+    const vals={eventName:e?.name||"",eventCustomer:e?.customer||"",eventContact:e?.contact||"",eventEmail:e?.email||"",eventDate:e?.date||localDateString(),eventStartTime:e?.startTime||"18:00",eventEndTime:e?.endTime||"",eventVenue:e?.venue||"",eventGuests:e?.guests||1,eventPackage:e?.packageName||"",eventAmount:e?.amount||0,eventStatus:e?.status||"Confirmed",eventNotes:e?.notes||""};
+    Object.entries(vals).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;});
+    document.getElementById("eventBookingError").textContent="";
+    document.getElementById("eventBookingModal").classList.add("show");
+}
+function closeEventBookingModal(){document.getElementById("eventBookingModal")?.classList.remove("show");editingEventBookingId=null;}
+function saveEventBooking(){
+    if(editingEventBookingId ? !requireModuleAction("events.edit") : !requireModuleAction("events.create")) return;
+    if(!settings) return;
+    const get=id=>document.getElementById(id)?.value.trim()||"";
+    const name=get("eventName"),customer=get("eventCustomer"),date=get("eventDate"),start=get("eventStartTime"),venue=get("eventVenue"),pkg=get("eventPackage");
+    const guests=Math.max(1,Number(document.getElementById("eventGuests")?.value||0));
+    const err=document.getElementById("eventBookingError");
+    if(!name||!customer||!date||!start||!venue||!pkg||guests<1){err.textContent="Event name, customer/company, date, start time, venue, expected guests and package/service are required.";return;}
+    const item={id:editingEventBookingId||("evt_"+Date.now()+"_"+Math.random().toString(36).slice(2,7)),name,customer,contact:get("eventContact"),email:get("eventEmail"),date,startTime:start,endTime:get("eventEndTime"),venue,guests,packageName:pkg,amount:Math.max(0,Number(document.getElementById("eventAmount")?.value||0)),status:document.getElementById("eventStatus")?.value||"Confirmed",notes:get("eventNotes"),createdAt:localDateTime(),createdBy:currentUser?.username||""};
+    const list=getEventBookings();
+    const i=list.findIndex(x=>x.id===editingEventBookingId);
+    if(i>=0) list[i]=item; else list.push(item);
+    saveData();
+    if(item.status==="Confirmed" && item.amount>0){
+        try{
+            const ref="EVT-"+String(item.id);
+            if(!journalEntries().some(j=>String(j.reference)===ref)){
+                const amt=toAccountingAmount(item.amount,{currency:"LKR"});
+                postJournal(accountingBusinessDate(),ref,"Event booking — "+item.name,[
+                    {account:"Accounts Receivable",debit:amt,credit:0},
+                    {account:"Other Operating Revenue",debit:0,credit:amt}
+                ],"Event Booking");
+                item.accountingPosted=true;
+                item.accountingReference=ref;
+                saveData();
+            }
+        }catch(err){ console.warn("Event booking accounting posting failed",err); }
+    }
+    closeEventBookingModal(); renderAll(); showPage("eventbookings");
+}
+function deleteEventBooking(id){
+    if(!requireModuleAction("events.delete")) return;
+    const list=getEventBookings(), e=list.find(x=>x.id===id); if(!e)return;
+    if(!confirm("Cancel/delete event booking "+e.name+"?"))return;
+    settings.eventBookings=list.filter(x=>x.id!==id); saveData(); renderAll();
+}
+function renderEventBookings(){
+    const table=document.getElementById("eventBookingTable"); if(!table)return;
+    const list=getEventBookings().slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.startTime).localeCompare(String(b.startTime)));
+    const today=localDateString();
+    const upcoming=list.filter(x=>x.date>=today&&x.status!=="Cancelled");
+    const confirmed=list.filter(x=>x.status==="Confirmed");
+    const guests=upcoming.reduce((s,x)=>s+Number(x.guests||0),0);
+    const revenue=confirmed.reduce((s,x)=>s+Number(x.amount||0),0);
+    const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+    set("eventUpcomingCount",upcoming.length);set("eventConfirmedCount",confirmed.length);set("eventGuestCount",guests);set("eventRevenueTotal",accMoney(revenue));
+    if(!list.length){table.innerHTML='<tr><td class="empty" colspan="10">No event bookings.</td></tr>';return;}
+    table.innerHTML=list.map(e=>`<tr><td><strong>${escapeHtml(e.name||"")}</strong></td><td>${escapeHtml(e.customer||"")}</td><td>${escapeHtml(e.date||"")}</td><td>${escapeHtml(e.startTime||"")}${e.endTime?" - "+escapeHtml(e.endTime):""}</td><td>${escapeHtml(e.venue||"")}</td><td>${Number(e.guests||0)}</td><td>${escapeHtml(e.packageName||"")}</td><td>${accMoney(Number(e.amount||0))}</td><td><span class="badge ${e.status==="Confirmed"?'badge-success':e.status==="Cancelled"?'badge-danger':'badge-warning'}">${escapeHtml(e.status||"")}</span></td><td><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn btn-secondary btn-small" onclick="openEventBookingModal('${e.id}')">Edit</button><button class="btn btn-danger btn-small" onclick="deleteEventBooking('${e.id}')">Delete</button></div></td></tr>`).join("");
+}
+
 let editingExperienceId=null;
 function openExperienceModal(experienceId=null){
-    if(!requireRole("Admin","Manager")) return;
+    if(experienceId==null ? !requireModuleAction("experiences.create") : !requireModuleAction("experiences.edit")) return;
     editingExperienceId=experienceId;
     const e=(settings?.experiences||[]).find(x=>x.id===experienceId);
     document.getElementById("experienceModalTitle").textContent=e?"Edit Experience":"Add Experience";
@@ -5891,7 +6266,7 @@ function openExperienceModal(experienceId=null){
 }
 function closeExperienceModal(){document.getElementById("experienceModal")?.classList.remove("show");editingExperienceId=null;}
 function saveExperience(){
-    if(!requireRole("Admin","Manager")) return;
+    if(editingExperienceId ? !requireModuleAction("experiences.edit") : !requireModuleAction("experiences.create")) return;
     if(!settings) return;
     const name=document.getElementById("experienceName").value.trim();
     if(!name){document.getElementById("experienceError").textContent="Experience name is required.";return;}
@@ -5902,7 +6277,7 @@ function saveExperience(){
     saveData();closeExperienceModal();renderAll();
 }
 function deleteExperience(id){
-    if(!requireRole("Admin","Manager")) return;
+    if(!requireModuleAction("experiences.delete")) return;
     if(!settings) return;
     const e=(settings.experiences||[]).find(x=>x.id===id); if(!e) return;
     if(!confirm("Delete experience "+e.name+"?")) return;
@@ -5910,7 +6285,7 @@ function deleteExperience(id){
 }
 
 function postExperienceToFolio(experienceId){
-    if(!requireRole("Admin","Manager","Front Office","Cashier")) return;
+    if(!requireModuleAction("experiences.post_folio")) return;
     const e=(settings?.experiences||[]).find(x=>x.id===experienceId); if(!e) return;
     if(Number(e.price||0)<=0){alert("This experience needs a chargeable price before it can be posted.");return;}
     const activeReservations=reservations.filter(r=>["checked_in","checked-in","Checked-In","Checked In"].includes(String(r.status||"")));
@@ -7818,6 +8193,41 @@ function viewFolio(reservationId){
             :`<div class="empty">No extra charges added.</div>`
         }
 
+    </div>
+
+
+    <div class="section"
+         style="padding:0;border:0;margin-top:18px">
+        <div class="section-header">
+            <h3>Experience Charges</h3>
+        </div>
+        ${
+            Array.isArray(f?.experienceItems) && f.experienceItems.length
+            ?`
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Experience</th>
+                            <th>Date / Time</th>
+                            <th>Added By</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${f.experienceItems.slice().reverse().map(item=>`
+                            <tr>
+                                <td><strong>${escapeHtml(item.name||"Experience")}</strong></td>
+                                <td>${escapeHtml(item.addedAt||"-")}</td>
+                                <td>${escapeHtml(item.addedBy||"-")}</td>
+                                <td><strong>${money(item.amount||0)}</strong></td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>`
+            :`<div class="empty">No experience charges posted.</div>`
+        }
     </div>
 
 
@@ -10197,7 +10607,8 @@ function renderDashboard(){
     };
     const dashboardBaseAmount=r=>{const amount=Math.max(0,Number(r?.total||0));const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();if(cur===base||cur==="LKR")return amount;return amount*Number(r?.postingRateAtBooking||settings?.postingRate||320);};
     const nightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);return dashboardBaseAmount(r)/n;};
-    const roomRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>s+nightlyValue(r),0)+((villaRes.find(r=>overlaps(r,d)))?Math.max(0,Number(villaRes.find(r=>overlaps(r,d)).total||0)/Math.max(1,Number(villaRes.find(r=>overlaps(r,d)).nights||1))):0):0;
+    const roomNightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);const a=getReservationRevenueAllocation(r);return Number(a.room||0)*Number(r?.postingRateAtBooking&&String(r.currency||"USD").toUpperCase()!==String(r.baseCurrency||settings?.baseCurrency||"LKR").toUpperCase()?r.postingRateAtBooking:1)/n;};
+    const roomRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>s+roomNightlyValue(r),0)+((villaRes.find(r=>overlaps(r,d)))?Math.max(0,Number(villaRes.find(r=>overlaps(r,d)).total||0)/Math.max(1,Number(villaRes.find(r=>overlaps(r,d)).nights||1))):0):0;
     const restaurantForDate=d=>sales.filter(s=>String(s.date||"").slice(0,10)===d&&Number(s.total||0)>0).reduce((s,x)=>s+Number(x.total||0),0);
     const occupiedForDate=d=>bookedForDate(d);
     const arrivals=reservations.filter(r=>r.checkIn===today&&r.status!=="Cancelled"&&r.status!=="No-Show");
@@ -10206,7 +10617,10 @@ function renderDashboard(){
     let occupied=0; roomIds.forEach(roomId=>{const b=getBookingForRoom(roomId,today); if(b&&b.status==="Checked-In") occupied++;}); const villaToday=getVillaBooking(today); if(villaToday&&villaToday.status==="Checked-In") occupied=roomCount; const reserved=reservations.filter(r=>r.checkIn===today&&["Reserved","Confirmed"].includes(r.status)).length,available=Math.max(0,roomCount-occupied-reserved),oos=0;
     roomIds.forEach(roomId=>{if(getRoomOperationalConfig(roomId)?.housekeepingStatus==="oos")oos++;});
     const occPct=Math.round((occupied/roomCount)*100);
-    const roomRevenueToday=roomRevenueForDate(today),restaurantRevenue=restaurantForDate(today),totalRevenueToday=roomRevenueToday+restaurantRevenue;
+    const roomRevenueToday=roomRevenueForDate(today),restaurantRevenue=restaurantForDate(today);
+    const packageFnbRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const n=Math.max(1,Number(r.nights||1));const a=getReservationRevenueAllocation(r);return s+Number(a.breakfast||0)+Number(a.lunch||0)+Number(a.dinner||0);},0):0;
+    const packageExperienceRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);return s+Number(a.experience||0);},0):0;
+    const totalRevenueToday=roomRevenueToday+restaurantRevenue+packageFnbRevenueForDate(today)+packageExperienceRevenueForDate(today);
     const adr=occupied>0?roomRevenueToday/occupied:0,revpar=roomRevenueToday/roomCount;
     const apOutstanding=apTotals(today).total;
     const outstanding=reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((s,r)=>{const b=Number(getBalance(r.id)||0);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();return s+(cur===base||cur==="LKR"?b:b*Number(r?.postingRateAtBooking||settings?.postingRate||320));},0);
@@ -11384,6 +11798,7 @@ function renderAll(){
     const calendar=document.getElementById("reservationCalendarView");
     if(calendar && calendar.style.display!=="none") renderReservationCalendar();
     renderExperiences();
+    renderEventBookings();
 }
 
 /* =========================================================
@@ -12329,8 +12744,9 @@ function dailyRevenueRows(date){
   });
   active.forEach(r=>{
     const nights=Math.max(1,Math.round((new Date(r.checkOut+'T12:00:00')-new Date(r.checkIn+'T12:00:00'))/86400000));
-    const nightly=Number(r.total||0)/nights;
-    if(nightly>0) rows.push({date:d,source:'Room',reference:r.bookingNo||r.id,description:r.guestName||'Guest',amount:toAccountingAmount(nightly,r),account:'Room Revenue'});
+    const alloc=getReservationRevenueAllocation(r);
+    const labels=[['room','Room Revenue','Room'],['breakfast','Restaurant Revenue','Breakfast'],['lunch','Restaurant Revenue','Lunch'],['dinner','Restaurant Revenue','Dinner'],['experience','Experience / Recreation Revenue','Included Experience']];
+    labels.forEach(([key,account,label])=>{const amount=Number(alloc[key]||0);if(amount>0)rows.push({date:d,source:'Room Package',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+label,amount:toAccountingAmount(amount,r),account});});
   });
   /* Include legacy F&B sales created before outlet/property metadata was added.
      Only infer the current property when the sale has an outletId that belongs
@@ -12375,7 +12791,7 @@ function dailyRevenueRows(date){
 }
 function dailyRevenueTotals(date){
   const rows=dailyRevenueRows(date);
-  return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Other Operating Revenue':0});
+  return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Experience / Recreation Revenue':0,'Other Operating Revenue':0});
 }
 function dailyRevenueJournalExists(date){
   return journalEntries().some(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date));
@@ -12447,6 +12863,7 @@ window.postDailyRevenue=function(){
     if(totals['Room Revenue']>0)lines.push({account:'Room Revenue',debit:0,credit:totals['Room Revenue']});
     if(totals['Restaurant Revenue']>0)lines.push({account:'Restaurant Revenue',debit:0,credit:totals['Restaurant Revenue']});
     if(totals['Bar Revenue']>0)lines.push({account:'Bar Revenue',debit:0,credit:totals['Bar Revenue']});
+    if(totals['Experience / Recreation Revenue']>0)lines.push({account:'Experience / Recreation Revenue',debit:0,credit:totals['Experience / Recreation Revenue']});
     if(totals['Other Operating Revenue']>0)lines.push({account:'Other Operating Revenue',debit:0,credit:totals['Other Operating Revenue']});
   }
   lines.unshift({account:'Accounts Receivable',debit:gross,credit:0});
@@ -17579,14 +17996,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   ];
   const isSettingField=(el)=>!!(el&&el.id&&settingIds.includes(el.id));
   const isRatePlanField=(el)=>!!(el&&el.id&&el.id.indexOf('rr_')===0);
+  const isRateAllocationField=(el)=>!!(el&&el.id&&el.id.indexOf('ra_')===0);
 
   document.addEventListener('input',function(e){
     if(isSettingField(e.target)) settingsDirty=true;
-    if(isRatePlanField(e.target)) ratePlansDirty=true;
+    if(isRatePlanField(e.target)||isRateAllocationField(e.target)) ratePlansDirty=true;
   },true);
   document.addEventListener('change',function(e){
     if(isSettingField(e.target)) settingsDirty=true;
-    if(isRatePlanField(e.target)) ratePlansDirty=true;
+    if(isRatePlanField(e.target)||isRateAllocationField(e.target)) ratePlansDirty=true;
   },true);
 
   const originalLoadSettings=window.loadSettings;
@@ -17600,8 +18018,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const originalRenderRatePlans=window.renderRoomRatePlans;
   if(typeof originalRenderRatePlans==='function'){
     window.renderRoomRatePlans=function(){
-      if(ratePlansDirty) return;
+      if(ratePlansDirty && !window.__signatureSavingRatePlan) return;
       return originalRenderRatePlans.apply(this,arguments);
+    };
+  }
+  const originalRenderRateRevenueAllocation=window.renderRateRevenueAllocation;
+  if(typeof originalRenderRateRevenueAllocation==='function'){
+    window.renderRateRevenueAllocation=function(){
+      if(ratePlansDirty && !window.__signatureSavingRatePlan) return;
+      return originalRenderRateRevenueAllocation.apply(this,arguments);
     };
   }
 
@@ -17615,6 +18040,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     };
   }
 
+  const originalSaveRateRevenueAllocation=window.saveRateRevenueAllocation;
+  if(typeof originalSaveRateRevenueAllocation==='function'){
+    window.saveRateRevenueAllocation=function(){
+      window.__signatureSavingRatePlan=true;
+      try { return originalSaveRateRevenueAllocation.apply(this,arguments); }
+      finally { window.__signatureSavingRatePlan=false; ratePlansDirty=false; }
+    };
+  }
   const originalSaveRatePlans=window.saveRatePlans;
   if(typeof originalSaveRatePlans==='function'){
     window.saveRatePlans=function(){
