@@ -1151,7 +1151,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="card" id="dailyRevenuePostingStatus" style="margin-bottom:12px">No daily revenue posting selected.</div>
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>Reference</th><th>Guest / Description</th><th style="text-align:right">Amount</th></tr></thead><tbody id="dailyRevenuePostingTable"><tr><td class="empty" colspan="5">No revenue rows.</td></tr></tbody></table></div>
 </div>
-<div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Daily Payment Posting</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Post payments received for a selected business date into the accounting ledger. Previous business dates remain available after Night Audit until posted.</div></div><div class="toolbar"><label style="font-size:12px;color:#6b7280">Payment Date</label><input id="dailyPaymentPostingDate" onchange="renderDailyPaymentPosting()" type="date"/><button class="btn btn-secondary" onclick="selectCurrentPaymentDate()">Current Business Date</button><button class="btn btn-primary" onclick="postDailyPayments()">Post Daily Payments</button></div></div><div class="report-grid"><div class="card"><div class="card-title">Cash</div><div class="card-value" id="dailyPayCash">LKR0.00</div></div><div class="card"><div class="card-title">Card</div><div class="card-value" id="dailyPayCard">LKR0.00</div></div><div class="card"><div class="card-title">Bank / Online</div><div class="card-value" id="dailyPayBank">LKR0.00</div></div><div class="card"><div class="card-title">Deposits</div><div class="card-value" id="dailyPayDeposits">LKR0.00</div></div></div><div class="notice" id="dailyPaymentPostingStatus" style="margin-top:12px"></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Date</th><th>Reference</th><th>Guest / Description</th><th>Type</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody id="dailyPaymentPostingTable"><tr><td class="empty" colspan="6">No payment transactions.</td></tr></tbody></table></div></div>
+<div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Daily Payment Posting</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Post payments received for a selected business date into the accounting ledger. Previous business dates remain available after Night Audit until posted.</div></div><div class="toolbar"><label style="font-size:12px;color:#6b7280">Payment Date</label><input id="dailyPaymentPostingDate" onchange="dailyPaymentSelectedDateOverride=this.value;renderDailyPaymentPosting()" type="date"/><button class="btn btn-secondary" onclick="selectCurrentPaymentDate()">Current Business Date</button><button class="btn btn-primary" onclick="postDailyPayments()">Post Daily Payments</button></div></div><div class="report-grid"><div class="card"><div class="card-title">Cash</div><div class="card-value" id="dailyPayCash">LKR0.00</div></div><div class="card"><div class="card-title">Card</div><div class="card-value" id="dailyPayCard">LKR0.00</div></div><div class="card"><div class="card-title">Bank / Online</div><div class="card-value" id="dailyPayBank">LKR0.00</div></div><div class="card"><div class="card-title">Deposits</div><div class="card-value" id="dailyPayDeposits">LKR0.00</div></div></div><div class="notice" id="dailyPaymentPostingStatus" style="margin-top:12px"></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Date</th><th>Reference</th><th>Guest / Description</th><th>Type</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody id="dailyPaymentPostingTable"><tr><td class="empty" colspan="6">No payment transactions.</td></tr></tbody></table></div></div>
 <div class="section" id="arGuestLedgerSection" style="margin-top:18px">
 <div class="section-header">
 <div><h3>Accounts Receivable / Guest Ledger</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Outstanding guest balances based on folio charges and received payments. Review current and aged balances before transferring eligible accounts to city ledger.</div></div>
@@ -2659,9 +2659,24 @@ function formatDate(value){
     return String(value);
 }
 
+/* =========================================================
+   SYSTEM CURRENCY POLICY — LKR ONLY
+   All guest-facing financial values are displayed/settled in LKR.
+   Foreign guest rates are converted at the booking/posting rate.
+========================================================= */
 function money(value){
-    const currency=settings?.currency || getProperty()?.currency || "$";
-    return currency+Number(value||0).toFixed(2);
+    return "LKR "+Number(value||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function reservationMoney(r,value){
+    const n=Number(value||0);
+    const cur=String(r?.currency||r?.guestCurrency||"").toUpperCase();
+    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
+    if(cur && cur!=="LKR" && cur!==base){
+        const rate=Number(r?.postingRateAtBooking||r?.postingRateAtCalculation||r?.accountingRate||settings?.settlementRate||settings?.postingRate||320)||320;
+        return "LKR "+(n*rate).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+    }
+    return "LKR "+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 /* POS is operationally LKR. Existing menu/sale records may retain their original
@@ -5419,37 +5434,84 @@ function renderPropertyManager(){
         </div>`;
 }
 
-function addProperty(){
+async function addProperty(){
     if(!requireRole("Admin")) return;
 
     const name=prompt("Property name:","New Property");
     if(!name || !name.trim()) return;
-
     const location=prompt("Location:","");
     const roomsRaw=prompt("Number of rooms / units:","1");
     const rateRaw=prompt("Default accommodation rate per night:","0");
-
     const roomCount=Math.max(1,parseInt(roomsRaw,10)||1);
     const rate=Math.max(0,Number(rateRaw)||0);
-    let id=name.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"") || "property";
-    let base=id, i=2;
-    while(properties.some(p=>p.id===id)){ id=base+"-"+(i++); }
-
     const villaAnswer=prompt("Does this property support Entire Villa bookings? (yes/no):","no");
-    const bookingTypes=String(villaAnswer||"").trim().toLowerCase().startsWith("y")
-        ? ["room","villa"]
-        : ["room"];
+    const bookingTypes=String(villaAnswer||"").trim().toLowerCase().startsWith("y") ? ["room","villa"] : ["room"];
 
-    const property=defaultProperty(id,name.trim(),(location||"").trim(),roomCount,rate,{bookingTypes});
-    properties.push(property);
-    saveProperties();
-    currentPropertyId=id;
-    setSession(currentUser);
-    loadCurrentPropertyData();
-    renderAll();
-    showPage("settings");
-    logAudit("PROPERTY_CREATED",property.id,"Property created",property.id);
-    alert(property.property+" added successfully.");
+    try{
+        const client=initSupabaseClient();
+        const authUser=await getSupabaseSessionUser();
+        if(!client || !authUser) throw new Error("Please sign in to Supabase before creating a property.");
+
+        // Generate the next hotel code from the cloud property list. The user
+        // never needs to enter the code manually.
+        const {data:cloudProps,error:listError}=await client.from("properties").select("id,code,name");
+        if(listError) throw listError;
+        const existingCodes=(cloudProps||[]).map(x=>String(x.code||"").trim().toUpperCase());
+        let n=1;
+        while(existingCodes.includes("H"+String(n).padStart(3,"0"))) n++;
+        const code="H"+String(n).padStart(3,"0");
+
+        // If the property already exists in Supabase by name, use it rather
+        // than creating a duplicate.
+        let cloudRow=(cloudProps||[]).find(x=>String(x.name||"").trim().toLowerCase()===name.trim().toLowerCase());
+        if(!cloudRow){
+            const payload={
+                code,
+                name:name.trim(),
+                address:(location||"").trim(),
+                city:(location||"").trim(),
+                country:"",
+                phone:"",
+                email:""
+            };
+            const {data,error}=await client.from("properties").insert(payload).select("id,code,name,address,city,country,phone,email").single();
+            if(error) throw error;
+            cloudRow=data;
+        }
+
+        const cloudId=String(cloudRow.id);
+        const property=defaultProperty(cloudId,name.trim(),(location||"").trim(),roomCount,rate,{bookingTypes});
+        property.code=String(cloudRow.code||code);
+        property.cloudManaged=true;
+
+        // Publish the property assignment first so the same Admin account can
+        // read the new property back on every device.
+        const {error:assignError}=await client.from("user_properties").upsert({
+            user_id:authUser.id,
+            property_id:cloudId,
+            is_primary:false
+        },{onConflict:"user_id,property_id"});
+        if(assignError) throw assignError;
+
+        properties.push(property);
+        saveProperties();
+        currentPropertyId=cloudId;
+        setSession(currentUser);
+        loadCurrentPropertyData();
+        renderAll();
+        showPage("settings");
+        logAudit("PROPERTY_CREATED",property.id,"Property created and synchronized to Supabase",property.id);
+
+        // Publish the newly-created room set under THIS property's UUID only.
+        await syncCurrentPropertyRoomsToSupabase(property.rooms);
+        await syncSupabaseProperties();
+        await syncSupabaseUsers();
+        alert(property.property+" added successfully and synchronized to the cloud as "+property.code+".");
+    }catch(err){
+        console.error("New property cloud creation failed:",err);
+        setSupabaseCloudMessage("New property cloud save failed: "+(err?.message||err),"error");
+        alert("New property was NOT saved to Supabase.\n\n"+(err?.message||err));
+    }
 }
 
 function roomTypeOptionsForProperty(p){
@@ -6731,7 +6793,7 @@ function isBookingAvailable(type,roomId,checkIn,checkOut,excludeId=null){
 function calculateReservation(){
 
     const type=document.getElementById("bookingType").value;
-    const guestType=document.getElementById("guestType").value;
+    const guestType=String(document.getElementById("guestType").value||"foreign").toLowerCase();
     const selectedRoomId=Number(document.getElementById("roomSelect")?.value||0);
     const selectedRoom=(settings?.rooms||[]).find(r=>String(r.id)===String(selectedRoomId));
     let rate=Number(selectedRoom?.rate ?? settings?.roomRate ?? 0);
@@ -6762,10 +6824,16 @@ function calculateReservation(){
 }
 
 function nextBookingNumber(){
-
     const year=new Date().getFullYear();
-    const count=reservations.filter(r=>String(r.bookingNo||"").startsWith((settings?.id||"PROP")+"-"+year)).length+1;
-    return (settings?.id||"PROP").toUpperCase()+"-"+year+"-"+String(count).padStart(4,"0");
+    const property=properties.find(p=>String(p.id)===String(currentPropertyId))||{};
+    const prefix=String(property.code||settings?.code||settings?.id||"PROP").trim().toUpperCase();
+    const re=new RegExp("^"+prefix.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"-"+year+"-(\\d+)$","i");
+    let max=0;
+    reservations.forEach(r=>{
+        const m=String(r.bookingNo||"").match(re);
+        if(m) max=Math.max(max,Number(m[1])||0);
+    });
+    return prefix+"-"+year+"-"+String(max+1).padStart(4,"0");
 }
 
 function saveReservation(){
@@ -6813,8 +6881,10 @@ function saveReservation(){
     const selectedRoom=(settings?.rooms||[]).find(r=>String(r.id)===String(roomId));
     let rate=Number(selectedRoom?.rate ?? settings?.roomRate ?? 0);
     if(bookingType!=="villa") {
-        const configuredRate=getConfiguredRate(mealPlan,adults,children,roomId);
-        if(configuredRate!==null) rate=configuredRate;
+        const configuredRate=(typeof window.getConfiguredRate==='function'
+            ? window.getConfiguredRate(mealPlan,adults,children,roomId,guestType)
+            : getConfiguredRate(mealPlan,adults,children,roomId));
+        if(configuredRate!==null && configuredRate!==undefined) rate=Number(configuredRate);
     }
     if(bookingType==="villa"){
         rate=guestType==="foreign" ? Number(settings?.villaForeign||0) : Number(settings?.villaLocal||0);
@@ -6861,9 +6931,12 @@ function saveReservation(){
         reservation.nights=nights;
         reservation.rate=rate;
         reservation.total=total;
-        reservation.currency=reservation.currency||settings?.guestCurrency||settings?.currency||"USD";
-        reservation.baseCurrency=reservation.baseCurrency||settings?.baseCurrency||"LKR";
-        reservation.postingRateAtBooking=Number(reservation.postingRateAtBooking||settings?.postingRate||320);
+        reservation.guestType=String(guestType||"foreign").toLowerCase();
+        reservation.baseCurrency=String(settings?.baseCurrency||"LKR").toUpperCase();
+        reservation.currency=(reservation.guestType==="local"?reservation.baseCurrency:String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase();
+        reservation.postingRateAtBooking=reservation.currency===reservation.baseCurrency?1:Number(settings?.postingRate||320);
+        reservation.baseAmount=reservation.currency===reservation.baseCurrency?Number(total):Number(total)*Number(reservation.postingRateAtBooking||320);
+        reservation.foreignAmount=reservation.currency===reservation.baseCurrency?0:Number(total);
         reservation.adults=adults;
         reservation.children=children;
         reservation.childrenAges=childrenAges;
@@ -6909,9 +6982,17 @@ function saveReservation(){
         }
 
         saveData();
+        /* Check-In gate fix: guest identity details entered during a reservation
+           correction must be published to Supabase immediately. Otherwise a
+           cloud refresh can restore the older reservation without email/ID/DOB,
+           causing the Check-In validation to ask for the same details again. */
+        if(typeof syncReservationToSupabase==='function'){
+            Promise.resolve().then(()=>syncReservationToSupabase(reservation)).catch(err=>
+                console.warn("Reservation guest-detail cloud sync failed:",err)
+            );
+        }
         closeReservationModal();
         renderAll();
-        syncReservationToSupabase(reservation);
         logAudit("RESERVATION_UPDATED",reservation.bookingNo,"Reservation updated",reservation.propertyId||currentPropertyId);
         alert("Reservation "+reservation.bookingNo+" updated successfully.");
         return;
@@ -6945,9 +7026,9 @@ function saveReservation(){
         mealPlan,
         breakfastIncluded:bookingType==="room",
         deposit,
-        currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),
+        currency:(typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase(),
         baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
-        postingRateAtBooking:Number(settings?.postingRate||320),
+        postingRateAtBooking:((typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase()===String(settings?.baseCurrency||"LKR").toUpperCase()?1:Number(settings?.postingRate||320)),
         status:"Reserved",
         notes,
         createdAt:localDateTime()
@@ -6965,6 +7046,9 @@ function saveReservation(){
         taxes:0,
         serviceCharges:0,
         total,
+        currency:(typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase(),
+        baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
+        postingRateAtBooking:((typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase()===String(settings?.baseCurrency||"LKR").toUpperCase()?1:Number(settings?.postingRate||320)),
         createdAt:localDateTime()
     });
 
@@ -6988,7 +7072,8 @@ function saveReservation(){
     saveData();
     closeReservationModal();
     renderAll();
-    syncReservationToSupabase(reservation);
+    /* Cloud sync is performed by the final reservation save wrapper after
+       all currency/booking-source normalization has completed. */
     alert("Reservation "+bookingNo+" created successfully.");
 }
 
@@ -7084,7 +7169,7 @@ function renderReservations(){
             <td>${formatDate(r.checkIn)}</td>
             <td>${formatDate(r.checkOut)}</td>
             <td>${r.nights}</td>
-            <td>${money(r.total)}</td>
+            <td>${reservationMoney(r,r.total)}</td>
             <td>${statusBadge(r.status)}</td>
             <td>
                 <div class="toolbar">
@@ -7786,37 +7871,57 @@ function getFolio(reservationId){
 }
 
 
-function getFolioTotal(reservationId){
-
-    const r=
-        reservations.find(
-            x=>x.id===reservationId
-        );
-
-    const f=
-        getFolio(reservationId);
-
-
-    if(!r)
-        return 0;
-
-
-    return (
-
-        Number(r.total||0) +
-
-        Number(f?.restaurant||0) +
-
-        Number(f?.extras||0) +
-
-        Number(f?.serviceCharges||0) +
-
-        Number(f?.taxes||0) -
-
-        Number(f?.discounts||0)
-
+/* v2.1.196 — Folio F&B charges are settled in the property's base currency (LKR).
+   POS sales keep their original guest/display currency, but a Room Charge must
+   contribute its LKR settlement value to the folio. Existing folios created by
+   older builds are also recalculated from their linked Room Charge sales so a
+   raw USD value such as 22 cannot remain as LKR 22. */
+function folioRestaurantLKR(reservationId){
+    const r=reservations.find(x=>String(x.id||'')===String(reservationId||''));
+    const cloudLinked=Array.isArray(r?.__cloudSales)?r.__cloudSales:[];
+    const localLinked=(sales||[]).filter(s=>
+        String(s.reservationId||'')===String(reservationId||'')
     );
+    // Prefer the transaction records themselves. Cloud reservations carry the
+    // linked POS sales in __cloudSales, so this works even when the local sales
+    // array was not populated before the folio window was opened.
+    const merged=[];
+    const seen=new Set();
+    [...localLinked,...cloudLinked].forEach(s=>{
+        if(!s || String(s.paymentMethod||'').toLowerCase()!=='room charge') return;
+        if(s.voided || s.isVoided || String(s.status||'')==='Voided') return;
+        const id=String(s.id||'');
+        if(id && seen.has(id)) return;
+        if(id) seen.add(id);
+        merged.push(s);
+    });
+    if(merged.length){
+        return merged.reduce((sum,s)=>sum+fnbSaleAmountLKR(s,Number(s.total||0)),0);
+    }
+    const f=getFolio(reservationId);
+    if(!f) return 0;
+    // Legacy folios may contain the original POS guest/display amount (for
+    // example USD 22) without a linked sale record. In that case the POS
+    // guest currency + posting rate is the only safe conversion available.
+    const guestCur=String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
+    const baseCur=String(settings?.baseCurrency||'LKR').toUpperCase();
+    if(guestCur!==baseCur && guestCur!=='LKR' && Number(f.restaurant||0)!==0){
+        return Number(f.restaurant||0)*(Number(settings?.postingRate||settings?.settlementRate||320)||320);
+    }
+    return Number(f.restaurant||0);
+}
 
+function getFolioTotal(reservationId){
+    const r=reservations.find(x=>x.id===reservationId);
+    const f=getFolio(reservationId);
+    if(!r) return 0;
+    const restaurantLKR=folioRestaurantLKR(reservationId);
+    /* Keep the persisted folio in the same settlement currency so subsequent
+       screens and cloud snapshots do not reintroduce the raw POS amount. */
+    if(f && Math.abs(Number(f.restaurant||0)-restaurantLKR)>0.001){
+        f.restaurant=restaurantLKR;
+    }
+    return Number(r.total||0)+restaurantLKR+Number(f?.extras||0)+Number(f?.serviceCharges||0)+Number(f?.taxes||0)-Number(f?.discounts||0);
 }
 
 
@@ -8057,9 +8162,17 @@ function viewFolio(reservationId){
     const paid=
         getPaymentsTotal(reservationId);
 
+    // Calculate the restaurant charge first, then calculate the total. The
+    // previous build calculated `total` before normalizing the legacy POS
+    // amount, so the modal could still display 22 instead of 7,040.
+    const normalizedRestaurant=folioRestaurantLKR(reservationId);
+    if(f && Math.abs(Number(f.restaurant||0)-normalizedRestaurant)>0.001){
+        f.restaurant=normalizedRestaurant;
+        f.total=getFolioTotal(reservationId);
+        saveData();
+    }
     const total=
         getFolioTotal(reservationId);
-
     const balance=
         Math.max(0,total-paid);
 
@@ -8129,18 +8242,18 @@ function viewFolio(reservationId){
 
         <div class="report-line">
             <span>Accommodation</span>
-            <div style="text-align:right"><strong>${money(r.total)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,r.total))}</div></div>
+            <div style="text-align:right"><strong>${reservationMoney(r,r.total)}</strong>${String(r?.currency||'').toUpperCase()!=='LKR'?`<div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,r.total))}</div>`:''}</div>
         </div>
 
         <div class="report-line">
             <span>Restaurant</span>
-            <strong>${money(f?.restaurant||0)}</strong>
+            <strong>${accMoney(folioRestaurantLKR(r.id))}</strong>
         </div>
 
         <div class="report-line">
             <span>Other Charges</span>
             <div style="display:flex;align-items:center;gap:10px">
-                <strong>${money(f?.extras||0)}</strong>
+                <strong>${accMoney(f?.extras||0)}</strong>
                 ${["Admin","Manager","Front Office","Cashier"].includes(currentUser?.role) ? `
                 <button class="btn btn-success btn-small" type="button" onclick="addManualFolioCharge('${r.id}')">+ Add Extra</button>` : ""}
             </div>
@@ -8148,32 +8261,32 @@ function viewFolio(reservationId){
 
         <div class="report-line">
             <span>Service Charges</span>
-            <strong>${money(f?.serviceCharges||0)}</strong>
+            <strong>${accMoney(f?.serviceCharges||0)}</strong>
         </div>
 
         <div class="report-line">
             <span>Taxes</span>
-            <strong>${money(f?.taxes||0)}</strong>
+            <strong>${accMoney(f?.taxes||0)}</strong>
         </div>
 
         <div class="report-line">
             <span>Discounts</span>
-            <strong>-${money(f?.discounts||0)}</strong>
+            <strong>-${accMoney(f?.discounts||0)}</strong>
         </div>
 
         <div class="report-line">
             <strong>Total</strong>
-            <div style="text-align:right"><strong>${money(total)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,total))}</div></div>
+            <div style="text-align:right"><strong>${reservationMoney(r,total)}</strong></div>
         </div>
 
         <div class="report-line">
             <span>Paid</span>
-            <div style="text-align:right"><strong>${money(paid)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(guestPayments.filter(paymentIsReceived).reduce((s,p)=>s+paymentAmountLKR(p,r),0))}</div></div>
+            <div style="text-align:right"><strong>${reservationMoney(r,paid)}</strong></div>
         </div>
 
         <div class="report-line">
             <strong>Balance</strong>
-            <div style="text-align:right"><strong>${money(balance)}</strong><div style="font-size:11px;color:#6b7280">${accMoney(reservationAmountLKR(r,balance))}</div></div>
+            <div style="text-align:right"><strong>${reservationMoney(r,balance)}</strong></div>
         </div>
 
     </div>
@@ -8336,8 +8449,8 @@ function viewFolio(reservationId){
                         <td>${paymentDetailsHtml(p)}</td>
 
                         <td>
-                            <strong>${money(p.amount)}</strong>
-                            <div style="font-size:11px;color:#6b7280">Settled: ${accMoney(paymentAmountLKR(p,r))}</div>
+                            <strong>${accMoney(paymentAmountLKR(p,r))}</strong>
+                            ${String(r.currency||r.guestCurrency||'LKR').toUpperCase()!=='LKR' ? `<div style="font-size:11px;color:#6b7280">Folio value: ${money(p.amount)}</div>` : ''}
                         </td>
 
                     </tr>
@@ -8884,6 +8997,7 @@ function savePayment(reservationId){
         guestName:reservation.guestName||"",
         roomId:reservation.roomId||null,
         propertyId:reservation.propertyId||currentPropertyId,
+        transactionDate:localDateString(),
         businessDate:cashierBusinessDate(),
         cashier:document.getElementById("paymentReceivedBy").value.trim()||currentUser?.username||"Front Office",
         shiftId:currentCashierShift()?.id||null,
@@ -9753,7 +9867,7 @@ function renderFolios(){
                 </td>
 
                 <td>
-                    ${money(r.total)}
+                    ${reservationMoney(r,r.total)}
                 </td>
 
                 <td>
@@ -9761,17 +9875,17 @@ function renderFolios(){
                 </td>
 
                 <td>
-                    ${money(paid)}
+                    ${reservationMoney(r,paid)}
                 </td>
 
                 <td>
                     <strong>
-                        ${money(balance)}
+                        ${reservationMoney(r,balance)}
                     </strong>
                     <div style="font-size:11px;color:#6b7280">
                         ${getFinancialStatus(r.id)}
-                        ${getFinancialPosition(r.id).credit>0?` · Credit ${money(getFinancialPosition(r.id).credit)}`:""}
-                        ${getFinancialPosition(r.id).pending>0?` · Pending ${money(getFinancialPosition(r.id).pending)}`:""}
+                        ${getFinancialPosition(r.id).credit>0?` · Credit ${reservationMoney(r,getFinancialPosition(r.id).credit)}`:""}
+                        ${getFinancialPosition(r.id).pending>0?` · Pending ${reservationMoney(r,getFinancialPosition(r.id).pending)}`:""}
                     </div>
                 </td>
 
@@ -10162,7 +10276,11 @@ function fnbVoidInvoice(saleId){
     }
     if(String(method).toLowerCase().includes("room")&&sale.reservationId){
       const folio=getFolio(sale.reservationId);
-      if(folio){folio.restaurant=Math.max(0,Number(folio.restaurant||0)-amount);folio.total=Math.max(0,Number(folio.accommodation||0)+Number(folio.restaurant||0)+Number(folio.extras||0)+Number(folio.taxes||0)+Number(folio.serviceCharges||0)-Number(folio.discounts||0));}
+      const settlementAmountLKR=fnbSaleAmountLKR(sale,amount);
+      if(folio){
+        folio.restaurant=Math.max(0,Number(folio.restaurant||0)-settlementAmountLKR);
+        folio.total=getFolioTotal(sale.reservationId);
+      }
     }
     sale.voided=true;sale.isVoided=true;sale.status="Voided";sale.voidReason=String(reason).trim();sale.voidedBy=currentUser?.username||"Manager";sale.voidedAt=localDateTime();sale.fnbVoidReversed=true;
     saveData();
@@ -10189,7 +10307,7 @@ function fnbVoidInvoice(saleId){
 }
 
 /* v2.1.131 — Reception / Front Office may post normal Restaurant POS orders; preserve selected in-house guest during POS refresh. */
-function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}folio.restaurant=Number(folio.restaurant||0)+total;folio.total=Number(folio.accommodation||0)+Number(folio.restaurant||0)+Number(folio.extras||0)+Number(folio.taxes||0)+Number(folio.serviceCharges||0)-Number(folio.discounts||0);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
+function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
 if(guest && typeof syncReservationToSupabase==='function'){
   // v2.1.133 — explicitly sync the updated guest reservation snapshot after
   // the POS sale/folio/payment arrays have been committed locally.
@@ -10239,10 +10357,10 @@ function updateStandalonePaymentBalance(){updateStandalonePaymentAmountRule();}
 function updateStandalonePaymentAmountRule(){const id=document.getElementById('standalonePaymentReservation')?.value,a=document.getElementById('standalonePaymentAmount'),type=document.getElementById('standalonePaymentType')?.value;if(!a)return;if(type==='Deposit')a.value='';else if(id)a.value=getBalance(id).toFixed(2);a.removeAttribute('max');}
 function toggleStandaloneCardFields(){const e=document.getElementById('standaloneCardFields');if(e)e.style.display=document.getElementById('standalonePaymentMethod')?.value==='Card'?'block':'none';}
 function closeStandalonePaymentModal(){document.getElementById('standalonePaymentModal')?.classList.remove('show');}
-function saveStandalonePayment(){if(!requireActionPermission('payments.deposit'))return;const id=document.getElementById('standalonePaymentReservation')?.value,a=Number(document.getElementById('standalonePaymentAmount')?.value||0),err=document.getElementById('standalonePaymentError'),type=document.getElementById('standalonePaymentType').value,status=document.getElementById('standalonePaymentStatus').value;if(!id){err.textContent='Select a reservation.';return;}if(a<=0){err.textContent='Enter a valid payment amount.';return;}if(type!=='Deposit'&&a>getBalance(id)+0.01){err.textContent='Folio payment cannot be greater than the outstanding balance. Use Deposit for an advance payment.';return;}const method=document.getElementById('standalonePaymentMethod').value;let cardType='',last4='';if(method==='Card'){cardType=document.getElementById('standaloneCardType').value;last4=document.getElementById('standaloneCardLast4').value.trim();if(!/^\d{4}$/.test(last4)){err.textContent='Enter exactly the last 4 card digits.';return;}}const ref=document.getElementById('standalonePaymentReference').value.trim()||'PAY-'+Date.now();if(payments.some(p=>String(p.reference||'').trim().toLowerCase()===ref.trim().toLowerCase()&&String(p.propertyId||currentPropertyId)===String(currentPropertyId))){err.textContent='This payment reference already exists. Please use a unique reference.';return;}payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:id,date:localDateTime(),reference:ref,type,method,amount:a,status,receivedBy:document.getElementById('standalonePaymentReceivedBy').value.trim()||currentUser?.username||'Front Office',cardType,last4,notes:document.getElementById('standalonePaymentNotes').value.trim(),propertyId:currentPropertyId,businessDate:cashierBusinessDate(),guestName:reservations.find(r=>r.id===id)?.guestName||'',roomId:reservations.find(r=>r.id===id)?.roomId||null,cashier:document.getElementById('standalonePaymentReceivedBy').value.trim()||currentUser?.username||'Front Office',shiftId:currentCashierShift()?.id||null});saveData();closeStandalonePaymentModal();renderAll();logAudit('PAYMENT_CREATED',ref,(status==='Pending'?'Pending ':'')+type+' recorded: '+a,currentPropertyId);alert((status==='Pending'?'Pending payment':'Payment')+' recorded successfully.');}
+function saveStandalonePayment(){if(!requireActionPermission('payments.deposit'))return;const id=document.getElementById('standalonePaymentReservation')?.value,a=Number(document.getElementById('standalonePaymentAmount')?.value||0),err=document.getElementById('standalonePaymentError'),type=document.getElementById('standalonePaymentType').value,status=document.getElementById('standalonePaymentStatus').value;if(!id){err.textContent='Select a reservation.';return;}if(a<=0){err.textContent='Enter a valid payment amount.';return;}if(type!=='Deposit'&&a>getBalance(id)+0.01){err.textContent='Folio payment cannot be greater than the outstanding balance. Use Deposit for an advance payment.';return;}const method=document.getElementById('standalonePaymentMethod').value;let cardType='',last4='';if(method==='Card'){cardType=document.getElementById('standaloneCardType').value;last4=document.getElementById('standaloneCardLast4').value.trim();if(!/^\d{4}$/.test(last4)){err.textContent='Enter exactly the last 4 card digits.';return;}}const ref=document.getElementById('standalonePaymentReference').value.trim()||'PAY-'+Date.now();if(payments.some(p=>String(p.reference||'').trim().toLowerCase()===ref.trim().toLowerCase()&&String(p.propertyId||currentPropertyId)===String(currentPropertyId))){err.textContent='This payment reference already exists. Please use a unique reference.';return;}payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:id,date:localDateTime(),reference:ref,type,method,amount:a,status,receivedBy:document.getElementById('standalonePaymentReceivedBy').value.trim()||currentUser?.username||'Front Office',cardType,last4,notes:document.getElementById('standalonePaymentNotes').value.trim(),propertyId:currentPropertyId,businessDate:cashierBusinessDate(),transactionDate:localDateString(),guestName:reservations.find(r=>r.id===id)?.guestName||'',roomId:reservations.find(r=>r.id===id)?.roomId||null,cashier:document.getElementById('standalonePaymentReceivedBy').value.trim()||currentUser?.username||'Front Office',shiftId:currentCashierShift()?.id||null});saveData();closeStandalonePaymentModal();renderAll();logAudit('PAYMENT_CREATED',ref,(status==='Pending'?'Pending ':'')+type+' recorded: '+a,currentPropertyId);alert((status==='Pending'?'Pending payment':'Payment')+' recorded successfully.');}
 function openRefundModal(reservationId,paymentId){if(!requireActionPermission('payments.refund'))return;const p=payments.find(x=>x.id===paymentId),r=reservations.find(x=>x.id===reservationId);if(!p||!r)return;if(!paymentIsReceived(p)||paymentIsRefund(p)){alert('Only settled received payments can be refunded.');return;}const already=payments.filter(x=>x.refundOf===paymentId).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(p.amount||0))-already);document.getElementById('refundInfo').innerHTML=`<strong>${escapeHtml(r.guestName)}</strong><div style="font-size:12px;color:#6b7280">${escapeHtml(r.bookingNo)} · Original ${money(Math.abs(p.amount))} · Refundable ${money(refundable)}</div>`;document.getElementById('refundAmount').value=refundable.toFixed(2);document.getElementById('refundAmount').max=refundable;document.getElementById('refundReference').value='REF-'+Date.now();document.getElementById('refundReason').value='';document.getElementById('refundModal').dataset.reservationId=reservationId;document.getElementById('refundModal').dataset.paymentId=paymentId;document.getElementById('refundModal').classList.add('show');}
 function closeRefundModal(){document.getElementById('refundModal')?.classList.remove('show');}
-function saveRefund(){if(!requireActionPermission('payments.refund'))return;const m=document.getElementById('refundModal'),rid=m.dataset.reservationId,pid=m.dataset.paymentId,a=Number(document.getElementById('refundAmount').value||0),reason=document.getElementById('refundReason').value.trim(),err=document.getElementById('refundError'),orig=payments.find(x=>x.id===pid),r=reservations.find(x=>x.id===rid)||{};if(!orig){err.textContent='Original payment not found.';return;}const refunded=payments.filter(x=>x.refundOf===pid).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(orig.amount||0))-refunded);if(a<=0||a>refundable+0.01){err.textContent='Refund amount exceeds the refundable amount.';return;}if(!reason){err.textContent='Refund reason is required.';return;}const ref=document.getElementById('refundReference').value.trim()||'REF-'+Date.now();payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:rid,date:localDateTime(),reference:ref,type:'Refund',method:document.getElementById('refundMethod').value,amount:-a,status:'Received',receivedBy:currentUser?.username||'Manager',notes:reason,refundOf:pid,propertyId:currentPropertyId,businessDate:cashierBusinessDate(),guestName:r.guestName||'',roomId:r.roomId||null,cashier:currentUser?.username||'Manager',shiftId:currentCashierShift()?.id||null});saveData();closeRefundModal();renderAll();logAudit('PAYMENT_REFUND',ref,'Refund recorded: '+a,currentPropertyId);alert('Refund recorded successfully.');}
+function saveRefund(){if(!requireActionPermission('payments.refund'))return;const m=document.getElementById('refundModal'),rid=m.dataset.reservationId,pid=m.dataset.paymentId,a=Number(document.getElementById('refundAmount').value||0),reason=document.getElementById('refundReason').value.trim(),err=document.getElementById('refundError'),orig=payments.find(x=>x.id===pid),r=reservations.find(x=>x.id===rid)||{};if(!orig){err.textContent='Original payment not found.';return;}const refunded=payments.filter(x=>x.refundOf===pid).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(orig.amount||0))-refunded);if(a<=0||a>refundable+0.01){err.textContent='Refund amount exceeds the refundable amount.';return;}if(!reason){err.textContent='Refund reason is required.';return;}const ref=document.getElementById('refundReference').value.trim()||'REF-'+Date.now();payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:rid,date:localDateTime(),reference:ref,type:'Refund',method:document.getElementById('refundMethod').value,amount:-a,status:'Received',receivedBy:currentUser?.username||'Manager',notes:reason,refundOf:pid,propertyId:currentPropertyId,transactionDate:localDateString(),businessDate:cashierBusinessDate(),guestName:r.guestName||'',roomId:r.roomId||null,cashier:currentUser?.username||'Manager',shiftId:currentCashierShift()?.id||null});saveData();closeRefundModal();renderAll();logAudit('PAYMENT_REFUND',ref,'Refund recorded: '+a,currentPropertyId);alert('Refund recorded successfully.');}
 function normalizeBusinessDateOnLoad(){
   try{
     if(!settings||!currentPropertyId)return;
@@ -10274,15 +10392,11 @@ function normalizeBusinessDateOnLoad(){
       */
       const sameProperty=x=>String(x?.propertyId||currentPropertyId)===String(currentPropertyId);
       const txDate=x=>paymentDateOnly(x)||String(x?.dateTime||x?.date||'').slice(0,10);
+      /* v2.1.181: NEVER migrate payment business dates during stale-date recovery.
+         A payment's business date is an accounting period and must remain immutable
+         after Night Audit. The previous recovery logic re-dated payments from the
+         stale date to today's calendar date, which moved a 27/09 payment into 28/09. */
       let migratedPayments=0;
-      if(Array.isArray(payments)){
-        payments.forEach(p=>{
-          if(sameProperty(p)&&txDate(p)===today&&String(p.businessDate||'').slice(0,10)===current){
-            p.businessDate=today;
-            migratedPayments++;
-          }
-        });
-      }
       if(Array.isArray(sales)){
         sales.forEach(s=>{
           if(sameProperty(s)){
@@ -10299,6 +10413,51 @@ function normalizeBusinessDateOnLoad(){
     }
   }catch(e){console.warn('Business date recovery skipped:',e);}
 }
+function paymentTransactionDate(p){
+  /* v2.1.183: PMS payment timestamps exist in both ISO and DD/MM/YYYY forms. */
+  const raw=String(p?.transactionDate||p?.dateTime||p?.date||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0,10);
+  const m=raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  if(typeof paymentDateOnly==='function'){
+    try{const d=paymentDateOnly({date:raw});if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;}catch(e){}
+  }
+  return '';
+}
+function paymentTransactionDate(p){
+  const raw=String(p?.transactionDate||p?.dateTime||p?.date||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0,10);
+  const m=raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  if(typeof paymentDateOnly==='function'){try{const d=paymentDateOnly({date:raw});if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;}catch(e){}}
+  return '';
+}
+function repairPaymentBusinessDates(){
+  /* v2.1.183: repair future business dates, including DD/MM/YYYY timestamps. */
+  try{
+    if(!Array.isArray(payments)) return 0;
+    let changed=0;
+    payments.forEach(p=>{
+      if(String(p?.propertyId||currentPropertyId)!==String(currentPropertyId)) return;
+      const bd=String(p?.businessDate||'').slice(0,10), tx=paymentTransactionDate(p);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(bd)&&/^\d{4}-\d{2}-\d{2}$/.test(tx)&&bd>tx){
+        p.businessDate=tx;
+        if(!p.transactionDate) p.transactionDate=p.date||p.dateTime||tx;
+        changed++;
+      }
+    });
+    if(changed&&typeof saveData==='function') saveData();
+    return changed;
+  }catch(e){console.warn('Payment business-date repair skipped:',e);return 0;}
+}
+function paymentBusinessDate(p){
+  const explicit=String(p?.businessDate||'').slice(0,10), tx=paymentTransactionDate(p);
+  const ve=/^\d{4}-\d{2}-\d{2}$/.test(explicit), vt=/^\d{4}-\d{2}-\d{2}$/.test(tx);
+  if(ve&&vt&&explicit>tx)return tx;
+  if(ve)return explicit;
+  return vt?tx:cashierBusinessDate();
+}
+
 function cashierBusinessDate(){
   const configured=(typeof settings!=='undefined'&&settings?.businessDate) ? String(settings.businessDate).slice(0,10) : "";
   return /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : localDateString();
@@ -10323,7 +10482,7 @@ async function ensureVoidedFnbRefundPayments(){
       const rid=original.reservationId||sale.reservationId||null;
       payments.push({
         id:'p_'+Date.now()+'_voidrepair_'+String(sale.id).replace(/[^a-zA-Z0-9]/g,'').slice(-8),
-        reservationId:rid, propertyId:currentPropertyId, date:posted,
+        reservationId:rid, propertyId:currentPropertyId, date:posted, transactionDate:postedDate,
         reference:'VOID-'+(sale.invoiceNo||sale.id), invoiceNo:sale.invoiceNo||'',
         saleId:sale.id, businessDate:postedDate, type:'Refund',
         method:original.method||sale.paymentMethod||'Cash',
@@ -12794,7 +12953,7 @@ function accountingBusinessDate(){
 function dailyRevenueSelectedDate(){
   const current=accountingBusinessDate();
   const el=document.getElementById('dailyRevenuePostingDate');
-  const value=String(el?.value||'').slice(0,10);
+  const value=String(dailyPaymentSelectedDateOverride||el?.value||'').slice(0,10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(value)) return current;
   if(value>current) return current;
   return value;
@@ -12947,22 +13106,25 @@ window.postDailyRevenue=function(){
     renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posted successfully for '+d+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
+let dailyPaymentSelectedDateOverride='';
 function dailyPaymentSelectedDate(){
   const current=accountingBusinessDate();
   const el=document.getElementById('dailyPaymentPostingDate');
-  const value=String(el?.value||'').slice(0,10);
+  const value=String(dailyPaymentSelectedDateOverride||el?.value||'').slice(0,10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(value)) return current;
   if(value>current) return current;
   return value;
 }
 function selectCurrentPaymentDate(){
   const el=document.getElementById('dailyPaymentPostingDate');
-  if(el) el.value=accountingBusinessDate();
+  dailyPaymentSelectedDateOverride=accountingBusinessDate();
+  if(el) el.value=dailyPaymentSelectedDateOverride;
   renderDailyPaymentPosting();
 }
 function dailyPaymentRows(date){
+  repairPaymentBusinessDates();
   const d=date||dailyPaymentSelectedDate(), rows=[];
-  accProp(payments||[]).filter(p=>accIsoDate(p.businessDate||p.date||p.dateTime)===d).forEach(p=>{
+  accProp(payments||[]).filter(p=>paymentBusinessDate(p)===d).forEach(p=>{
     const amount=Number(p.amount||0); if(amount<=0)return;
     const r=reservations.find(z=>z.id===p.reservationId);
     const accountingAmount=p.settlementAmountLKR!=null ? Number(p.settlementAmountLKR||0) : toAccountingAmount(amount,p);
@@ -12973,10 +13135,17 @@ function dailyPaymentRows(date){
 function dailyPaymentJournalExists(date){
   return journalEntries().some(j=>j.source==='Daily Payments' && String(j.businessDate||'')===String(date));
 }
+function latestUnpostedPaymentBusinessDate(current){
+  const dates=[...new Set(accProp(payments||[]).map(p=>paymentBusinessDate(p)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d<=current&&!dailyPaymentJournalExists(d)))];
+  return dates.sort().pop()||current;
+}
 function renderDailyPaymentPosting(){
+  repairPaymentBusinessDates();
+  const input=document.getElementById('dailyPaymentPostingDate');
+  if(input && input.value) dailyPaymentSelectedDateOverride=input.value.slice(0,10);
   const tb=document.getElementById('dailyPaymentPostingTable'); if(!tb)return;
   const current=accountingBusinessDate(), el=document.getElementById('dailyPaymentPostingDate');
-  if(el){el.max=current;if(!el.value||el.value>current)el.value=current;}
+  if(el){el.max=current;if(!dailyPaymentSelectedDateOverride||dailyPaymentSelectedDateOverride>current){dailyPaymentSelectedDateOverride=latestUnpostedPaymentBusinessDate(current);} el.value=dailyPaymentSelectedDateOverride;}
   const d=dailyPaymentSelectedDate(), rows=dailyPaymentRows(d);
   const sums={Cash:0,Card:0,Bank:0,Deposit:0};
   rows.forEach(r=>{const m=String(r.method).toLowerCase(); if(r.type==='Deposit'||r.type==='Advance')sums.Deposit+=r.amount; else if(m==='cash')sums.Cash+=r.amount; else if(m==='card'||m.includes('credit'))sums.Card+=r.amount; else sums.Bank+=r.amount;});
@@ -16552,6 +16721,7 @@ window.signaturePMSState = {
   get currentPropertyId(){ return currentPropertyId; },
   set currentPropertyId(v){ currentPropertyId = v; },
   get users(){ return users; },
+  set users(v){ users = Array.isArray(v) ? v : []; },
   get currentUser(){ return currentUser; },
   set currentUser(v){ currentUser = v; },
   get settings(){ return settings; },
@@ -16695,7 +16865,15 @@ function cloudPropertyToLocal(row,existing){
     out.code=row.code||out.code||"";
     out.phone=row.phone||out.phone||"";
     out.email=row.email||out.email||"";
-    return window.signaturePMSState.ensurePropertyShape(out);
+    // v2.1.201: properties table contains property metadata only. Never let
+    // ensurePropertyShape/cloud property refresh replace an existing local
+    // room configuration (e.g. 13 rooms) with a default/incomplete room set.
+    const existingRooms=Array.isArray(existing?.rooms)?existing.rooms:null;
+    const shaped=window.signaturePMSState.ensurePropertyShape(out);
+    if(existingRooms && existingRooms.length>0 && (!Array.isArray(shaped.rooms) || shaped.rooms.length<existingRooms.length)){
+        shaped.rooms=JSON.parse(JSON.stringify(existingRooms));
+    }
+    return shaped;
 }
 async function fetchCloudContext(){
     const client=initSupabaseClient();
@@ -16820,6 +16998,68 @@ async function syncSupabaseUsers(){
         return false;
     }
 }
+async function repairUnmappedLocalPropertiesToCloud(){
+    const state=window.signaturePMSState;
+    const client=initSupabaseClient();
+    if(!state || !client) return false;
+    const {data:{session}}=await client.auth.getSession();
+    if(!session?.user) return false;
+
+    const {data:cloudProps,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email");
+    if(error) throw error;
+    const rows=Array.isArray(cloudProps)?cloudProps:[];
+    const usedCodes=new Set(rows.map(x=>String(x.code||"").trim().toUpperCase()).filter(Boolean));
+    let changed=false;
+
+    for(const local of (state.properties||[])){
+        const localId=String(local?.id||"");
+        const localName=String(local?.property||local?.name||"").trim();
+        if(!localName) continue;
+
+        // Already mapped to a real Supabase property UUID.
+        const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(localId);
+        if(uuid && rows.some(x=>String(x.id)===localId)) continue;
+
+        // Reuse a cloud property with the same name rather than creating a duplicate.
+        let cloud=rows.find(x=>String(x.name||"").trim().toLowerCase()===localName.toLowerCase());
+        if(!cloud){
+            let n=1;
+            while(usedCodes.has("H"+String(n).padStart(3,"0"))) n++;
+            const code="H"+String(n).padStart(3,"0");
+            const payload={code,name:localName,address:String(local.location||"").trim(),city:String(local.location||"").trim(),country:"",phone:"",email:""};
+            const ins=await client.from("properties").insert(payload).select("id,code,name,address,city,country,phone,email").single();
+            if(ins.error) throw ins.error;
+            cloud=ins.data;
+            rows.push(cloud); usedCodes.add(code);
+        }
+
+        const oldId=local.id;
+        local.id=String(cloud.id);
+        local.code=String(cloud.code||"");
+        local.cloudManaged=true;
+        rekeyLocalPropertyData(oldId,local.id);
+
+        const assignment=await client.from("user_properties").upsert({user_id:session.user.id,property_id:cloud.id,is_primary:false},{onConflict:"user_id,property_id"});
+        if(assignment.error) throw assignment.error;
+        changed=true;
+
+        // Push this property's existing local room configuration to its new cloud UUID.
+        if(typeof syncCurrentPropertyRoomsToSupabase==="function"){
+            const prev=currentPropertyId;
+            currentPropertyId=local.id;
+            try{ await syncCurrentPropertyRoomsToSupabase(Array.isArray(local.rooms)?JSON.parse(JSON.stringify(local.rooms)):[]); }
+            finally{ currentPropertyId=prev; }
+        }
+    }
+    if(changed){
+        state.saveProperties();
+        state.renderPropertySwitcher();
+        state.renderPropertyManager();
+        state.renderAll();
+    }
+    return changed;
+}
+
 async function syncSupabaseProperties(){
     const state=window.signaturePMSState;
     if(!state)throw new Error("PMS state bridge is unavailable.");
@@ -16828,6 +17068,9 @@ async function syncSupabaseProperties(){
     try{
         const {data:{session}}=await client.auth.getSession();
         if(!session?.user)throw new Error("Please sign in with Supabase first.");
+        // Repair properties created locally by earlier versions so existing local properties
+        // are promoted to real cloud properties instead of requiring the user to recreate them.
+        await repairUnmappedLocalPropertiesToCloud();
         const {data:ups,error:upErr}=await client.from("user_properties").select("property_id,is_primary").eq("user_id",session.user.id);
         if(upErr)throw upErr;
         const ids=[...new Set((ups||[]).map(x=>x.property_id).filter(Boolean))];
@@ -17007,8 +17250,8 @@ async function syncCurrentPropertyReservationsToSupabase(){
         if(!cloudPropertyId) return false;
 
         const localReservations=readArray(STORAGE.reservations).filter(r=>{
-            const pid=String(r.propertyId||currentPropertyId||"");
-            return pid===String(currentPropertyId) || !r.propertyId;
+            const pid=String(r.propertyId||"");
+            return pid===String(currentPropertyId);
         });
         if(!localReservations.length) return false;
 
@@ -17034,6 +17277,74 @@ async function syncCurrentPropertyReservationsToSupabase(){
     }
 }
 
+/* v2.1.189 — Reservation Booking Number Migration
+   Preserve every genuine reservation. Legacy UUID-based booking numbers are
+   migrated to property-coded sequential numbers. Booking number is NEVER used
+   as a duplicate key because multiple genuine legacy reservations can share it. */
+function reservationBookingPrefix(){
+    const property=properties.find(p=>String(p.id)===String(currentPropertyId))||{};
+    return String(property.code||settings?.code||settings?.id||"PROP").trim().toUpperCase();
+}
+function reservationBookingYear(row){
+    const ci=String(row?.reservation_data?.checkIn||row?.checkIn||"");
+    const m=ci.match(/^(\d{4})/);
+    return m?m[1]:String(new Date().getFullYear());
+}
+function isPropertyBookingNumber(value,prefix){
+    const re=new RegExp("^"+prefix.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"-\\d{4}-\\d+$","i");
+    return re.test(String(value||"").trim());
+}
+
+async function migrateReservationBookingNumbers(client,cloudPropertyId,rows){
+    const prefix=reservationBookingPrefix();
+    const sorted=[...rows].sort((a,b)=>String(a.created_at||a.updated_at||a.id||"").localeCompare(String(b.created_at||b.updated_at||b.id||"")));
+    const used=new Set();
+    const counters={};
+    const updates=[];
+
+    for(const row of sorted){
+        const existing=String(row?.booking_no||row?.reservation_data?.bookingNo||"").trim();
+        const year=reservationBookingYear(row);
+        const keyExisting=existing.toUpperCase();
+        let bookingNo=existing;
+
+        if(isPropertyBookingNumber(existing,prefix) && !used.has(keyExisting)){
+            used.add(keyExisting);
+            const m=existing.match(/-(\d{4})-(\d+)$/);
+            if(m) counters[m[1]]=Math.max(counters[m[1]]||0,Number(m[2])||0);
+        }else{
+            let n=(counters[year]||0)+1;
+            let candidate=prefix+"-"+year+"-"+String(n).padStart(4,"0");
+            while(used.has(candidate.toUpperCase())){ n++; candidate=prefix+"-"+year+"-"+String(n).padStart(4,"0"); }
+            counters[year]=n;
+            bookingNo=candidate;
+            used.add(candidate.toUpperCase());
+        }
+
+        if(bookingNo!==existing || String(row.reservation_data?.bookingNo||"")!==bookingNo){
+            const reservationData={...(row.reservation_data||{}),bookingNo,propertyId:String(currentPropertyId)};
+            updates.push({
+                id:String(row.id),
+                property_id:String(cloudPropertyId),
+                booking_no:bookingNo,
+                status:String(row.status||reservationData.status||"Reserved"),
+                reservation_data:reservationData,
+                active:row.active!==false,
+                updated_at:new Date().toISOString()
+            });
+        }
+    }
+
+    if(updates.length){
+        const {error}=await client.from("reservations").upsert(updates,{onConflict:"id"});
+        if(error) throw error;
+    }
+    return new Map(sorted.map(row=>{
+        const update=updates.find(x=>String(x.id)===String(row.id));
+        return [String(row.id),update?{...row,...update}:row];
+    }));
+}
+
 async function hydrateSupabaseReservations(){
     try{
         const client=initSupabaseClient();
@@ -17046,7 +17357,14 @@ async function hydrateSupabaseReservations(){
             .select("id,property_id,booking_no,status,reservation_data,created_at,updated_at")
             .eq("property_id",cloudPropertyId);
         if(error) throw error;
-        const cloudRows=data||[];
+        const rawCloudRows=data||[];
+
+        /* v2.1.189 — migrate legacy booking numbers without deleting genuine
+           reservations. Older rows may share the same UUID-based booking number;
+           that is not evidence that the stays are duplicates. */
+        const migratedMap=await migrateReservationBookingNumbers(client,cloudPropertyId,rawCloudRows);
+        const cloudRows=rawCloudRows.map(row=>migratedMap.get(String(row.id))||row);
+
         // Never erase working local reservations when the cloud property has no
         // rows yet. An empty cloud result can mean initial migration is pending.
         // Once cloud rows exist, they become the source of truth for this property.
@@ -17238,6 +17556,15 @@ async function forceHydrateSupabaseRooms(){
             .eq("property_id",String(cloudPropertyId));
         if(error) throw error;
         const rows=data||[];
+        const localRoomsBeforeCloud=Array.isArray(settings?.rooms)?settings.rooms.filter(r=>r?.active!==false):[];
+        // Safety guard: never let an incomplete cloud property_rooms snapshot
+        // shrink a valid local property configuration (for example 13 rooms -> 1).
+        const cloudActiveCount=rows.filter(r=>r?.active!==false).length;
+        if(rows.length && cloudActiveCount<localRoomsBeforeCloud.length){
+            console.warn("Supabase rooms: incomplete cloud room set detected; preserving local room configuration.",{localCount:localRoomsBeforeCloud.length,cloudCount:cloudActiveCount});
+            setSupabaseCloudMessage("Cloud room set is incomplete; preserving local room configuration.","error");
+            return true;
+        }
         if(!rows.length) return false;
         const localRooms=Array.isArray(settings?.rooms)?settings.rooms:[];
         const merged=rows.map(cloud=>{
@@ -17299,6 +17626,15 @@ async function hydrateSupabaseRooms(){
         if(error) throw error;
 
         const rows=data||[];
+        const localRoomsBeforeCloud=Array.isArray(settings?.rooms)?settings.rooms.filter(r=>r?.active!==false):[];
+        // Safety guard: never let an incomplete cloud property_rooms snapshot
+        // shrink a valid local property configuration (for example 13 rooms -> 1).
+        const cloudActiveCount=rows.filter(r=>r?.active!==false).length;
+        if(rows.length && cloudActiveCount<localRoomsBeforeCloud.length){
+            console.warn("Supabase rooms: incomplete cloud room set detected; preserving local room configuration.",{localCount:localRoomsBeforeCloud.length,cloudCount:cloudActiveCount});
+            setSupabaseCloudMessage("Cloud room set is incomplete; preserving local room configuration.","error");
+            return true;
+        }
         if(!rows.length){
             // v2.1.134: Never attempt an automatic client-side upsert here.
             // If the cloud room set is empty, leave the local room configuration
@@ -17438,153 +17774,76 @@ window.storesCloudRefreshClick = async function(btn){
 </script>
 <script>
 /* =========================================================
-   v2.1.128 — CLOUD AUTO SYNC BOOT / POLLING FIX
-   Scope: automatic reservation refresh between already-open
-   PMS sessions. Auth, permissions, reservation save logic,
-   room configuration and accounting are unchanged.
+   v2.1.205 — RESERVATION AUTO REFRESH TRUE DATA CHANGE FIX
+   Scope: refresh reservation figures only when cloud reservation
+   data actually changes. No page reload / visual refresh on idle polls.
 ========================================================= */
 (function(){
-  let channel=null;
-  let pollTimer=null;
-  let refreshTimer=null;
-  let retryTimer=null;
-  let started=false;
-  let lastCloudFingerprint='';
-
-  function canSync(){
+  let channel=null,pollTimer=null,refreshTimer=null,retryTimer=null,started=false,lastCloudFingerprint='';
+  function canSync(){try{return !!(typeof initSupabaseClient==='function'&&typeof hydrateSupabaseReservations==='function'&&typeof getSupabaseSessionUser==='function'&&currentPropertyId);}catch(e){return false;}}
+  async function getCloudPropertyId(){try{if(!currentPropertyId||typeof resolveSupabasePropertyId!=='function')return null;return await resolveSupabasePropertyId(String(currentPropertyId));}catch(e){return null;}}
+  function reservationFingerprint(){
     try{
-      // Do not require window.supabase here. Some Supabase builds expose the
-      // client factory without leaving the SDK namespace on window.
-      return !!(typeof initSupabaseClient==='function' &&
-        typeof hydrateSupabaseReservations==='function' &&
-        typeof getSupabaseSessionUser==='function' && currentPropertyId);
-    }catch(e){return false;}
+      const list=(typeof reservations!=='undefined'&&Array.isArray(reservations))?reservations:[];
+      return JSON.stringify(list.map(r=>{
+        const x={};
+        Object.keys(r||{}).sort().forEach(k=>{
+          if(k!=='updatedAt'&&k!=='createdAt')x[k]=r[k];
+        });
+        return x;
+      }).sort((a,b)=>String(a.id||'').localeCompare(String(b.id||''))));
+    }catch(e){return ''; }
   }
-
-  async function getCloudPropertyId(){
-    try{
-      if(!currentPropertyId || typeof resolveSupabasePropertyId!=='function') return null;
-      return await resolveSupabasePropertyId(String(currentPropertyId));
-    }catch(e){ return null; }
-  }
-
   async function safeRefresh(reason){
-    if(!canSync()) return false;
-    if(document.hidden) return false;
-    // Never replace data while a user is actively editing a modal.
-    if(document.querySelector('.modal.show')) return false;
+    if(!canSync()||document.hidden||document.querySelector('.modal.show'))return false;
     try{
+      const before=lastCloudFingerprint;
       const ok=await hydrateSupabaseReservations();
-      if(ok){
-        const sig=(typeof reservations!=='undefined' ? reservations : [])
-          .map(r=>String(r.id)+':'+String(r.updatedAt||r.status||''))
-          .sort().join('|');
-        if(sig!==lastCloudFingerprint){
-          lastCloudFingerprint=sig;
-          if(typeof renderAll==='function') renderAll();
-          if(typeof renderFrontOffice==='function' && document.getElementById('frontoffice')?.classList.contains('active')) renderFrontOffice();
-        }
-        return true;
+      if(!ok)return false;
+      const after=reservationFingerprint();
+      if(!before){lastCloudFingerprint=after;return true;}
+      if(after!==before){
+        lastCloudFingerprint=after;
+        if(typeof renderAll==='function')renderAll();
+        if(document.getElementById('reservations')?.classList.contains('active')&&typeof renderReservations==='function')renderReservations();
+        if(document.getElementById('frontoffice')?.classList.contains('active')&&typeof renderFrontOffice==='function')renderFrontOffice();
       }
-    }catch(e){ console.warn('Cloud auto-sync refresh skipped:',reason,e); }
-    return false;
+      return true;
+    }catch(e){console.warn('Cloud reservation auto-sync skipped:',reason,e);return false;}
   }
-
-  function scheduleRefresh(reason){
-    clearTimeout(refreshTimer);
-    refreshTimer=setTimeout(()=>safeRefresh(reason),250);
-  }
-
+  function scheduleRefresh(reason){clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>safeRefresh(reason),250);}
   async function start(){
-    if(started) return true;
-    if(!canSync()) return false;
-    started=true;
+    if(started||!canSync())return false;started=true;
     try{
-      const client=initSupabaseClient();
-      if(!client){started=false;return false;}
-      const user=await getSupabaseSessionUser();
-      if(!user){started=false;return false;}
-      const propertyId=await getCloudPropertyId();
-      if(!propertyId){started=false;return false;}
-
-      try{
-        if(channel && typeof client.removeChannel==='function') client.removeChannel(channel);
-      }catch(e){}
-
+      const client=initSupabaseClient();if(!client){started=false;return false;}
+      const user=await getSupabaseSessionUser();if(!user){started=false;return false;}
+      const propertyId=await getCloudPropertyId();if(!propertyId){started=false;return false;}
+      try{if(channel&&typeof client.removeChannel==='function')client.removeChannel(channel);}catch(e){}
       channel=client.channel('signature-pms-reservations-auto-sync-'+String(propertyId)+'-'+String(Date.now()))
         .on('postgres_changes',{event:'*',schema:'public',table:'reservations'},payload=>{
-          const row=payload?.new || payload?.old || {};
-          if(String(row.property_id||'')===String(propertyId)) scheduleRefresh('realtime');
-        })
-        .subscribe(status=>{
-          console.log('Signature PMS reservation realtime:',status);
-        });
-
-      clearInterval(pollTimer);
-      // Polling is the guaranteed fallback even when Supabase Realtime is not
-      // enabled for the reservations table. No page reload is performed.
-      pollTimer=setInterval(()=>{ if(!started) return; safeRefresh('poll'); },5000);
-
+          const row=payload?.new||payload?.old||{};
+          if(String(row.property_id||'')===String(propertyId))scheduleRefresh('realtime');
+        }).subscribe(status=>console.log('Signature PMS reservation realtime:',status));
+      clearInterval(pollTimer);pollTimer=setInterval(()=>{if(started)safeRefresh('poll');},5000);
       if(!window.__signaturePMSAutoSyncFocusBound){
         window.__signaturePMSAutoSyncFocusBound=true;
         window.addEventListener('focus',()=>scheduleRefresh('window-focus'));
         document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRefresh('visibility');});
       }
-
-      await safeRefresh('initial-auto-sync');
-      return true;
-    }catch(e){
-      console.warn('Signature PMS cloud auto-sync could not start:',e);
-      started=false;
-      return false;
-    }
+      await safeRefresh('initial-auto-sync');return true;
+    }catch(e){console.warn('Signature PMS cloud auto-sync could not start:',e);started=false;return false;}
   }
-
-  function scheduleStartRetry(){
-    clearTimeout(retryTimer);
-    if(started) return;
-    retryTimer=setTimeout(async()=>{
-      retryTimer=null;
-      const ok=await start();
-      if(!ok) scheduleStartRetry();
-    },2000);
-  }
-
-  function stop(){
-    try{
-      const client=typeof initSupabaseClient==='function' ? initSupabaseClient() : null;
-      if(channel && client && typeof client.removeChannel==='function') client.removeChannel(channel);
-    }catch(e){}
-    channel=null;
-    clearInterval(pollTimer); pollTimer=null;
-    clearTimeout(refreshTimer); refreshTimer=null;
-    clearTimeout(retryTimer); retryTimer=null;
-    started=false;
-  }
-
-  async function boot(){
-    // Login/context initialization can finish after DOMContentLoaded. Keep
-    // retrying until currentPropertyId + authenticated Supabase session exist.
-    const ok=await start();
-    if(!ok) scheduleStartRetry();
-  }
-
-  // Re-run after the existing cloud-status workflow completes.
+  function scheduleStartRetry(){clearTimeout(retryTimer);if(started)return;retryTimer=setTimeout(async()=>{retryTimer=null;const ok=await start();if(!ok)scheduleStartRetry();},2000);}
+  function stop(){try{const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;if(channel&&client&&typeof client.removeChannel==='function')client.removeChannel(channel);}catch(e){}channel=null;clearInterval(pollTimer);clearTimeout(refreshTimer);clearTimeout(retryTimer);started=false;}
+  async function boot(){const ok=await start();if(!ok)scheduleStartRetry();}
   const oldCheck=window.checkSupabaseCloudStatus;
-  if(typeof oldCheck==='function' && !oldCheck.__signatureAutoSyncWrapped){
-    const wrapped=async function(){
-      const result=await oldCheck.apply(this,arguments);
-      if(result) { clearTimeout(retryTimer); await start(); }
-      else scheduleStartRetry();
-      return result;
-    };
-    wrapped.__signatureAutoSyncWrapped=true;
-    window.checkSupabaseCloudStatus=wrapped;
+  if(typeof oldCheck==='function'&&!oldCheck.__signatureAutoSyncWrapped){
+    const wrapped=async function(){const result=await oldCheck.apply(this,arguments);if(result){clearTimeout(retryTimer);await start();}else scheduleStartRetry();return result;};
+    wrapped.__signatureAutoSyncWrapped=true;window.checkSupabaseCloudStatus=wrapped;
   }
-
   window.signaturePMSAutoSync={start,stop,refresh:()=>safeRefresh('manual')};
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
-  setTimeout(()=>{ if(!started) scheduleStartRetry(); },3500);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+  setTimeout(()=>{if(!started)scheduleStartRetry();},3500);
 })();
 </script>
 
@@ -17714,6 +17973,411 @@ document.addEventListener('change',function(e){if(e.target?.classList?.contains(
 document.addEventListener('click',function(e){const b=e.target?.closest?.('button');if(!b)return;if(b.textContent?.trim()==='Load Standard Hotel Accounts'){e.preventDefault();e.stopImmediatePropagation();load(false)}},true);
 })();
 </script>
+
+<script>
+/* =========================================================
+   v2.1.187 — MULTI-PROPERTY ROOM SCOPE REPAIR
+   - Prevents one property's local room list from being copied into another.
+   - Repairs the current H001/H002 test data to the intended property scope.
+   - Keeps Supabase login/authentication and existing transactional data intact.
+   - Future properties start with their own independent room array.
+========================================================= */
+(function(){
+  if(window.__signatureMultiPropertyRoomScope187) return;
+  window.__signatureMultiPropertyRoomScope187=true;
+
+  function clone(v){ try{return JSON.parse(JSON.stringify(v));}catch(e){return v;} }
+  function isUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));}
+
+  function cleanRoomTemplate(room, id){
+    const base=clone(room||{});
+    const sid=String(id);
+    base.id = isNaN(Number(sid)) ? sid : Number(sid);
+    base.code = sid;
+    base.number = sid;
+    base.name = String(base.name||sid).replace(/^(Room\s*)?(20[1-5]|101|102|103|104|105|106|201|301|1|2|3|4|5)$/i, sid);
+    if(!base.name || /^Room\s*$/i.test(base.name)) base.name=sid;
+    base.type=base.type||'Guest Room';
+    base.rate=Number(base.rate||0);
+    base.active=base.active!==false;
+    base.housekeepingStatus=base.housekeepingStatus||'clean';
+    base.maintenanceNote=base.maintenanceNote||'';
+    base.oosReason=base.oosReason||'';
+    return base;
+  }
+
+  async function repairCloudRoomScope187(){
+    try{
+      const client=initSupabaseClient();
+      if(!client) return false;
+      const authUser=await getSupabaseSessionUser();
+      if(!authUser) return false;
+      const {data:props,error:pe}=await client.from('properties').select('id,code,name').in('code',['H001','H002']);
+      if(pe) throw pe;
+      const rows=props||[];
+      let changed=false;
+
+      for(const cp of rows){
+        const code=String(cp.code||'').toUpperCase();
+        if(code!=='H001' && code!=='H002') continue;
+        const desired=code==='H001'
+          ? ['1','2','3','4','5','101','102','103','104','105','106','201','301']
+          : ['201','202','203','204','205'];
+
+        const {data:cloudRooms,error:re}=await client.from('property_rooms')
+          .select('property_id,room_id,room_data,active,housekeeping_status,updated_at')
+          .eq('property_id',String(cp.id));
+        if(re) throw re;
+        const current=cloudRooms||[];
+        const byId=new Map(current.map(r=>[String(r.room_id),r]));
+
+        let localProp=(window.signaturePMSState?.properties||[]).find(p=>String(p.id)===String(cp.id));
+        if(!localProp) localProp=(window.signaturePMSState?.properties||[]).find(p=>String(p.code||'').toUpperCase()===code);
+        const localRooms=Array.isArray(localProp?.rooms)?localProp.rooms:[];
+        const localById=new Map(localRooms.map(r=>[String(r.id),r]));
+
+        const now=new Date().toISOString();
+        const payload=desired.map(id=>{
+          let room=localById.get(id) || byId.get(id)?.room_data;
+          if(!room && code==='H002' && id!=='201') room=localById.get('201') || byId.get('201')?.room_data;
+          room=cleanRoomTemplate(room,id);
+          if(!room.roomConfigUpdatedAt) room.roomConfigUpdatedAt=now;
+          return {
+            property_id:String(cp.id),
+            room_id:String(id),
+            room_data:{...room,propertyId:String(cp.id)},
+            active:room.active!==false,
+            housekeeping_status:String(room.housekeepingStatus||byId.get(id)?.housekeeping_status||'clean'),
+            updated_at:now
+          };
+        });
+
+        const {error:ue}=await client.from('property_rooms').upsert(payload,{onConflict:'property_id,room_id'});
+        if(ue) throw ue;
+
+        const stale=current.map(r=>String(r.room_id)).filter(id=>!desired.includes(id));
+        if(stale.length){
+          const {error:de}=await client.from('property_rooms').delete().eq('property_id',String(cp.id)).in('room_id',stale);
+          if(de) throw de;
+        }
+
+        if(localProp){
+          localProp.rooms=payload.map(x=>clone(x.room_data));
+          localProp.cloudManaged=true;
+        }
+        changed=true;
+      }
+
+      const state=window.signaturePMSState;
+      if(state){
+        state.saveProperties();
+        if(currentPropertyId && state.properties.some(p=>String(p.id)===String(currentPropertyId))){
+          state.loadCurrentPropertyData();
+        }
+        state.renderPropertySwitcher();
+        state.renderPropertyManager();
+        state.renderAll();
+      }
+      if(changed) setSupabaseCloudMessage('Multi-property room scope repaired: H001 = 13 rooms, H002 = 5 rooms.','success');
+      return changed;
+    }catch(err){
+      console.warn('v2.1.187 room-scope repair skipped:',err);
+      setSupabaseCloudMessage('Room scope repair failed: '+(err?.message||err),'error');
+      return false;
+    }
+  }
+
+  /* Run the repair after the existing cloud-property refresh. */
+  const originalSyncProperties=window.syncSupabaseProperties;
+  if(typeof originalSyncProperties==='function'){
+    window.syncSupabaseProperties=async function(){
+      const result=await originalSyncProperties.apply(this,arguments);
+      try{ await repairCloudRoomScope187(); }catch(e){ console.warn(e); }
+      return result;
+    };
+  }
+
+  /* A new property must never inherit another property's room array. */
+  const originalAddProperty=window.addProperty;
+  if(typeof originalAddProperty==='function'){
+    window.addProperty=async function(){
+      return originalAddProperty.apply(this,arguments);
+    };
+  }
+
+  window.repairMultiPropertyRoomScope187=repairCloudRoomScope187;
+})();
+</script>
+
+
+<script>
+/* v2.1.190 — FORCE RESERVATION BOOKING NUMBER MIGRATION
+   Runs after login/property hydration as well as when Reservations is opened.
+   It migrates legacy UUID booking numbers in both cloud and local state.
+*/
+(function(){
+  'use strict';
+  let running=false, doneKey='';
+  function esc(v){return String(v||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+  function prefix(){
+    const p=(typeof properties!=='undefined'&&Array.isArray(properties)) ? properties.find(x=>String(x.id)===String(currentPropertyId)) : null;
+    return String(p?.code||window.settings?.code||window.settings?.id||'PROP').trim().toUpperCase();
+  }
+  function year(r){
+    const x=String(r?.reservation_data?.checkIn||r?.checkIn||'');
+    const m=x.match(/^(\d{4})/); return m?m[1]:String(new Date().getFullYear());
+  }
+  function valid(n,pre){return new RegExp('^'+esc(pre)+'-\\d{4}-\\d+$','i').test(String(n||''));}
+  async function run(force){
+    if(running || !currentPropertyId || typeof initSupabaseClient!=='function' || typeof resolveSupabasePropertyId!=='function') return false;
+    const key=String(currentPropertyId);
+    if(!force && doneKey===key) return true;
+    running=true;
+    try{
+      const client=initSupabaseClient(); if(!client) return false;
+      const cloudPid=await resolveSupabasePropertyId(key); if(!cloudPid) return false;
+      const pre=prefix();
+      const {data,error}=await client.from('reservations').select('id,property_id,booking_no,status,reservation_data,created_at,updated_at').eq('property_id',cloudPid);
+      if(error) throw error;
+      const rows=(data||[]).slice().sort((a,b)=>String(a.created_at||a.updated_at||a.id).localeCompare(String(b.created_at||b.updated_at||b.id)));
+      const used=new Set(), counters={}; const updates=[];
+      for(const r of rows){
+        let old=String(r.booking_no||r.reservation_data?.bookingNo||'').trim();
+        let no=old;
+        if(valid(old,pre) && !used.has(old.toUpperCase())){
+          const m=old.match(/-(\d{4})-(\d+)$/); counters[m[1]]=Math.max(counters[m[1]]||0,Number(m[2])||0); used.add(old.toUpperCase());
+        }else{
+          const y=year(r); let n=(counters[y]||0)+1;
+          do{no=pre+'-'+y+'-'+String(n).padStart(4,'0'); n++;}while(used.has(no.toUpperCase()));
+          counters[y]=n; used.add(no.toUpperCase());
+        }
+        const rd={...(r.reservation_data||{}),bookingNo:no,propertyId:key};
+        if(no!==old || String(r.reservation_data?.bookingNo||'')!==no){
+          updates.push({id:String(r.id),property_id:cloudPid,booking_no:no,status:String(r.status||rd.status||'Reserved'),reservation_data:rd,updated_at:new Date().toISOString()});
+        }
+      }
+      if(updates.length){
+        const u=await client.from('reservations').upsert(updates,{onConflict:'id'}); if(u.error) throw u.error;
+      }
+      // Update local reservation objects from the authoritative migrated rows.
+      if(Array.isArray(reservations)){
+        const map=new Map(rows.map(r=>[String(r.id),r]));
+        reservations=reservations.map(r=>{
+          const c=map.get(String(r.id)); if(!c) return r;
+          const u=updates.find(x=>String(x.id)===String(r.id));
+          const no=(u||c).booking_no||c.reservation_data?.bookingNo||r.bookingNo||'';
+          return {...r,propertyId:key,bookingNo:no};
+        });
+        if(typeof saveData==='function') saveData();
+      }
+      doneKey=key;
+      if(typeof renderAll==='function') renderAll();
+      console.log('v2.1.190 booking migration complete:',pre,updates.length,'updated');
+      return true;
+    }catch(e){console.warn('v2.1.190 booking migration failed:',e);return false}
+    finally{running=false;}
+  }
+  window.forceReservationBookingMigration=run;
+  function boot(){[1500,4000,8000].forEach(ms=>setTimeout(()=>run(false),ms));}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+  document.addEventListener('click',e=>{
+    const t=e.target?.closest?.('[data-page="reservations"],a[href="#reservations"],button');
+    if(t && (String(t.textContent||'').toLowerCase().includes('reservation') || t.getAttribute('data-page')==='reservations')) setTimeout(()=>run(true),300);
+  });
+})();
+</script>
+<script>
+/* v2.1.191 — VERIFIED RESERVATION BOOKING NUMBER MIGRATION
+   Purpose:
+   1. Read the actual cloud rows for the active property.
+   2. Update booking_no + reservation_data.bookingNo using UPDATE, not UPSERT.
+   3. Re-read each changed row and verify the value persisted in Supabase.
+   4. Show the exact result/error in the PMS cloud message.
+   This does NOT delete reservations and does NOT treat booking_no as a duplicate key.
+*/
+(function(){
+  'use strict';
+  let running=false, completedFor='';
+
+  function propPrefix(){
+    const p=(typeof properties!=='undefined' && Array.isArray(properties))
+      ? properties.find(x=>String(x.id)===String(currentPropertyId)) : null;
+    return String(p?.code||window.settings?.code||'PROP').trim().toUpperCase();
+  }
+  function esc(v){return String(v||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+  function isValid(n,pre){
+    return new RegExp('^'+esc(pre)+'-\\d{4}-\\d+$','i').test(String(n||'').trim());
+  }
+  function rowYear(r){
+    const x=String(r?.reservation_data?.checkIn||'');
+    const m=x.match(/^(\d{4})/);
+    return m?m[1]:String(new Date().getFullYear());
+  }
+  function message(msg,type){
+    try{
+      if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage(msg,type||'info');
+    }catch(_){}
+    console.log('v2.1.191:',msg);
+  }
+
+  async function runVerified(force){
+    if(running || !currentPropertyId || typeof initSupabaseClient!=='function' ||
+       typeof resolveSupabasePropertyId!=='function') return false;
+
+    const localPid=String(currentPropertyId);
+    if(!force && completedFor===localPid) return true;
+    running=true;
+
+    try{
+      const client=initSupabaseClient();
+      if(!client) throw new Error('Supabase client is not available.');
+
+      const cloudPid=await resolveSupabasePropertyId(localPid);
+      if(!cloudPid) throw new Error('Cloud property ID could not be resolved.');
+
+      const pre=propPrefix();
+      const q=await client.from('reservations')
+        .select('id,property_id,booking_no,status,reservation_data,created_at,updated_at')
+        .eq('property_id',cloudPid);
+
+      if(q.error) throw q.error;
+
+      const rows=(q.data||[]).slice().sort((a,b)=>
+        String(a.created_at||a.updated_at||a.id)
+          .localeCompare(String(b.created_at||b.updated_at||b.id))
+      );
+
+      const used=new Set();
+      const counters={};
+      const plan=[];
+
+      for(const r of rows){
+        const old=String(r.booking_no||r.reservation_data?.bookingNo||'').trim();
+        const y=rowYear(r);
+        let no=old;
+
+        if(isValid(old,pre) && !used.has(old.toUpperCase())){
+          used.add(old.toUpperCase());
+          const m=old.match(/-(\d{4})-(\d+)$/);
+          if(m) counters[m[1]]=Math.max(counters[m[1]]||0,Number(m[2])||0);
+        }else{
+          let n=(counters[y]||0)+1;
+          do{
+            no=pre+'-'+y+'-'+String(n).padStart(4,'0');
+            n++;
+          }while(used.has(no.toUpperCase()));
+          counters[y]=n-1;
+          used.add(no.toUpperCase());
+        }
+
+        if(no!==old || String(r.reservation_data?.bookingNo||'')!==no){
+          const rd={...(r.reservation_data||{}),bookingNo:no,propertyId:localPid};
+          plan.push({
+            id:String(r.id),
+            old,
+            no,
+            status:String(r.status||rd.status||'Reserved'),
+            reservation_data:rd
+          });
+        }
+      }
+
+      let updated=0, verified=0;
+
+      for(const item of plan){
+        const u=await client.from('reservations')
+          .update({
+            booking_no:item.no,
+            status:item.status,
+            reservation_data:item.reservation_data,
+            updated_at:new Date().toISOString()
+          })
+          .eq('id',item.id)
+          .eq('property_id',cloudPid);
+
+        if(u.error){
+          throw new Error('Cloud UPDATE failed for '+item.id+': '+u.error.message);
+        }
+        updated++;
+
+        const check=await client.from('reservations')
+          .select('id,booking_no,reservation_data')
+          .eq('id',item.id)
+          .eq('property_id',cloudPid)
+          .maybeSingle();
+
+        if(check.error){
+          throw new Error('Verification read failed for '+item.no+': '+check.error.message);
+        }
+
+        const got=String(check.data?.booking_no||check.data?.reservation_data?.bookingNo||'');
+        if(got!==item.no){
+          throw new Error(
+            'Cloud verification failed for '+item.id+
+            '. Expected '+item.no+' but Supabase returned '+(got||'(blank)')+'.'
+          );
+        }
+        verified++;
+      }
+
+      /* Refresh local state from the verified cloud values. */
+      if(typeof reservations!=='undefined' && Array.isArray(reservations)){
+        const byId=new Map(rows.map(r=>[String(r.id),r]));
+        for(const item of plan){
+          byId.set(item.id,{...byId.get(item.id),booking_no:item.no,reservation_data:item.reservation_data});
+        }
+        reservations=reservations.map(r=>{
+          const c=byId.get(String(r.id));
+          if(!c) return r;
+          return {
+            ...r,
+            propertyId:localPid,
+            bookingNo:String(c.booking_no||c.reservation_data?.bookingNo||r.bookingNo||'')
+          };
+        });
+        if(typeof saveData==='function') saveData();
+      }
+
+      completedFor=localPid;
+      if(typeof renderAll==='function') renderAll();
+
+      message(
+        'Reservation booking migration verified: '+verified+
+        ' cloud row(s) confirmed. '+updated+' row(s) updated. No reservations deleted.',
+        'success'
+      );
+      return true;
+
+    }catch(e){
+      const msg='Reservation booking migration NOT completed: '+(e?.message||e);
+      message(msg,'error');
+      console.error('v2.1.191:',e);
+      return false;
+    }finally{
+      running=false;
+    }
+  }
+
+  window.verifyReservationBookingNumbers=runVerified;
+
+  function boot(){
+    [2500,6000].forEach(ms=>setTimeout(()=>runVerified(false),ms));
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+  else boot();
+
+  document.addEventListener('click',e=>{
+    const t=e.target?.closest?.('[data-page="reservations"],a[href="#reservations"],button');
+    if(t && (
+      String(t.textContent||'').toLowerCase().includes('reservation') ||
+      t.getAttribute('data-page')==='reservations'
+    )){
+      setTimeout(()=>runVerified(true),500);
+    }
+  });
+})();
+</script>
+
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -17977,7 +18641,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     });
     return {local:settings.roomRateMatrixLocal,foreign:settings.roomRateMatrixForeign};
   }
-  function currencyForGuest(type){return String(type||'foreign').toLowerCase()==='local' ? String(settings?.baseCurrency||'LKR').toUpperCase() : String(settings?.guestCurrency||'USD').toUpperCase();}
+  function currencyForGuest(type){return String(type||'foreign').toLowerCase()==='local' ? String(settings?.baseCurrency||'LKR').toUpperCase() : String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();}
+  function applyReservationCurrencyMetadata(r, guestType){
+    if(!r) return r;
+    const base=String(settings?.baseCurrency||'LKR').toUpperCase();
+    const type=String(guestType||r.guestType||'foreign').toLowerCase();
+    const cur=type==='local' ? base : String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
+    r.guestType=type; r.currency=cur; r.baseCurrency=base;
+    r.postingRateAtBooking=cur===base ? 1 : Number(settings?.postingRate||320);
+    if(cur===base){ r.baseAmount=Number(r.total||0); r.foreignAmount=0; }
+    else { r.foreignAmount=Number(r.total||0); r.baseAmount=Number(r.total||0)*Number(r.postingRateAtBooking||320); }
+    return r;
+  }
   function rateText(v,c){return currencyForGuest(c).toUpperCase()==='LKR'?'LKR '+Number(v||0).toFixed(2):'USD '+Number(v||0).toFixed(2);}
   function baseRateForGuest(guestType,roomId){
     const local=Number(settings?.roomBaseLocal||0), foreign=Number(settings?.roomBaseForeign||settings?.roomRate||0);
@@ -18033,10 +18708,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const edited=(typeof editingReservationId!=='undefined'&&editingReservationId)?reservations.find(r=>r.id===editingReservationId):null;
     const r=changed[0]||edited;
     if(r){
-      r.guestType=guestType;r.currency=currencyForGuest(guestType);r.baseCurrency=String(settings?.baseCurrency||'LKR').toUpperCase();r.postingRateAtBooking=Number(r.postingRateAtBooking||settings?.postingRate||320);
+      r.guestType=guestType;r.currency=currencyForGuest(guestType);r.baseCurrency=String(settings?.baseCurrency||'LKR').toUpperCase();r.postingRateAtBooking=r.currency===r.baseCurrency?1:Number(r.postingRateAtBooking||settings?.postingRate||320);
       if(r.currency==='LKR'){r.baseAmount=Number(r.total||0);r.foreignAmount=0;}else{r.foreignAmount=Number(r.total||0);r.baseAmount=Number(r.total||0)*Number(r.postingRateAtBooking||320);}
       const f=getFolio(r.id);if(f){f.currency=r.currency;f.baseCurrency=r.baseCurrency;f.postingRateAtBooking=r.postingRateAtBooking;}
       saveData();
+      /* Sync only after the complete save chain has finalized the reservation.
+         This prevents the background cloud refresh from restoring a stale USD snapshot. */
+      Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(e=>console.warn('Final reservation cloud sync failed:',e));
     }
     return result;
   };
@@ -18137,5 +18815,184 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       return result;
     };
   }
+})();
+</script>
+
+<script id="v2-1-193-cloud-source-of-truth">
+/* v2.1.193 — CLOUD SOURCE OF TRUTH ROOT FIX
+   The verified v2.1.191 base still merged cloud data into the browser's old
+   local property/user/reservation state. This override makes authenticated
+   Supabase data authoritative for the active cloud session.
+   - Cloud properties replace stale local properties.
+   - Cloud users replace stale local users.
+   - Reservations are replaced by the active property's cloud rows, including
+     an intentionally empty cloud result.
+   - No local data is uploaded during login.
+*/
+(function(){
+  'use strict';
+  const uuidRe=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  function cloudOnlyProperties(rows){
+    const out=[];
+    for(const row of (rows||[])){
+      const local=cloudPropertyToLocal(row,null);
+      if(local) out.push(local);
+    }
+    return out;
+  }
+
+  function cloudUserFromRows(pr,ua,pp){
+    const role=normalizeCloudRole(pr,{email:pr.username});
+    return {
+      id:pr.id,authUserId:pr.id,username:pr.username||'',
+      name:pr.full_name||pr.username||'',fullName:pr.full_name||pr.username||'',
+      role,department:pr.department||'',
+      active:String(pr.status||'active').toLowerCase()==='active',
+      propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||
+        (role==='Admin'?'all':null),
+      propertyIds:ua.map(x=>x.property_id).filter(Boolean),
+      permissions:{
+        pages:pp.filter(x=>x.module==='page').map(x=>x.action),
+        actions:pp.filter(x=>x.module!=='page'&&x.module!=='report').map(x=>x.module+'.'+x.action),
+        reports:pp.filter(x=>x.module==='report').map(x=>x.action)
+      },cloudManaged:true
+    };
+  }
+
+  async function cloudOnlyRefreshProperties(){
+    const client=initSupabaseClient();
+    if(!client) throw new Error('Supabase client unavailable.');
+    const {data:{session}}=await client.auth.getSession();
+    if(!session?.user) throw new Error('Supabase session unavailable.');
+    const {data:ups,error:ue}=await client.from('user_properties')
+      .select('id,user_id,property_id,is_primary,created_at').eq('user_id',session.user.id);
+    if(ue) throw ue;
+    const ids=[...new Set((ups||[]).map(x=>x.property_id).filter(Boolean))];
+    let rows=[];
+    if(ids.length){
+      const {data,error}=await client.from('properties')
+        .select('id,code,name,address,city,country,phone,email').in('id',ids);
+      if(error) throw error; rows=data||[];
+    }
+    const state=window.signaturePMSState;
+    if(!state) throw new Error('PMS state bridge unavailable.');
+    // Preserve the live room configuration when the cloud properties table
+    // contains only property metadata. The previous implementation rebuilt
+    // the property with ensurePropertyShape(), which could reduce 13 rooms
+    // to the default single room during the delayed cloud refresh.
+    const existingProperties=Array.isArray(state.properties)?state.properties:[];
+    state.properties=(rows||[]).map(row=>{
+      const existing=existingProperties.find(p=>String(p?.id)===String(row?.id));
+      return cloudPropertyToLocal(row,existing);
+    }).filter(Boolean);
+    state.saveProperties();
+    const primary=(ups||[]).find(x=>x.is_primary)?.property_id || ids[0] || null;
+    if(primary){
+      const p=state.properties.find(x=>String(x.id)===String(primary));
+      if(p){ state.currentPropertyId=p.id; state.loadCurrentPropertyData(); }
+    }else{
+      state.currentPropertyId=null;
+      state.settings=null;
+      state.reservations=[];state.folios=[];state.payments=[];state.sales=[];state.guests=[];state.saveData();
+    }
+    return {rows,ups:ups||[],primary};
+  }
+
+  async function cloudOnlyRefreshUsers(){
+    const client=initSupabaseClient();
+    if(!client) throw new Error('Supabase client unavailable.');
+    const {data:profiles,error}=await client.from('profiles')
+      .select('id,username,full_name,role,department,status');
+    if(error) throw error;
+    const {data:ups,error:ue}=await client.from('user_properties')
+      .select('id,user_id,property_id,is_primary,created_at');
+    if(ue) throw ue;
+    const {data:perms,error:pe}=await client.from('user_permissions')
+      .select('id,user_id,property_id,module,action,allowed').eq('allowed',true);
+    if(pe) throw pe;
+    const state=window.signaturePMSState;
+    state.users=(profiles||[]).map(pr=>cloudUserFromRows(pr,(ups||[]).filter(x=>x.user_id===pr.id),(perms||[]).filter(x=>x.user_id===pr.id)));
+    state.saveUsers();
+    return state.users;
+  }
+
+  /* Replace the original context merger: never retain an unrelated local
+     property or local account after a successful Supabase authentication. */
+  window.applyCloudContext=function(ctx){
+    const state=window.signaturePMSState;if(!state)throw new Error('PMS state bridge unavailable.');
+    const profile=ctx.profile||{}, authUser=ctx.authUser;
+    const assigned=[...new Set((ctx.userProps||[]).map(x=>x.property_id).filter(Boolean))];
+    const primary=(ctx.userProps||[]).find(x=>x.is_primary)?.property_id || assigned[0] || null;
+    state.properties=cloudOnlyProperties(ctx.propertyRows||[]);
+    state.users=[cloudUserFromRows(profile,ctx.userProps||[],ctx.permissionRows||[])];
+    const cloudUser=state.users[0];
+    if(String(profile.username||'').toLowerCase()==='admin' || String(authUser?.email||'').toLowerCase()==='thanayam@gmail.com'){
+      cloudUser.username='admin'; cloudUser.name=profile.full_name||'Signature PMS Master Administrator';
+      cloudUser.fullName=profile.full_name||'Signature PMS Master Administrator';
+    }
+    cloudUser.role=normalizeCloudRole(profile,authUser);
+    cloudUser.propertyId=primary || (cloudUser.role==='Admin'?'all':null);
+    cloudUser.propertyIds=assigned;
+    state.currentUser=cloudUser;
+    state.currentPropertyId=primary || (state.properties[0]?.id||null);
+    if(state.currentPropertyId) state.loadCurrentPropertyData();
+    state.saveProperties();state.saveUsers();state.setSession(state.currentUser);
+    state.applyRoleVisibility();state.updateCurrentUserDisplay();state.renderAll();
+  };
+
+  /* Reservations: cloud rows are authoritative even when the result is empty. */
+  window.hydrateSupabaseReservations=async function(){
+    try{
+      const client=initSupabaseClient();
+      if(!client || !currentPropertyId) return false;
+      const authUser=await getSupabaseSessionUser();
+      if(!authUser) return false;
+      const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+      if(!cloudPropertyId) return false;
+      const {data,error}=await client.from('reservations')
+        .select('id,property_id,booking_no,status,reservation_data,created_at,updated_at')
+        .eq('property_id',cloudPropertyId);
+      if(error) throw error;
+      const rows=data||[];
+      reservations=rows.map(r=>({...(r.reservation_data||{}),id:String(r.id),propertyId:String(currentPropertyId),bookingNo:r.booking_no||r.reservation_data?.bookingNo||'',status:r.status||r.reservation_data?.status||'Reserved'}));
+      /* Remove local child records for reservations no longer present in cloud. */
+      const ids=new Set(reservations.map(r=>String(r.id)));
+      folios=Array.isArray(folios)?folios.filter(f=>!f.reservationId||ids.has(String(f.reservationId))):[];
+      sales=Array.isArray(sales)?sales.filter(x=>!x.reservationId||ids.has(String(x.reservationId))):[];
+      payments=Array.isArray(payments)?payments.filter(x=>!x.reservationId||ids.has(String(x.reservationId))):[];
+      saveData();renderAll();
+      setSupabaseCloudMessage('Cloud reservations are the source of truth: '+rows.length+' reservation(s) loaded.','success');
+      return true;
+    }catch(err){
+      console.error('v2.1.193 authoritative reservation read failed:',err);
+      setSupabaseCloudMessage('Cloud reservation read failed: '+(err?.message||err),'error');
+      return false;
+    }
+  };
+
+  /* Block the old login-time migration that could republish browser-local
+     reservations when the cloud table was empty. */
+  window.syncCurrentPropertyReservationsToSupabase=async function(){
+    console.warn('v2.1.193 blocked local-to-cloud reservation migration during cloud login.');
+    return false;
+  };
+
+  /* Ensure the existing Admin login refreshes the cloud-only lists. */
+  window.syncSupabaseProperties=async function(){return cloudOnlyRefreshProperties();};
+  window.syncSupabaseUsers=async function(){return cloudOnlyRefreshUsers();};
+
+  /* After the original login sequence completes, force one final clean read. */
+  const originalShowPMS=window.showPMS;
+  window.showPMS=function(){
+    const result=originalShowPMS.apply(this,arguments);
+    if(window.supabaseCloudReady || typeof getSupabaseSessionUser==='function'){
+      setTimeout(async()=>{
+        try{await cloudOnlyRefreshProperties();await cloudOnlyRefreshUsers();await hydrateSupabaseReservations();renderAll();}
+        catch(e){console.warn('v2.1.193 final cloud identity refresh failed:',e);}
+      },50);
+    }
+    return result;
+  };
 })();
 </script>
