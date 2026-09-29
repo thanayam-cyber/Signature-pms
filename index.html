@@ -234,7 +234,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 }
 </style><style id="operations-budget-style">#operationsBudgetPanel .input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:7px;background:#fff;font-size:12px}#operationsBudgetPanel table input,#operationsBudgetPanel table select{width:72px;padding:5px;border:1px solid #d1d5db;border-radius:5px;font-size:11px}#operationsBudgetPanel table select{width:105px}#operationsBudgetPanel .ob-total{font-weight:700;white-space:nowrap}</style><!-- CLEAN REBUILD: v14 confirmed working base; centralized Supabase Master Admin normalization only. -->
 </head>
-<body data-customer-build="true">
+<body data-customer-build="true" data-pms-patch="v2.1.206-property-user-management">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
 ========================================================= -->
@@ -243,7 +243,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="auth-brand">
 <h1>Signature</h1>
 <p>PMS &amp; POS</p>
-<small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.0</small>
+<small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.206</small>
 </div>
 <!-- LOGIN -->
 <div id="loginView" style="display: block;">
@@ -355,7 +355,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="nav-btn" data-page="accounting" onclick="showPage('accounting',this)">Accounting</button>
 <button class="nav-btn" data-page="purchasing" onclick="showPage('purchasing',this)">Purchasing</button> <button class="nav-btn" data-page="hr" onclick="showPage('hr',this)">HR &amp; Payroll</button>
 <button class="nav-btn active" data-page="settings" onclick="showPage('settings',this)">Settings</button>
-<button class="nav-btn admin-only-nav" data-page="users" id="usersNavBtn" onclick="showPage('users',this)">Users Management</button>
+<button class="nav-btn" data-page="users" id="usersNavBtn" onclick="showPage('users',this)">Users Management</button>
 </aside>
 <main class="main">
 <header class="topbar">
@@ -2630,7 +2630,7 @@ function hasModuleAction(permission,user=currentUser){
     return false;
 }
 function requireModuleAction(permission){if(hasModuleAction(permission))return true;alert("Access denied. This action has not been assigned to your user account.");return false;}
-function canDo(permission){if(!currentUser)return false;if(currentUser.role==="Admin")return true;if(ACTION_PERMISSION_KEYS.includes(permission))return hasActionPermission(permission);if(permission==="reports.print")return canAccessPage("reports");if(permission==="users.manage")return hasActionPermission("users.manage");if(permission==="settings.manage")return canAccessPage("settings");if(permission==="property.manage")return currentUser.role==="Admin";if(permission.startsWith("reservations."))return hasActionPermission(permission);if(permission==="payments.create")return canAccessPage("payments");if(permission==="pos.use")return canAccessPage("pos");if(permission==="rooms.manage")return canAccessPage("rooms");if(permission==="pm.manage")return canAccessPage("pmrooms");return false;}
+function canDo(permission){if(!currentUser)return false;if(currentUser.role==="Admin")return true;if(ACTION_PERMISSION_KEYS.includes(permission))return hasActionPermission(permission);if(permission==="reports.print")return canAccessPage("reports");if(permission==="users.manage")return canManageUsers();if(permission==="settings.manage")return canAccessPage("settings");if(permission==="property.manage")return currentUser.role==="Admin";if(permission.startsWith("reservations."))return hasActionPermission(permission);if(permission==="payments.create")return canAccessPage("payments");if(permission==="pos.use")return canAccessPage("pos");if(permission==="rooms.manage")return canAccessPage("rooms");if(permission==="pm.manage")return canAccessPage("pmrooms");return false;}
 
 
 /* Mutable menu: existing PMS functions can continue using POS_MENU. */
@@ -3569,7 +3569,30 @@ async function provisionSupabaseStaffUser(username,email,password,localUser){
         }
     });
 
-    if(error) throw new Error(error.message||"The create-pms-user Edge Function failed.");
+    if(error){
+        // Supabase FunctionsHttpError exposes the actual Edge Function response
+        // through error.context. The generic SDK message ("non-2xx status code")
+        // hides the server-side reason, which made property-level user creation
+        // impossible to diagnose. Read the response body when available.
+        let detail="";
+        try{
+            const ctx=error?.context;
+            if(ctx && typeof ctx.clone==="function"){
+                const response=ctx.clone();
+                const contentType=String(response.headers?.get?.("content-type")||"").toLowerCase();
+                if(contentType.includes("application/json")){
+                    const body=await response.json();
+                    detail=body?.error||body?.message||body?.msg||body?.details||JSON.stringify(body);
+                }else{
+                    detail=(await response.text())||"";
+                }
+            }
+        }catch(readErr){
+            console.warn("Could not read create-pms-user error response",readErr);
+        }
+        const status=error?.context?.status ? " [HTTP "+error.context.status+"]" : "";
+        throw new Error((detail||error.message||"The create-pms-user Edge Function failed.")+status);
+    }
     if(!data?.success) throw new Error(data?.error||"The create-pms-user Edge Function did not create the user.");
     if(!data?.userId) throw new Error("The Edge Function did not return the new Supabase user ID.");
 
@@ -4048,8 +4071,33 @@ function applyRoleVisibility(){
 
 
 /* =========================================================
-   USER MANAGEMENT
+   USER MANAGEMENT — PROPERTY-SCOPED RIGHTS FIX v2.1.206
+   Admin: full user management across all properties.
+   Any non-Admin user with users.manage: manage users only inside
+   the currently assigned property; cannot create/edit Admin users or
+   assign All Properties.
 ========================================================= */
+function canManageUsers(){
+    if(!currentUser) return false;
+    if(currentUser.role==="Admin") return true;
+    // Users Management is a page-level right in the PMS UI.
+    // Also accept the granular users.manage action when it is assigned.
+    const pages=Array.isArray(currentUser.permissions?.pages)?currentUser.permissions.pages:[];
+    const actions=Array.isArray(currentUser.permissions?.actions)?currentUser.permissions.actions:[];
+    return pages.includes("users") || actions.includes("users.manage");
+}
+function canManageUserRecord(user){
+    if(!canManageUsers() || !user) return false;
+    if(currentUser.role==="Admin") return true;
+    if(user.role==="Admin") return false;
+    const ids=Array.isArray(user.propertyId)?user.propertyId:[user.propertyId];
+    return ids.some(id=>String(id)===String(currentPropertyId));
+}
+function userPropertyIds(user){
+    if(!user) return [];
+    if(user.propertyId==="all") return properties.map(p=>p.id);
+    return Array.isArray(user.propertyId)?user.propertyId.filter(Boolean):(user.propertyId?[user.propertyId]:[]);
+}
 
 function renderUsers(){
 
@@ -4059,12 +4107,12 @@ function renderUsers(){
     if(!tbody) return;
 
 
-    if(currentUser?.role!=="Admin"){
+    if(!canManageUsers()){
 
         tbody.innerHTML=`
         <tr>
             <td colspan="7" class="empty">
-                User Management is available to Admin only.
+                User Management is not assigned to your user account.
             </td>
         </tr>`;
 
@@ -4074,6 +4122,9 @@ function renderUsers(){
 
 
     users=getStoredUsers();
+    const visibleUsers=currentUser.role==="Admin"
+        ? users
+        : users.filter(u=>canManageUserRecord(u));
 
     // The authenticated user must always be represented in the management list.
     // If an old/local session exists but its user record was lost, restore only
@@ -4084,16 +4135,16 @@ function renderUsers(){
     }
 
     document.getElementById("usersTotal").textContent=
-        users.length;
+        visibleUsers.length;
 
     document.getElementById("usersActive").textContent=
-        users.filter(u=>u.active).length;
+        visibleUsers.filter(u=>u.active).length;
 
     document.getElementById("usersAdmins").textContent=
-        users.filter(u=>u.role==="Admin").length;
+        visibleUsers.filter(u=>u.role==="Admin").length;
 
 
-    if(!users.length){
+    if(!visibleUsers.length){
 
         tbody.innerHTML=`
         <tr>
@@ -4108,7 +4159,7 @@ function renderUsers(){
 
 
     tbody.innerHTML=
-        users.map(u=>{
+        visibleUsers.map(u=>{
 
             const isCurrent=
                 currentUser &&
@@ -4288,16 +4339,35 @@ function safeOpenUserModal(userId=null){
 
 function openUserModal(userId=null){
 
-    if(!requireRole("Admin"))
+    if(!canManageUsers()){
+        alert("Access denied. User Management rights are required.");
         return;
+    }
 
+    if(userId){
+        const target=users.find(u=>u.id===userId);
+        if(!canManageUserRecord(target)){
+            alert("Access denied. You can only manage users assigned to your property.");
+            return;
+        }
+    }
 
     editingUserId=userId;
 
     const propertySelect=document.getElementById("userProperty");
     if(propertySelect){
-        const options=[`<option value="all">All Properties</option>`].concat(properties.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.property)}</option>`));
-        propertySelect.innerHTML=options.join("");
+        if(currentUser.role==="Admin"){
+            const options=[`<option value="all">All Properties</option>`].concat(properties.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.property)}</option>`));
+            propertySelect.innerHTML=options.join("");
+            propertySelect.disabled=false;
+        }else{
+            const p=getProperty(currentPropertyId);
+            propertySelect.innerHTML=p
+                ? `<option value="${escapeHtml(p.id)}">${escapeHtml(p.property)}</option>`
+                : `<option value="${escapeHtml(currentPropertyId||"")}">${escapeHtml(currentPropertyId||"Current Property")}</option>`;
+            propertySelect.value=currentPropertyId||"";
+            propertySelect.disabled=true;
+        }
     }
 
     document.getElementById("userError").style.display="none";
@@ -4489,8 +4559,10 @@ function editUser(id){
 
 async function saveUser(){
 
-    if(!requireRole("Admin"))
+    if(!canManageUsers()){
+        showUserError("Access denied. User Management rights are required.");
         return;
+    }
 
 
     const username=
@@ -4512,10 +4584,35 @@ async function saveUser(){
         document.getElementById("userStatus")
         .value;
 
-    const propertyId=
+    let propertyId=
         document.getElementById("userProperty")?.value || (role==="Admin" ? "all" : currentPropertyId || "");
     const department=(document.getElementById("userDepartment")?.value||"").trim();
     const permissions={pages:getSelectedUserPermissions(),actions:getSelectedUserActionPermissions(),reports:getSelectedUserReportPermissions()};
+
+    // Property-level User Management is intentionally restricted to the
+    // currently assigned property. It cannot create/edit global Admin users.
+    if(currentUser.role!=="Admin"){
+        propertyId=currentPropertyId||"";
+        if(!propertyId){
+            showUserError("No property is assigned to your account.");
+            return;
+        }
+        if(role==="Admin"){
+            showUserError("Property-level User Management cannot create an Admin account.");
+            return;
+        }
+        if(editingUserId){
+            const target=users.find(u=>u.id===editingUserId);
+            if(!canManageUserRecord(target)){
+                showUserError("You can only manage users assigned to your current property.");
+                return;
+            }
+            if(target?.role==="Admin"){
+                showUserError("Property-level User Management cannot modify an Admin account.");
+                return;
+            }
+        }
+    }
 
 
     document.getElementById("userError")
@@ -4820,8 +4917,10 @@ function hasAnotherActiveAdmin(excludeId){
 
 function toggleUserStatus(id){
 
-    if(!requireRole("Admin"))
+    if(!canManageUsers()){
+        alert("Access denied. User Management rights are required.");
         return;
+    }
 
 
     const user=
@@ -4831,6 +4930,10 @@ function toggleUserStatus(id){
 
     if(!user) return;
 
+    if(!canManageUserRecord(user)){
+        alert("Access denied. You can only manage users assigned to your property.");
+        return;
+    }
 
     if(user.id===currentUser.id){
 
@@ -4883,8 +4986,10 @@ function toggleUserStatus(id){
 
 function deleteUser(id){
 
-    if(!requireRole("Admin"))
+    if(!canManageUsers()){
+        alert("Access denied. User Management rights are required.");
         return;
+    }
 
 
     const user=
@@ -4893,6 +4998,11 @@ function deleteUser(id){
         );
 
     if(!user) return;
+
+    if(!canManageUserRecord(user)){
+        alert("Access denied. You can only manage users assigned to your property.");
+        return;
+    }
 
 
     if(user.id===currentUser.id){
