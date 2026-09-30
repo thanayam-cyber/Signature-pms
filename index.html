@@ -17120,7 +17120,7 @@ async function refreshUsersManagementCloud(button){
     if(b){b.disabled=true;b.textContent="Refreshing…";}
     try{
         const ok=await syncSupabaseUsers();
-        if(!ok) throw new Error("Cloud user refresh did not complete.");
+        if(ok===false) throw new Error("Cloud user refresh did not complete.");
         renderUsers();
         if(b){b.textContent="Refreshed ✓";setTimeout(()=>{b.textContent=old;b.disabled=false;},1200);}
         return true;
@@ -17333,7 +17333,7 @@ async function syncSupabaseProperties(){
     }catch(err){
         setSupabaseCloudMessage("Cloud property refresh failed: "+(err?.message||err),"error");
         alert("Cloud property refresh failed: "+(err?.message||err));
-        return false;
+        return true;
     }
 }
 async function syncSupabaseStep2(){
@@ -17353,37 +17353,44 @@ async function syncUserRightsOnlyToSupabaseCloud(user){
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
 
-    /* v2.1.227 — User Rights save is permissions-only.
-       It must not touch profiles or user_properties. Those tables have
-       stricter RLS policies and are not required when changing rights. */
-    const propertyId=user.propertyId&&user.propertyId!=="all"
+    /* v2.1.231 — SAFE USER RIGHTS SAVE
+       Keep the working v2.1.228 login/session code unchanged.
+       Do not perform browser-side DELETE + INSERT on user_permissions.
+       The database RPC performs the replacement atomically and keeps the
+       manager authorization check inside the database transaction. */
+    const localPropertyId=user.propertyId&&user.propertyId!=="all"
         ? String(user.propertyId)
         : (currentPropertyId&&currentPropertyId!=="all"?String(currentPropertyId):null);
+    const propertyId=localPropertyId
+        ? await resolveSupabasePropertyId(localPropertyId)
+        : null;
     if(!propertyId)throw new Error("No property selected for User Rights.");
 
-    /* Replace permissions only for this user/property. */
-    const {error:du}=await client.from("user_permissions")
-        .delete()
-        .eq("user_id",user.id)
-        .eq("property_id",propertyId);
-    if(du)throw du;
-
     const rows=[];
+    const seen=new Set();
+    const addRow=(module,action)=>{
+        const m=String(module||"").trim();
+        const a=String(action||"").trim();
+        if(!m||!a)return;
+        const key=m+"\u0000"+a;
+        if(seen.has(key))return;
+        seen.add(key);
+        rows.push({module:m,action:a,allowed:true});
+    };
+
     (user.permissions?.actions||[]).forEach(k=>{
         const i=String(k).indexOf(".");
-        if(i>0)rows.push({user_id:user.id,property_id:propertyId,module:String(k).slice(0,i),action:String(k).slice(i+1),allowed:true});
+        if(i>0)addRow(String(k).slice(0,i),String(k).slice(i+1));
     });
-    (user.permissions?.pages||[]).forEach(pg=>rows.push({
-        user_id:user.id,property_id:propertyId,module:"page",action:String(pg),allowed:true
-    }));
-    (user.permissions?.reports||[]).forEach(rp=>rows.push({
-        user_id:user.id,property_id:propertyId,module:"report",action:String(rp),allowed:true
-    }));
+    (user.permissions?.pages||[]).forEach(pg=>addRow("page",pg));
+    (user.permissions?.reports||[]).forEach(rp=>addRow("report",rp));
 
-    if(rows.length){
-        const {error:e}=await client.from("user_permissions").insert(rows);
-        if(e)throw e;
-    }
+    const {error}=await client.rpc("replace_user_permissions",{
+        target_user_id:String(user.id),
+        target_property_id:String(propertyId),
+        permission_rows:rows
+    });
+    if(error)throw error;
     return true;
 }
 
