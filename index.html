@@ -234,7 +234,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 }
 </style><style id="operations-budget-style">#operationsBudgetPanel .input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:7px;background:#fff;font-size:12px}#operationsBudgetPanel table input,#operationsBudgetPanel table select{width:72px;padding:5px;border:1px solid #d1d5db;border-radius:5px;font-size:11px}#operationsBudgetPanel table select{width:105px}#operationsBudgetPanel .ob-total{font-weight:700;white-space:nowrap}</style><!-- CLEAN REBUILD: v14 confirmed working base; centralized Supabase Master Admin normalization only. -->
 </head>
-<body data-customer-build="true" data-pms-patch="v2.1.206-property-user-management">
+<body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
 ========================================================= -->
@@ -243,7 +243,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="auth-brand">
 <h1>Signature</h1>
 <p>PMS &amp; POS</p>
-<small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.206</small>
+<small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.209</small>
 </div>
 <!-- LOGIN -->
 <div id="loginView" style="display: block;">
@@ -1569,7 +1569,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-primary" onclick="safeOpenUserModal()">
                 + Create User
             </button>
-<button class="btn btn-secondary" onclick="syncSupabaseUsers()">Cloud Refresh</button>
+<button class="btn btn-secondary" id="usersCloudRefreshBtn" onclick="refreshUsersManagementCloud(this)">Cloud Refresh</button>
 </div>
 <div class="summary-box" style="margin-bottom:15px">
 <div style="display:flex;gap:20px;flex-wrap:wrap">
@@ -1607,49 +1607,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </tr>
 </thead>
 <tbody id="usersTable"></tbody>
-</table>
-</div>
-</div>
-<div class="section">
-<h3 style="margin-top:0">Role Access</h3>
-<div class="table-wrap">
-<table>
-<thead>
-<tr>
-<th>Role</th>
-<th>Access</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Admin</strong></td>
-<td>Full PMS, POS, Reports, Settings &amp; Users</td>
-</tr>
-<tr>
-<td><strong>Manager</strong></td>
-<td>Full operational PMS, POS, Reports &amp; Settings</td>
-</tr>
-<tr>
-<td><strong>Front Office</strong></td>
-<td>Dashboard, Reservations, Rooms, Check-In, Check-Out, Folios &amp; Payments</td>
-</tr>
-<tr>
-<td><strong>Housekeeping</strong></td>
-<td>Dashboard &amp; Rooms</td>
-</tr>
-<tr>
-<td><strong>Cashier</strong></td>
-<td>Dashboard, Folios, POS, Payments &amp; Reports</td>
-</tr>
-<tr>
-<td><strong>Viewer</strong></td>
-<td>Dashboard, Reservations, Rooms &amp; Reports</td>
-</tr>
-<tr>
-<td><strong>Department Supervisor</strong></td>
-<td>HR Attendance only — assigned department employees</td>
-</tr>
-</tbody>
 </table>
 </div>
 </div>
@@ -1944,11 +1901,11 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div class="section" style="margin-top:16px;padding:14px;background:#f8faf9">
-<div class="section-header" style="margin-bottom:10px"><div><strong>Individual User Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Click the modules this user can access. These rights override the role template.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(true)" type="button">Select All</button><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(false)" type="button">Clear All</button></div></div>
+<div class="section-header" style="margin-bottom:10px"><div><strong>Individual User Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Assign the exact modules this user can access. Access is controlled by these rights, not by the role name.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(true)" type="button">Select All</button><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(false)" type="button">Clear All</button></div></div>
 <div id="userPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
 </div>
 <div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Module Action Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Expand Reservations, Restaurant POS, Cashier, Purchasing, or HR &amp; Payroll to assign individual action rights.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(true)" type="button">Select All Actions</button><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(false)" type="button">Clear Actions</button></div></div><div id="userActionPermissionsGrid"></div></div>
-<div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Report Access</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Select exactly which reports this user can view or print.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(true)" type="button">Select All Reports</button><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(false)" type="button">Clear Reports</button></div></div><div id="userReportPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+<div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Report Access</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Select exactly which reports this user can view or print. Report access is independent of the user role.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(true)" type="button">Select All Reports</button><button class="btn btn-secondary btn-small" onclick="setAllUserReportPermissions(false)" type="button">Clear Reports</button></div></div><div id="userReportPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
 </div>
 <div class="user-error" id="userError"></div>
 <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
@@ -3355,7 +3312,19 @@ function showPMS(){
 
     renderAll();
 
-    const firstPage="dashboard";
+    // v2.1.210 — choose the first page the authenticated user is actually
+    // allowed to open. The HTML template has Settings as the fallback active
+    // page, so a restricted user could otherwise appear on Settings after
+    // refresh when Dashboard was not assigned to that user.
+    const landingPages=[
+        "dashboard","frontoffice","reservations","guests","rooms",
+        "availability","checkin","checkout","folios","pmrooms",
+        "pos","experiences","eventbookings","payments","reports",
+        "nightaudit","accounting","purchasing","stores","hr","users","settings"
+    ];
+    const firstPage=landingPages.find(p=>{
+        try{return requireAccess(p)===true;}catch(e){return false;}
+    }) || "settings";
 
     showPage(firstPage);
 
@@ -3877,10 +3846,11 @@ function canAccessPage(page){
 
     const perms=getUserPermissions(currentUser);
     if(page==="reports"){
-        // Reports navigation requires both the Reports module right and at least
-        // one explicitly assigned report. Existing report-level controls below
-        // continue to govern each individual report.
-        return perms.pages.includes("reports") && getUserReportPermissions(currentUser).length>0;
+        // Report permissions are now fully granular. Assigning one or more
+        // reports is sufficient to expose the Reports module; the separate
+        // page checkbox is not required. Individual reports remain protected
+        // by canAccessReport().
+        return getUserReportPermissions(currentUser).length>0;
     }
     if(perms.pages.includes(page)) return true;
 
@@ -4090,8 +4060,9 @@ function canManageUserRecord(user){
     if(!canManageUsers() || !user) return false;
     if(currentUser.role==="Admin") return true;
     if(user.role==="Admin") return false;
-    const ids=Array.isArray(user.propertyId)?user.propertyId:[user.propertyId];
-    return ids.some(id=>String(id)===String(currentPropertyId));
+    const managerPropertyIds=[...(Array.isArray(currentUser.propertyIds)?currentUser.propertyIds:[]),...(Array.isArray(currentUser.propertyId)?currentUser.propertyId:(currentUser.propertyId?[currentUser.propertyId]:[])),currentPropertyId].filter(Boolean).map(String);
+    const userPropertyIds=[...(Array.isArray(user.propertyIds)?user.propertyIds:[]),...(Array.isArray(user.propertyId)?user.propertyId:(user.propertyId?[user.propertyId]:[]))].filter(Boolean).map(String);
+    return userPropertyIds.some(id=>managerPropertyIds.includes(id));
 }
 function userPropertyIds(user){
     if(!user) return [];
@@ -4122,17 +4093,26 @@ function renderUsers(){
 
 
     users=getStoredUsers();
-    const visibleUsers=currentUser.role==="Admin"
-        ? users
-        : users.filter(u=>canManageUserRecord(u));
 
-    // The authenticated user must always be represented in the management list.
-    // If an old/local session exists but its user record was lost, restore only
-    // that session user rather than creating any unrelated/default accounts.
-    if(currentUser && currentUser.id && !users.some(u=>u.id===currentUser.id)){
+    // Always keep the authenticated cloud user in the local directory before
+    // calculating visibility. Older local state can otherwise leave the current
+    // property manager missing from the table.
+    if(currentUser && currentUser.id && !users.some(u=>String(u.id)===String(currentUser.id))){
         users.push({...currentUser});
         saveUsers();
     }
+
+    /* User Management is property-scoped by the property currently selected.
+       Admin can switch between all properties, but the user table must show
+       only users assigned to the selected property. Non-Admin users are always
+       restricted to their assigned/current property as well. */
+    const selectedPropertyId=String(currentPropertyId||"");
+    const visibleUsers=currentUser.role==="Admin"
+        ? users.filter(u=>{
+            const ids=userPropertyIds(u).map(String);
+            return selectedPropertyId ? ids.includes(selectedPropertyId) : false;
+          })
+        : users.filter(u=>canManageUserRecord(u) && (!selectedPropertyId || userPropertyIds(u).map(String).includes(selectedPropertyId)));
 
     document.getElementById("usersTotal").textContent=
         visibleUsers.length;
@@ -4337,7 +4317,42 @@ function safeOpenUserModal(userId=null){
     }
 }
 
-function openUserModal(userId=null){
+async function refreshUserPermissionsBeforeEdit(userId){
+    if(!userId) return null;
+    try{
+        const client=initSupabaseClient();
+        if(!client || !String(userId).includes('-')) return null;
+        const {data:{session}}=await client.auth.getSession();
+        if(!session?.user) return null;
+        let query=client
+            .from('user_permissions')
+            .select('id,user_id,property_id,module,action,allowed')
+            .eq('user_id',userId)
+            .eq('allowed',true);
+        // Rights are property-scoped. Read only the rights for the hotel
+        // currently being managed, so another property's rights cannot
+        // overwrite this edit form.
+        if(currentPropertyId && currentPropertyId!=="all") query=query.eq('property_id',currentPropertyId);
+        const {data:rows,error}=await query;
+        if(error) throw error;
+        const u=users.find(x=>String(x.id)===String(userId));
+        if(!u) return null;
+        const allowed=Array.isArray(rows)?rows:[];
+        u.permissions={
+            pages:[...new Set(allowed.filter(x=>x.module==='page').map(x=>x.action))],
+            actions:[...new Set(allowed.filter(x=>x.module!=='page'&&x.module!=='report').map(x=>String(x.module)+'.'+String(x.action)))],
+            reports:[...new Set(allowed.filter(x=>x.module==='report').map(x=>x.action))]
+        };
+        u.cloudManaged=true;
+        try{ window.signaturePMSState?.saveUsers?.(); }catch(e){}
+        return u.permissions;
+    }catch(err){
+        console.warn('Cloud user permissions read before edit failed:',err);
+        return null;
+    }
+}
+
+async function openUserModal(userId=null){
 
     if(!canManageUsers()){
         alert("Access denied. User Management rights are required.");
@@ -4407,9 +4422,14 @@ function openUserModal(userId=null){
         document.getElementById("userPasswordHint")
             .textContent=
             "Leave password blank to keep the existing password.";
-        renderUserPermissionCheckboxes(getUserPermissions(user).pages);
-    renderUserActionPermissionCheckboxes(getUserPermissions(user).actions);
-    renderUserReportPermissionCheckboxes(user?.permissions?.reports || []);
+
+        // v2.1.221: User Management Edit must display the authoritative
+        // Supabase rights, not a stale/empty browser copy of the user.
+        await refreshUserPermissionsBeforeEdit(userId);
+        const freshUser=users.find(u=>String(u.id)===String(userId))||user;
+        renderUserPermissionCheckboxes(getUserPermissions(freshUser).pages);
+    renderUserActionPermissionCheckboxes(getUserPermissions(freshUser).actions);
+    renderUserReportPermissionCheckboxes(freshUser?.permissions?.reports || []);
 
     }else{
 
@@ -4430,6 +4450,7 @@ function openUserModal(userId=null){
 
         renderUserPermissionCheckboxes([]);
         renderUserActionPermissionCheckboxes([]);
+        renderUserReportPermissionCheckboxes([]);
 
     }
 
@@ -4447,6 +4468,9 @@ function openUserModal(userId=null){
         "#userModal .password-wrap button"
     ).textContent="Show";
 
+
+    // v2.1.209 — ensure Report Access is populated for both Create and Edit.
+    renderUserReportPermissionCheckboxes(getSelectedUserReportPermissions());
 
     document.getElementById("userModal")
         .classList.add("show");
@@ -4865,12 +4889,19 @@ async function saveUser(){
     }
 
 
-    saveUsers();
-
+    /* Cloud Auth users are the source of truth for User Rights.
+       Do not report a successful save when the Supabase permission write failed. */
     if(String(user.id||"").includes("-")){
-        try{ await syncCurrentUserToSupabaseCloud(user,password); }
-        catch(cloudErr){ console.warn("Supabase user sync skipped",cloudErr); }
+        try{
+            await syncUserRightsOnlyToSupabaseCloud(user);
+        }catch(cloudErr){
+            console.error("Supabase user rights sync failed",cloudErr);
+            showUserError("User rights could not be saved to Supabase: "+(cloudErr?.message||cloudErr));
+            return;
+        }
     }
+
+    saveUsers();
 
 
     /*
@@ -16997,8 +17028,14 @@ async function fetchCloudContext(){
     const {data:userProps,error:userPropsError}=await client.from("user_properties").select("id,user_id,property_id,is_primary,created_at").eq("user_id",authUser.id);
     if(userPropsError)throw userPropsError;
     const propertyIds=[...new Set((userProps||[]).map(x=>x.property_id).filter(Boolean))];
+    const normalizedRole=normalizeCloudRole(profile,authUser);
+    const isAdmin=normalizedRole==="Admin";
     let propertyRows=[];
-    if(propertyIds.length){
+    if(isAdmin){
+        const {data,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email");
+        if(error)throw error;
+        propertyRows=data||[];
+    }else if(propertyIds.length){
         const {data,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email").in("id",propertyIds);
         if(error)throw error;
         propertyRows=data||[];
@@ -17041,7 +17078,7 @@ function applyCloudContext(ctx){
         role:normalizeCloudRole(profile,authUser),
         department:profile.department||"",
         active:((String(profile.status||"active").toLowerCase()==="active") || String(authUser?.email||"").toLowerCase()==="thanayam@gmail.com"),
-        propertyId:primary||((normalizeCloudRole(profile,authUser)==="Admin")?"all":assignedIds[0]||state.currentPropertyId),
+        propertyId:(normalizeCloudRole(profile,authUser)==="Admin")?"all":(primary||assignedIds[0]||state.currentPropertyId),
         propertyIds:assignedIds,
         permissions:{pages:[...new Set(pagePerms)],actions:[...new Set(actionPerms)],reports:[...new Set(reportPerms)]},
         cloudManaged:true
@@ -17077,30 +17114,124 @@ async function hydrateCloudAfterLocalLogin(username,password){
         return false;
     }
 }
+async function refreshUsersManagementCloud(button){
+    const b=button||document.getElementById("usersCloudRefreshBtn");
+    const old=b?.textContent||"Cloud Refresh";
+    if(b){b.disabled=true;b.textContent="Refreshing…";}
+    try{
+        const ok=await syncSupabaseUsers();
+        if(!ok) throw new Error("Cloud user refresh did not complete.");
+        renderUsers();
+        if(b){b.textContent="Refreshed ✓";setTimeout(()=>{b.textContent=old;b.disabled=false;},1200);}
+        return true;
+    }catch(err){
+        console.error("User Management Cloud Refresh failed:",err);
+        alert("Cloud users refresh failed: "+(err?.message||err));
+        if(b){b.textContent=old;b.disabled=false;}
+        return false;
+    }
+}
+
 async function syncSupabaseUsers(){
     const state=window.signaturePMSState;if(!state)throw new Error("PMS state bridge is unavailable.");
-    if(state.currentUser?.role!=="Admin"){alert("Admin access required.");return;}
+    if(!canManageUsers()){alert("Users Management rights are required.");return false;}
     const client=initSupabaseClient();
-    if(!client){alert("Supabase client unavailable.");return;}
+    if(!client){alert("Supabase client unavailable.");return false;}
     try{
         const {data:{session}}=await client.auth.getSession();
         if(!session?.user)throw new Error("Please sign in with Supabase first.");
-        const {data:profiles,error}=await client.from("profiles").select("id,username,full_name,role,department,status");
-        if(error)throw error;
-        const {data:ups,error:upErr}=await client.from("user_properties").select("id,user_id,property_id,is_primary,created_at");
-        if(upErr)throw upErr;
-        const {data:perms,error:permErr}=await client.from("user_permissions").select("id,user_id,property_id,module,action,allowed").eq("allowed",true);
-        if(permErr)throw permErr;
-        (profiles||[]).forEach(pr=>{
-            const ua=(ups||[]).filter(x=>x.user_id===pr.id);
-            const pp=(perms||[]).filter(x=>x.user_id===pr.id);
-            const ex=state.users.find(u=>String(u.id)===String(pr.id));
-            const u={...(ex||{}),id:pr.id,authUserId:pr.id,username:pr.username||ex?.username||"",name:pr.full_name||pr.username||"",fullName:pr.full_name||pr.username||"",role:normalizeCloudRole(pr,{email:pr.username}),department:pr.department||"",active:String(pr.status||"active").toLowerCase()==="active",propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||((normalizeCloudRole(pr,{email:pr.username})==="Admin")?"all":null),propertyIds:ua.map(x=>x.property_id).filter(Boolean),permissions:{pages:pp.filter(x=>x.module==="page").map(x=>x.action),actions:pp.filter(x=>x.module!=="page"&&x.module!=="report").map(x=>x.module+"."+x.action),reports:pp.filter(x=>x.module==="report").map(x=>x.action)},cloudManaged:true};
-            const i=state.users.findIndex(x=>String(x.id)===String(pr.id));if(i>=0)state.users[i]=u;else state.users.push(u);
+
+        // IMPORTANT: use the server-side property-scoped directory function.
+        // This avoids exposing the full profiles/user_properties directory to
+        // a property manager and restores the original hotel-user hierarchy.
+        /* v2.1.228: RPC is preferred, but Cloud Refresh must still work if the
+           property-directory RPC is missing/stale. Fall back to the RLS-scoped
+           profiles + user_properties reads. These reads are already protected
+           by can_manage_property_user() and therefore remain property-scoped. */
+        let directory=null;
+        const {data:rpcDirectory,error:dirErr}=await client.rpc("get_property_user_directory");
+        if(!dirErr && Array.isArray(rpcDirectory) && rpcDirectory.length){
+            directory=rpcDirectory;
+        }else{
+            const {data:profileRows,error:profileErr}=await client
+                .from("profiles")
+                .select("id,username,full_name,role,department,status")
+                .order("username");
+            if(profileErr) throw (dirErr||profileErr);
+            const {data:assignmentRows,error:assignmentErr}=await client
+                .from("user_properties")
+                .select("user_id,property_id,is_primary");
+            if(assignmentErr) throw assignmentErr;
+            const assigned=(assignmentRows||[]).filter(x=>x.property_id);
+            const rows=[];
+            (profileRows||[]).forEach(p=>{
+                const ups=assigned.filter(x=>String(x.user_id)===String(p.id));
+                ups.forEach(x=>rows.push({...p,property_id:x.property_id,is_primary:x.is_primary}));
+            });
+            directory=rows;
+        }
+        if(!Array.isArray(directory))throw new Error("User directory response is invalid.");
+
+        const visibleIds=[...new Set(directory.map(x=>String(x.id)).filter(Boolean))];
+        let perms=[];
+        if(visibleIds.length){
+            const {data:permissionRows,error:permErr}=await client
+                .from("user_permissions")
+                .select("id,user_id,property_id,module,action,allowed")
+                .eq("allowed",true)
+                .in("user_id",visibleIds);
+            if(permErr)throw permErr;
+            perms=permissionRows||[];
+        }
+
+        const grouped=new Map();
+        (directory||[]).forEach(row=>{
+            const id=String(row.id);
+            if(!grouped.has(id))grouped.set(id,[]);
+            grouped.get(id).push(row);
         });
+
+        grouped.forEach((rows,id)=>{
+            const first=rows[0];
+            const pr={id:first.id,username:first.username,full_name:first.full_name,
+                role:first.role,department:first.department,status:first.status};
+            const ua=rows.map(x=>({property_id:x.property_id,is_primary:x.is_primary})).filter(x=>x.property_id);
+            const pp=perms.filter(x=>String(x.user_id)===id);
+            const role=normalizeCloudRole(pr,{email:pr.username});
+            const ex=state.users.find(u=>String(u.id)===id);
+            const u={...(ex||{}),id:pr.id,authUserId:pr.id,
+                username:pr.username||ex?.username||"",
+                name:pr.full_name||pr.username||"",fullName:pr.full_name||pr.username||"",
+                role,department:pr.department||"",
+                active:String(pr.status||"active").toLowerCase()==="active",
+                propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||((role==="Admin")?"all":null),
+                propertyIds:ua.map(x=>x.property_id).filter(Boolean),
+                permissions:{
+                    pages:pp.filter(x=>x.module==="page").map(x=>x.action),
+                    actions:pp.filter(x=>x.module!=="page"&&x.module!=="report").map(x=>x.module+"."+x.action),
+                    reports:pp.filter(x=>x.module==="report").map(x=>x.action)
+                },cloudManaged:true};
+            const i=state.users.findIndex(x=>String(x.id)===id);
+            if(i>=0)state.users[i]=u;else state.users.push(u);
+        });
+
+        const isAdmin=state.currentUser?.role==="Admin";
+        if(isAdmin){
+            const cloudIds=new Set(visibleIds);
+            state.users=state.users.filter(u=>!u.cloudManaged||cloudIds.has(String(u.id)));
+        }else{
+            // Remove stale cloud-managed users that no longer belong to the
+            // manager's property, while preserving local/non-cloud records.
+            const cloudIds=new Set(visibleIds);
+            state.users=state.users.filter(u=>!u.cloudManaged||cloudIds.has(String(u.id)));
+        }
+
+        if(state.currentUser?.id && !state.users.some(u=>String(u.id)===String(state.currentUser.id))){
+            state.users.push({...state.currentUser});
+        }
         state.saveUsers();renderUsers();
         setSupabaseCloudBadge("Connected","green");
-        setSupabaseCloudMessage("Cloud users and permissions refreshed successfully.","success");
+        setSupabaseCloudMessage(isAdmin?"Cloud users and permissions refreshed successfully.":"Property users and permissions refreshed successfully.","success");
         return true;
     }catch(err){
         setSupabaseCloudMessage("Cloud users refresh failed: "+(err?.message||err),"error");
@@ -17108,6 +17239,7 @@ async function syncSupabaseUsers(){
         return false;
     }
 }
+
 async function repairUnmappedLocalPropertiesToCloud(){
     const state=window.signaturePMSState;
     const client=initSupabaseClient();
@@ -17214,17 +17346,94 @@ async function syncSupabaseStep2(){
         setSupabaseCloudMessage("Step 2 cloud sync completed. Local operational data was preserved.","success");
     }catch(err){console.warn(err);}
 }
+async function syncUserRightsOnlyToSupabaseCloud(user){
+    const client=initSupabaseClient();
+    if(!client)throw new Error("Supabase client unavailable.");
+    const {data:{session}}=await client.auth.getSession();
+    if(!session?.user)throw new Error("Please sign in with Supabase first.");
+    if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
+
+    /* v2.1.227 — User Rights save is permissions-only.
+       It must not touch profiles or user_properties. Those tables have
+       stricter RLS policies and are not required when changing rights. */
+    const propertyId=user.propertyId&&user.propertyId!=="all"
+        ? String(user.propertyId)
+        : (currentPropertyId&&currentPropertyId!=="all"?String(currentPropertyId):null);
+    if(!propertyId)throw new Error("No property selected for User Rights.");
+
+    /* Replace permissions only for this user/property. */
+    const {error:du}=await client.from("user_permissions")
+        .delete()
+        .eq("user_id",user.id)
+        .eq("property_id",propertyId);
+    if(du)throw du;
+
+    const rows=[];
+    (user.permissions?.actions||[]).forEach(k=>{
+        const i=String(k).indexOf(".");
+        if(i>0)rows.push({user_id:user.id,property_id:propertyId,module:String(k).slice(0,i),action:String(k).slice(i+1),allowed:true});
+    });
+    (user.permissions?.pages||[]).forEach(pg=>rows.push({
+        user_id:user.id,property_id:propertyId,module:"page",action:String(pg),allowed:true
+    }));
+    (user.permissions?.reports||[]).forEach(rp=>rows.push({
+        user_id:user.id,property_id:propertyId,module:"report",action:String(rp),allowed:true
+    }));
+
+    if(rows.length){
+        const {error:e}=await client.from("user_permissions").insert(rows);
+        if(e)throw e;
+    }
+    return true;
+}
+
 async function syncCurrentUserToSupabaseCloud(user,password){
     const client=initSupabaseClient();
     if(!client)throw new Error("Supabase client unavailable.");
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user)throw new Error("Please sign in with Supabase first.");
     if(!user?.id||!String(user.id).includes("-"))throw new Error("This user is not a Supabase Auth user yet.");
-    const {error:profileError}=await client.from("profiles").upsert({id:user.id,username:user.username,full_name:user.name||user.fullName||user.username,role:user.role,department:user.department||null,status:user.active?"Active":"Inactive"},{onConflict:"id"});
-    if(profileError)throw profileError;
+    /*
+       Property Managers / Reception users may be allowed to edit another
+       user's rights, but their Supabase session is intentionally not allowed
+       by RLS to update the profiles table. User Rights saving therefore must
+       not require a profiles upsert. Admins may still update profiles, and a
+       user may update their own profile when permitted.
+    */
+    const canUpdateProfile = currentUser?.role === "Admin" || String(user.id) === String(currentUser?.id);
+    if(canUpdateProfile){
+        const {error:profileError}=await client.from("profiles").upsert({
+            id:user.id,
+            username:user.username,
+            full_name:user.name||user.fullName||user.username,
+            role:user.role,
+            department:user.department||null,
+            status:user.active?"Active":"Inactive"
+        },{onConflict:"id"});
+        if(profileError)throw profileError;
+    }
     const propertyId=user.propertyId&&user.propertyId!=="all"?user.propertyId:null;
-    const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);if(dp)throw dp;
-    if(propertyId){const {error:e}=await client.from("user_properties").insert({user_id:user.id,property_id:propertyId,is_primary:true});if(e)throw e;}
+
+    /* v2.1.222 — never remove a property assignment before re-authorizing
+       the same property. Property-manager RLS checks the target's current
+       property membership; deleting it first makes the subsequent INSERT
+       fail and the user disappears from the property-scoped directory. */
+    if(propertyId){
+        const {error:up}=await client.from("user_properties").upsert(
+            {user_id:user.id,property_id:propertyId,is_primary:true},
+            {onConflict:"user_id,property_id"}
+        );
+        if(up)throw up;
+        const {error:dp}=await client.from("user_properties")
+            .delete()
+            .eq("user_id",user.id)
+            .neq("property_id",propertyId);
+        if(dp)throw dp;
+    }else{
+        const {error:dp}=await client.from("user_properties").delete().eq("user_id",user.id);
+        if(dp)throw dp;
+    }
+
     const {error:du}=await client.from("user_permissions").delete().eq("user_id",user.id);if(du)throw du;
     const rows=[];
     (user.permissions?.actions||[]).forEach(k=>{const i=String(k).indexOf(".");if(i>0)rows.push({user_id:user.id,property_id:propertyId,module:String(k).slice(0,i),action:String(k).slice(i+1),allowed:true});});
@@ -18975,10 +19184,28 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(!client) throw new Error('Supabase client unavailable.');
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user) throw new Error('Supabase session unavailable.');
+    const {data:profile,error:profileErr}=await client.from('profiles')
+      .select('id,username,role,status').eq('id',session.user.id).maybeSingle();
+    if(profileErr) throw profileErr;
+    const isAdmin=String(profile?.role||'').toLowerCase().replace(/\s+/g,'')==='admin' || String(profile?.username||'').toLowerCase()==='admin';
     const {data:ups,error:ue}=await client.from('user_properties')
       .select('id,user_id,property_id,is_primary,created_at').eq('user_id',session.user.id);
     if(ue) throw ue;
-    const ids=[...new Set((ups||[]).map(x=>x.property_id).filter(Boolean))];
+    let ids=[];
+    if(isAdmin){
+      const {data:allRows,error}=await client.from('properties').select('id,code,name,address,city,country,phone,email');
+      if(error) throw error;
+      ids=(allRows||[]).map(x=>x.id).filter(Boolean);
+      const state=window.signaturePMSState;
+      if(!state) throw new Error('PMS state bridge unavailable.');
+      state.properties=cloudOnlyProperties(allRows||[]);
+      state.saveProperties();
+      const primary=(ups||[]).find(x=>x.is_primary)?.property_id || ids[0] || null;
+      if(primary){ const p=state.properties.find(x=>String(x.id)===String(primary)); if(p){ state.currentPropertyId=p.id; state.loadCurrentPropertyData(); } }
+      else state.currentPropertyId=null;
+      return {rows:allRows||[],ups:ups||[],primary};
+    }
+    ids=[...new Set((ups||[]).map(x=>x.property_id).filter(Boolean))];
     let rows=[];
     if(ids.length){
       const {data,error}=await client.from('properties')
@@ -19010,19 +19237,75 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   async function cloudOnlyRefreshUsers(){
+    /* v2.1.220: the delayed cloud refresh must use the same authoritative
+       property-scoped directory as the Users Management Cloud Refresh.
+       The previous direct profiles/user_properties read could replace the
+       correct directory with an incomplete list after login. */
+    const state=window.signaturePMSState;
+    if(!state) throw new Error('PMS state bridge unavailable.');
     const client=initSupabaseClient();
     if(!client) throw new Error('Supabase client unavailable.');
-    const {data:profiles,error}=await client.from('profiles')
-      .select('id,username,full_name,role,department,status');
-    if(error) throw error;
-    const {data:ups,error:ue}=await client.from('user_properties')
-      .select('id,user_id,property_id,is_primary,created_at');
-    if(ue) throw ue;
-    const {data:perms,error:pe}=await client.from('user_permissions')
-      .select('id,user_id,property_id,module,action,allowed').eq('allowed',true);
-    if(pe) throw pe;
-    const state=window.signaturePMSState;
-    state.users=(profiles||[]).map(pr=>cloudUserFromRows(pr,(ups||[]).filter(x=>x.user_id===pr.id),(perms||[]).filter(x=>x.user_id===pr.id)));
+
+    const {data:{session}}=await client.auth.getSession();
+    if(!session?.user) throw new Error('Supabase session unavailable.');
+
+    const {data:directory,error:dirErr}=await client.rpc('get_property_user_directory');
+    if(dirErr) throw dirErr;
+    if(!Array.isArray(directory)) throw new Error('User directory response is invalid.');
+
+    const visibleIds=[...new Set(directory.map(x=>String(x.id)).filter(Boolean))];
+    let perms=[];
+    if(visibleIds.length){
+      const {data:permissionRows,error:permErr}=await client
+        .from('user_permissions')
+        .select('id,user_id,property_id,module,action,allowed')
+        .eq('allowed',true)
+        .in('user_id',visibleIds);
+      if(permErr) throw permErr;
+      perms=permissionRows||[];
+    }
+
+    const grouped=new Map();
+    directory.forEach(row=>{
+      const id=String(row.id);
+      if(!grouped.has(id)) grouped.set(id,[]);
+      grouped.get(id).push(row);
+    });
+
+    const cloudUsers=[];
+    grouped.forEach((rows,id)=>{
+      const first=rows[0];
+      const ua=rows.map(x=>({property_id:x.property_id,is_primary:x.is_primary}))
+        .filter(x=>x.property_id);
+      const pp=perms.filter(x=>String(x.user_id)===id);
+      const role=normalizeCloudRole(first,{email:first.username});
+      const existing=(state.users||[]).find(u=>String(u.id)===id);
+      cloudUsers.push({
+        ...(existing||{}),
+        id:first.id,
+        authUserId:first.id,
+        username:first.username||existing?.username||'',
+        name:first.full_name||first.username||'',
+        fullName:first.full_name||first.username||'',
+        role,
+        department:first.department||'',
+        active:String(first.status||'active').toLowerCase()==='active',
+        propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||((role==='Admin')?'all':null),
+        propertyIds:ua.map(x=>x.property_id).filter(Boolean),
+        permissions:{
+          pages:pp.filter(x=>x.module==='page').map(x=>x.action),
+          actions:pp.filter(x=>x.module!=='page'&&x.module!=='report').map(x=>x.module+'.'+x.action),
+          reports:pp.filter(x=>x.module==='report').map(x=>x.action)
+        },
+        cloudManaged:true
+      });
+    });
+
+    const localOnly=(state.users||[]).filter(u=>!u.cloudManaged);
+    state.users=[...localOnly,...cloudUsers];
+    if(state.currentUser?.id && !state.users.some(u=>String(u.id)===String(state.currentUser.id))){
+      state.users.push({...state.currentUser});
+    }
     state.saveUsers();
     return state.users;
   }
@@ -19071,7 +19354,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       folios=Array.isArray(folios)?folios.filter(f=>!f.reservationId||ids.has(String(f.reservationId))):[];
       sales=Array.isArray(sales)?sales.filter(x=>!x.reservationId||ids.has(String(x.reservationId))):[];
       payments=Array.isArray(payments)?payments.filter(x=>!x.reservationId||ids.has(String(x.reservationId))):[];
-      saveData();renderAll();
+      /* Do not call renderAll() here. Reservation auto-sync runs every few
+         seconds; rendering the whole PMS here made User Management appear to
+         auto-refresh even when the user/property list had not changed. The
+         caller will render only when the reservation fingerprint changes. */
+      saveData();
       setSupabaseCloudMessage('Cloud reservations are the source of truth: '+rows.length+' reservation(s) loaded.','success');
       return true;
     }catch(err){
@@ -19088,9 +19375,23 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return false;
   };
 
-  /* Ensure the existing Admin login refreshes the cloud-only lists. */
+  /* Ensure the existing Admin login refreshes cloud properties, while the
+     Users Management button uses the property-scoped RPC directory function
+     defined earlier. The previous v2.1.193 override replaced that function
+     with an unrestricted direct table read, so property managers could get a
+     silent RLS failure when clicking Cloud Refresh. */
   window.syncSupabaseProperties=async function(){return cloudOnlyRefreshProperties();};
-  window.syncSupabaseUsers=async function(){return cloudOnlyRefreshUsers();};
+  const propertyScopedUsersRefresh = syncSupabaseUsers;
+  window.syncSupabaseUsers=async function(){
+    try{
+      return await propertyScopedUsersRefresh();
+    }catch(err){
+      console.error('Users Management Cloud Refresh failed:',err);
+      setSupabaseCloudMessage('Cloud users refresh failed: '+(err?.message||err),'error');
+      alert('Cloud users refresh failed: '+(err?.message||err));
+      return false;
+    }
+  };
 
   /* After the original login sequence completes, force one final clean read. */
   const originalShowPMS=window.showPMS;
