@@ -5892,7 +5892,7 @@ async function saveRoomConfiguration(){
     alert("Room / unit configuration saved successfully and synchronized to the cloud.");
 }
 
-function editProperty(id){
+async function editProperty(id){
     if(!requireRole("Admin")) return;
 
     const p=properties.find(x=>x.id===id);
@@ -5917,8 +5917,8 @@ function editProperty(id){
     p.location=location.trim();
     p.roomRate=Math.max(0,Number(rate)||0);
     p.bookingTypes=String(villaAnswer).trim().toLowerCase().startsWith("y") ? ["room","villa"] : ["room"];
-    // Preserve every existing room exactly as configured. Increasing Room Count creates only the missing new rooms.
-    // Reducing Room Count never deletes or deactivates existing rooms.
+    // Room Count is the TARGET TOTAL for this property, not the number of new rooms.
+    // Keep existing configured rooms where possible and create only the missing rooms.
     if(!Array.isArray(p.rooms))p.rooms=[];
     const previousRoomCount=p.rooms.length;
     if(requestedRoomCount>previousRoomCount){
@@ -5945,9 +5945,10 @@ function editProperty(id){
                 oosReason:""
             });
         }
-    }
-    if(requestedRoomCount<previousRoomCount){
-        alert("Room Count was reduced, but existing rooms were not deleted. The property still has "+previousRoomCount+" configured rooms.");
+    }else if(requestedRoomCount<previousRoomCount){
+        // Keep the first requestedRoomCount configured rooms and remove only the excess
+        // rooms from this property's configuration. No other property's rooms are touched.
+        p.rooms=p.rooms.slice(0,requestedRoomCount);
     }
 
     saveProperties();
@@ -5955,6 +5956,37 @@ function editProperty(id){
     renderAll();
     showPage("settings");
     logAudit("PROPERTY_UPDATED",id,"Property details updated",id);
+
+    // Persist property identity + complete room configuration through the
+    // SECURITY DEFINER RPC. Browser-side properties/property_rooms writes can
+    // be silently filtered by RLS, so the RPC verifies Admin rights and then
+    // replaces the selected property's configuration atomically.
+    try{
+        const client=initSupabaseClient();
+        const authUser=await getSupabaseSessionUser();
+        const cloudId=await resolveSupabasePropertyId(String(id));
+        if(client && authUser && cloudId){
+            const roomRows=(p.rooms||[]).map(room=>({
+                room_id:String(room.id),
+                room_data:{...room,propertyId:String(cloudId)},
+                active:room.active!==false,
+                housekeeping_status:String(room.housekeepingStatus||"clean")
+            }));
+            const {error}=await client.rpc("replace_property_configuration",{
+                target_property_id:String(cloudId),
+                property_name:String(p.property||""),
+                property_address:String(p.location||""),
+                room_rows:roomRows
+            });
+            if(error) throw error;
+            setSupabaseCloudMessage("Property and room configuration synchronized successfully.","success");
+        }
+    }catch(err){
+        console.warn("Property cloud update failed:",err);
+        setSupabaseCloudMessage("Property saved locally, but cloud property/room sync failed: "+(err?.message||err),"error");
+        alert("Property saved locally, but the cloud property/room update failed: "+(err?.message||err));
+        return;
+    }
 }
 
 function deleteProperty(id){
