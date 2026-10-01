@@ -233,6 +233,93 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
  .main{margin-left:0 !important;width:100% !important;}
 }
 </style><style id="operations-budget-style">#operationsBudgetPanel .input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:7px;background:#fff;font-size:12px}#operationsBudgetPanel table input,#operationsBudgetPanel table select{width:72px;padding:5px;border:1px solid #d1d5db;border-radius:5px;font-size:11px}#operationsBudgetPanel table select{width:105px}#operationsBudgetPanel .ob-total{font-weight:700;white-space:nowrap}</style><!-- CLEAN REBUILD: v14 confirmed working base; centralized Supabase Master Admin normalization only. -->
+
+<style id="signature-pms-mobile-responsive-v239">
+/* v2.1.239 — Mobile responsive UI only. Business logic/auth/Supabase untouched. */
+@media (max-width:700px){
+  html,body{width:100%;max-width:100%;overflow-x:hidden}
+  .sidebar{
+    position:relative!important;left:auto!important;top:auto!important;bottom:auto!important;
+    width:100%!important;height:auto!important;max-height:none!important;
+    padding:8px 8px 10px!important;overflow-x:auto!important;overflow-y:hidden!important;
+    white-space:nowrap;-webkit-overflow-scrolling:touch;display:block!important;
+  }
+  .brand{
+    display:inline-block!important;vertical-align:middle!important;width:auto!important;
+    min-width:145px;padding:6px 10px 8px!important;margin:0 6px 0 0!important;
+    border-bottom:0!important;border-right:1px solid rgba(255,255,255,.12);
+  }
+  .brand h2{font-size:16px!important}.brand small{font-size:10px}
+  .nav-btn{
+    display:inline-flex!important;align-items:center!important;justify-content:center!important;
+    width:auto!important;min-height:40px!important;margin:0 3px!important;padding:9px 11px!important;
+    font-size:12px!important;border-radius:8px!important;vertical-align:middle!important;
+    white-space:nowrap;touch-action:manipulation;
+  }
+  .main{margin-left:0!important;width:100%!important;min-width:0!important}
+  .topbar{
+    padding:10px 12px!important;display:flex!important;flex-wrap:wrap!important;
+    align-items:center!important;gap:8px!important;
+  }
+  .topbar h1{font-size:18px!important;flex:1 1 100%;min-width:0}
+  .topbar-right{width:100%!important;display:flex!important;flex-direction:row!important;
+    flex-wrap:wrap!important;align-items:center!important;gap:7px!important}
+  .topbar-right #propertySwitcher{order:1!important;flex:1 1 150px!important;min-width:0!important;width:auto!important}
+  .topbar-right .current-user{order:2!important;flex:1 1 120px!important;min-width:0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .topbar-right .date-now{order:3!important;flex:1 1 120px!important;font-size:11px!important}
+  .topbar-right .btn{order:4!important;min-height:38px!important;touch-action:manipulation}
+  .content{padding:10px!important;width:100%!important;min-width:0!important;overflow-x:hidden!important}
+  .page,.section,.card,.summary-box{max-width:100%;min-width:0}
+  .section,.card,.summary-box{padding:13px!important;border-radius:10px!important}
+  .section-header{align-items:flex-start!important}
+  .section-header > *{max-width:100%}
+  .section-header .toolbar,.section-header > div:last-child{width:100%;}
+  .toolbar{gap:7px!important;max-width:100%;}
+  .toolbar > *{max-width:100%}
+  .toolbar input,.toolbar select{width:100%!important;min-width:0!important}
+  .toolbar .btn{flex:1 1 auto;min-height:40px;touch-action:manipulation}
+  .btn{min-height:40px!important;padding:9px 12px!important;touch-action:manipulation}
+  .btn-small{min-height:38px!important}
+  input,select,textarea{font-size:16px!important;min-width:0!important}
+  .form-grid{grid-template-columns:1fr!important;min-width:0!important}
+  .form-group.full{grid-column:auto!important}
+  .grid-4,.grid-3,.grid-2,.report-grid,.room-grid{grid-template-columns:1fr!important}
+  .grid-6{grid-template-columns:1fr 1fr!important}
+  .dashboard-stat .card-value,.card-value{font-size:21px!important;word-break:break-word}
+  .room-card{min-width:0!important;padding:14px!important}
+  .pos-menu{grid-template-columns:1fr!important}
+  .pos-item{min-width:0!important}
+  .overview-row{grid-template-columns:1fr!important;gap:5px!important}
+  .payment-filter{display:grid!important;grid-template-columns:1fr!important;align-items:stretch!important}
+  .payment-filter .form-group,.payment-filter .form-group.small{min-width:0!important;max-width:none!important;width:100%!important}
+  .calendar-scroll,.table-wrap{width:100%!important;max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  table{min-width:650px}
+  .pms-calendar{min-width:850px!important}
+  .modal{padding:8px!important;align-items:flex-start!important;overflow-y:auto!important}
+  .modal-box{width:100%!important;max-width:100%!important;max-height:calc(100vh - 16px)!important;
+    margin:0!important;padding:14px!important;border-radius:10px!important;overflow:auto!important}
+  .modal-header{position:sticky;top:0;background:#fff;z-index:5;padding-bottom:8px}
+  #userModal .modal-box{width:100%!important;max-width:100%!important;padding:14px!important}
+  #userModal .form-grid{grid-template-columns:1fr!important}
+  #userPermissionsGrid,#userActionPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:1fr!important}
+  .password-wrap{flex-wrap:wrap}
+  .password-wrap input{min-width:0;width:100%}
+  .auth-overlay{padding:10px!important}
+  .auth-card{width:100%!important;padding:22px!important;border-radius:12px!important}
+  .auth-brand h1{font-size:24px!important}
+  footer{padding:18px 10px!important}
+}
+@media (max-width:420px){
+  .brand{min-width:125px}
+  .nav-btn{font-size:11px!important;padding:8px 9px!important}
+  .topbar-right #propertySwitcher,.topbar-right .current-user,.topbar-right .date-now{flex:1 1 100%!important;width:100%!important}
+  .topbar-right .btn{flex:1 1 calc(50% - 4px)!important}
+  .grid-6{grid-template-columns:1fr!important}
+  .gm-kpis{grid-template-columns:1fr!important}
+  .gm-strip,.gm-ops{grid-template-columns:1fr!important}
+  .gm-kpi,.gm-strip .gm-cell,.gm-op{border-right:0!important}
+}
+</style>
 </head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
