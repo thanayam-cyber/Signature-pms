@@ -1402,6 +1402,27 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div style="font-size:11px;color:#6b7280;margin-top:8px">Rates are configured by Room Type + Meal Plan + Occupancy. The reservation will automatically use the selected room's Room Type rate. If a specific rate is blank, that room's Base Rate is used.</div>
 </div>
+<div class="section" id="salesDistributionSection">
+<div class="section-header"><div><h3>Sales &amp; Distribution</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Configure OTA channels, travel agents and the property-specific channel manager. Settings are stored separately for each property.</div></div><span class="badge badge-blue" id="salesDistributionPropertyBadge">Current Property</span></div>
+<div class="section" style="margin-top:12px;background:#f8fafc">
+<div class="section-header"><div><h4>OTA / Booking Channels</h4><div style="font-size:12px;color:#6b7280">Set commission and calculate the OTA selling rate from the direct/base rate.</div></div><button class="btn btn-secondary" type="button" onclick="addOTAChannel()">+ Add OTA</button></div>
+<div class="table-wrap"><table><thead><tr><th>Channel</th><th>Commission %</th><th>Calculation</th><th>Active</th><th>Action</th></tr></thead><tbody id="otaChannelsTable"><tr><td colspan="5" class="empty">No OTA channels configured.</td></tr></tbody></table></div>
+</div>
+<div class="section" style="margin-top:12px;background:#f8fafc">
+<div class="section-header"><div><h4>Travel Agents</h4><div style="font-size:12px;color:#6b7280">Manage property-specific travel agents and their commission terms.</div></div><button class="btn btn-secondary" type="button" onclick="addTravelAgent()">+ Add Travel Agent</button></div>
+<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Credit Terms</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td colspan="7" class="empty">No travel agents configured.</td></tr></tbody></table></div>
+</div>
+<div class="section" style="margin-top:12px;background:#f8fafc">
+<div class="section-header"><div><h4>Channel Manager</h4><div style="font-size:12px;color:#6b7280">The channel-manager subscription belongs to this property. Enter the provider and connection status here; API credentials can be connected later.</div></div></div>
+<div class="form-grid">
+<div class="form-group"><label>Channel Manager Provider</label><input id="channelManagerProvider" placeholder="e.g. SiteMinder, STAAH, Cloudbeds"/></div>
+<div class="form-group"><label>Connection Status</label><select id="channelManagerStatus"><option value="Not Connected">Not Connected</option><option value="Pending">Pending</option><option value="Connected">Connected</option><option value="Suspended">Suspended</option></select></div>
+<div class="form-group"><label>Connected Channels</label><input id="channelManagerChannels" placeholder="Booking.com, Agoda, Expedia"/></div>
+<div class="form-group"><label>Room / Rate Mapping Notes</label><input id="channelManagerMapping" placeholder="e.g. Deluxe → Deluxe / BB"/></div>
+</div>
+</div>
+<div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-primary" type="button" onclick="saveSalesDistribution()">Save Sales &amp; Distribution</button></div>
+</div>
 <div class="section" id="restaurantOutletSection"><div class="section-header"><div><h3>Restaurant / Outlet Management</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Create multiple restaurants or outlets under the same property. Each outlet has its own menu and revenue reporting.</div></div><button class="btn btn-primary" onclick="addRestaurantOutlet()">+ New Restaurant / Outlet</button></div><div id="restaurantOutletEditor"><div class="empty">No restaurant outlets configured.</div></div></div><div class="section" id="restaurantMenuSection">
 <div class="section-header">
 <div>
@@ -1434,7 +1455,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div>
 <h3>Property Management</h3>
 <div style="font-size:12px;color:#6b7280;margin-top:4px">
-                    Commercial Hotel Edition · Version 2.1.0
+                    Commercial Hotel Edition · Version 2.1.236
                 </div>
 </div>
 <div class="toolbar">
@@ -6624,6 +6645,7 @@ function loadSettings(){
     updateReservationForm();
     updateChildrenAgeFields();
     renderRoomConfiguration();
+    renderSalesDistribution();
 }
 
 function saveCommercialLicense(){
@@ -6648,6 +6670,85 @@ function saveCommercialLicense(){
     alert("Commercial license and support details saved successfully.");
 
 }
+
+function normalizeSalesDistribution(value){
+    const src=(value&&typeof value==='object')?value:{};
+    const ota=Array.isArray(src.otaChannels)?src.otaChannels:[];
+    const agents=Array.isArray(src.travelAgents)?src.travelAgents:[];
+    return {
+        otaChannels:ota.map(x=>({
+            id:String(x?.id||('ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7))),
+            name:String(x?.name||'').trim(),
+            commission:Math.max(0,Number(x?.commission||0)),
+            calculation:x?.calculation==='deduct'?'deduct':'grossup',
+            active:x?.active!==false
+        })).filter(x=>x.name),
+        travelAgents:agents.map(x=>({
+            id:String(x?.id||('agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7))),
+            name:String(x?.name||'').trim(),
+            contact:String(x?.contact||'').trim(),
+            commission:Math.max(0,Number(x?.commission||0)),
+            calculation:x?.calculation==='deduct'?'deduct':'grossup',
+            creditTerms:String(x?.creditTerms||'').trim(),
+            active:x?.active!==false
+        })).filter(x=>x.name),
+        channelManager:{
+            provider:String(src.channelManager?.provider||'').trim(),
+            status:String(src.channelManager?.status||'Not Connected'),
+            channels:String(src.channelManager?.channels||'').trim(),
+            mapping:String(src.channelManager?.mapping||'').trim()
+        }
+    };
+}
+function renderSalesDistribution(){
+    const badge=document.getElementById('salesDistributionPropertyBadge');
+    const p=getProperty(currentPropertyId);
+    if(badge) badge.textContent=p?.property||'Current Property';
+    const sd=normalizeSalesDistribution(settings?.salesDistribution);
+    if(settings) settings.salesDistribution=sd;
+    const ota=document.getElementById('otaChannelsTable');
+    if(ota){
+        ota.innerHTML=sd.otaChannels.length?sd.otaChannels.map(x=>`<tr>
+<td><input value="${escapeHtml(x.name)}" onchange="updateOTAField('${x.id}','name',this.value)" style="min-width:150px"/></td>
+<td><input type="number" min="0" step="0.01" value="${Number(x.commission||0)}" onchange="updateOTAField('${x.id}','commission',this.value)" style="width:90px"/></td>
+<td><select onchange="updateOTAField('${x.id}','calculation',this.value)"><option value="grossup" ${x.calculation==='grossup'?'selected':''}>Gross-up</option><option value="deduct" ${x.calculation==='deduct'?'selected':''}>Deduct</option></select></td>
+<td><input type="checkbox" ${x.active!==false?'checked':''} onchange="updateOTAField('${x.id}','active',this.checked)"/></td>
+<td><button class="btn btn-danger" type="button" onclick="removeOTAChannel('${x.id}')">Remove</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No OTA channels configured.</td></tr>';
+    }
+    const at=document.getElementById('travelAgentsTable');
+    if(at){
+        at.innerHTML=sd.travelAgents.length?sd.travelAgents.map(x=>`<tr>
+<td><input value="${escapeHtml(x.name)}" onchange="updateAgentField('${x.id}','name',this.value)" style="min-width:140px"/></td>
+<td><input value="${escapeHtml(x.contact)}" onchange="updateAgentField('${x.id}','contact',this.value)" placeholder="Phone / Email"/></td>
+<td><input type="number" min="0" step="0.01" value="${Number(x.commission||0)}" onchange="updateAgentField('${x.id}','commission',this.value)" style="width:90px"/></td>
+<td><select onchange="updateAgentField('${x.id}','calculation',this.value)"><option value="grossup" ${x.calculation==='grossup'?'selected':''}>Gross-up</option><option value="deduct" ${x.calculation==='deduct'?'selected':''}>Deduct</option></select></td>
+<td><input value="${escapeHtml(x.creditTerms)}" onchange="updateAgentField('${x.id}','creditTerms',this.value)" placeholder="e.g. 30 days"/></td>
+<td><input type="checkbox" ${x.active!==false?'checked':''} onchange="updateAgentField('${x.id}','active',this.checked)"/></td>
+<td><button class="btn btn-danger" type="button" onclick="removeTravelAgent('${x.id}')">Remove</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">No travel agents configured.</td></tr>';
+    }
+    const cm=sd.channelManager||{};
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v??'';};
+    set('channelManagerProvider',cm.provider||''); set('channelManagerStatus',cm.status||'Not Connected'); set('channelManagerChannels',cm.channels||''); set('channelManagerMapping',cm.mapping||'');
+}
+async function persistSalesDistributionToCloud(){
+    try{
+        if(!currentPropertyId||!settings)return true;
+        const client=initSupabaseClient();
+        if(!client)return true;
+        const {data:{session}}=await client.auth.getSession();
+        if(!session?.user)return true;
+        const {error}=await client.rpc('save_property_sales_distribution',{target_property_id:String(currentPropertyId),sales_distribution:normalizeSalesDistribution(settings.salesDistribution)});
+        if(error) throw error;
+        return true;
+    }catch(e){console.warn('Sales & Distribution cloud save skipped:',e?.message||e);return false;}
+}
+async function addOTAChannel(){if(!requireRole('Admin','Manager'))return; if(!settings)return; const name=prompt('OTA / Booking Channel name:','Booking.com');if(name===null||!name.trim())return; const sd=normalizeSalesDistribution(settings.salesDistribution); if(sd.otaChannels.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This OTA channel already exists for this property.');return;} sd.otaChannels.push({id:'ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),commission:15,calculation:'grossup',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function updateOTAField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.otaChannels.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
+async function removeOTAChannel(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this OTA channel from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.otaChannels=settings.salesDistribution.otaChannels.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function addTravelAgent(){if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',creditTerms:'',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function updateAgentField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.travelAgents.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
+async function removeTravelAgent(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this travel agent from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.travelAgents=settings.salesDistribution.travelAgents.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function saveSalesDistribution(){if(!requireRole('Admin','Manager'))return;if(!settings||!currentPropertyId){alert('Please select a property first.');return;}const sd=normalizeSalesDistribution(settings.salesDistribution);const set=(id)=>document.getElementById(id)?.value||'';sd.channelManager={provider:String(set('channelManagerProvider')).trim(),status:String(set('channelManagerStatus')||'Not Connected'),channels:String(set('channelManagerChannels')).trim(),mapping:String(set('channelManagerMapping')).trim()};settings.salesDistribution=sd;saveData();renderSalesDistribution();const cloudSaved=await persistSalesDistributionToCloud();alert('Sales & Distribution settings saved for '+(getProperty(currentPropertyId)?.property||'this property')+(cloudSaved?' and synced to cloud.':'. Cloud sync is not available yet.'));}
 
 function saveSettings(){
 
@@ -14025,7 +14126,12 @@ const today=()=>typeof localDateString==='function'?localDateString():new Date()
 const user=()=>currentUser?.username||'Admin';
 function rows(k){return prop(read(k));}
 window.rows=rows;
-function saveProp(k,a){const all=read(k).filter(x=>String(x.propertyId||'')!==String(currentPropertyId));write(k,all.concat(a||[]));}
+function saveProp(k,a){
+ const pid=String(currentPropertyId||'');
+ const all=read(k).filter(x=>String(x.propertyId||'')!==pid);
+ const scoped=(Array.isArray(a)?a:[]).map(x=>({...x,propertyId:x?.propertyId||currentPropertyId}));
+ write(k,all.concat(scoped));
+}
 function isDepartmentSupervisor(){return currentUser?.role==="Department Supervisor";}
 function canHRAdmin(){return typeof requireRole!=='function'||requireRole('Admin','Manager');}
 function canHRAttendance(){return !!currentUser && (currentUser.role==="Admin"||currentUser.role==="Manager"||currentUser.role==="Department Supervisor");}
@@ -14612,9 +14718,50 @@ function ensureHRAccountingAccounts(){try{getAccounts();}catch(e){}}
 ensureHRAccountingAccounts();
 /* Currency enhancement: multiple currencies with per-property rates, while retaining the existing base/guest/posting settings. */
 function addCurrencyTable(){const box=document.getElementById('currencyAccountingSettings');if(!box||box.querySelector('#sigCurrencyTable'))return;const div=document.createElement('div');div.style.marginTop='18px';div.innerHTML=`<div class="section-header"><div><h4 style="margin:0">Currency Rate Table</h4><div class="sig-mini-note">Maintain all currencies used for guest rates, settlements and reporting. Rates are stored per property and historical transactions remain unchanged.</div></div><button class="btn btn-secondary" onclick="addCurrencyRow()">+ Currency</button></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Symbol</th><th>Rate to Base</th><th>Active</th><th></th></tr></thead><tbody id="sigCurrencyTable"></tbody></table></div>`;box.appendChild(div);renderCurrencyTable();}
-function currencyRows(){let a=prop(read(K.cur));if(!a.length){const b=String(settings?.baseCurrency||'LKR').toUpperCase();const g=String(settings?.guestCurrency||'USD').toUpperCase();a=[{id:id('cur'),propertyId:currentPropertyId,code:b,name:'Sri Lankan Rupee',symbol:'Rs',rate:1,active:true},{id:id('cur'),propertyId:currentPropertyId,code:g,name:'US Dollar',symbol:'$',rate:Number(settings?.postingRate||320),active:true}];saveProp(K.cur,a);}return a;}
-window.addCurrencyRow=function(){if(!requireManager())return;const a=currencyRows();const code=(prompt('Currency code (e.g. EUR):','EUR')||'').trim().toUpperCase();if(!code)return;const name=(prompt('Currency name:',code)||code).trim();const symbol=(prompt('Symbol:',code)||code).trim();const rate=Number(prompt('1 '+code+' = how many '+String(settings?.baseCurrency||'LKR')+'?', '0')||0);if(!rate){alert('Enter a valid rate.');return;}a.push({id:id('cur'),propertyId:currentPropertyId,code,name,symbol,rate,active:true});saveProp(K.cur,a);renderCurrencyTable();};
-window.removeCurrencyRow=function(cid){if(!requireManager())return;const a=currencyRows().filter(x=>x.id!==cid);saveProp(K.cur,a);renderCurrencyTable();};
+function currencyRows(){
+ const pid=String(currentPropertyId||'');
+ const raw=read(K.cur).filter(x=>String(x.propertyId||'')===pid);
+ const byCode=new Map();
+ raw.forEach(x=>{
+   const code=String(x.code||'').trim().toUpperCase();
+   if(!code)return;
+   byCode.set(code,{...x,propertyId:currentPropertyId,code});
+ });
+ let a=Array.from(byCode.values());
+ if(!a.length){
+   const b=String(settings?.baseCurrency||'LKR').trim().toUpperCase()||'LKR';
+   const g=String(settings?.guestCurrency||'USD').trim().toUpperCase()||'USD';
+   a=[{id:id('cur'),propertyId:currentPropertyId,code:b,name:b==='LKR'?'Sri Lankan Rupee':b,symbol:b==='LKR'?'Rs':b,rate:1,active:true}];
+   if(g!==b)a.push({id:id('cur'),propertyId:currentPropertyId,code:g,name:g==='USD'?'US Dollar':g,symbol:g==='USD'?'$':g,rate:Number(settings?.postingRate||320),active:true});
+   saveProp(K.cur,a);
+ }else{
+   const needsPersist=raw.length!==a.length || a.some(x=>!x.propertyId);
+   if(needsPersist)saveProp(K.cur,a);
+ }
+ return a;
+}
+window.addCurrencyRow=function(){
+ if(!requireManager())return;
+ const a=currencyRows();
+ const code=(prompt('Currency code (e.g. EUR):','EUR')||'').trim().toUpperCase();
+ if(!code)return;
+ if(a.some(x=>String(x.code||'').toUpperCase()===code)){alert('That currency already exists for this property. Please edit its rate instead.');return;}
+ const name=(prompt('Currency name:',code)||code).trim();
+ const symbol=(prompt('Symbol:',code)||code).trim();
+ const rate=Number(prompt('1 '+code+' = how many '+String(settings?.baseCurrency||'LKR')+'?', '0')||0);
+ if(!rate){alert('Enter a valid rate.');return;}
+ a.push({id:id('cur'),propertyId:currentPropertyId,code,name,symbol,rate,active:true});
+ saveProp(K.cur,a);renderCurrencyTable();
+};
+window.removeCurrencyRow=function(cid){
+ if(!requireManager())return;
+ const a=currencyRows();
+ const x=a.find(z=>z.id===cid);
+ if(!x)return;
+ if(String(x.code||'').toUpperCase()===String(settings?.baseCurrency||'LKR').toUpperCase()){alert('The base currency cannot be removed.');return;}
+ saveProp(K.cur,a.filter(z=>z.id!==cid));
+ renderCurrencyTable();
+};
 window.editCurrencyRate=function(cid){if(!requireManager())return;const a=currencyRows(),x=a.find(z=>z.id===cid);if(!x)return;const r=Number(prompt('Rate: 1 '+x.code+' = '+String(settings?.baseCurrency||'LKR'),x.rate)||0);if(!r)return;x.rate=r;saveProp(K.cur,a);renderCurrencyTable();};
 function renderCurrencyTable(){const e=document.getElementById('sigCurrencyTable');if(!e)return;const a=currencyRows();e.innerHTML=a.map(x=>`<tr><td><strong>${esc(x.code)}</strong></td><td>${esc(x.name)}</td><td>${esc(x.symbol)}</td><td><button class="btn btn-secondary btn-small" onclick="editCurrencyRate('${x.id}')">${Number(x.rate||0).toLocaleString(undefined,{maximumFractionDigits:6})}</button></td><td>${x.active?'Active':'Inactive'}</td><td>${x.code===String(settings?.baseCurrency||'LKR').toUpperCase()?'Base':'<button class="btn btn-danger btn-small" onclick="removeCurrencyRow(\''+x.id+'\')">Remove</button>'}</td></tr>`).join('');}
 /* Hook safely into the existing lifecycle. */
@@ -17046,6 +17193,9 @@ function cloudPropertyToLocal(row,existing){
     if(existingRooms && existingRooms.length>0 && (!Array.isArray(shaped.rooms) || shaped.rooms.length<existingRooms.length)){
         shaped.rooms=JSON.parse(JSON.stringify(existingRooms));
     }
+    const cloudSettings=(row && row.settings_data && typeof row.settings_data==='object')?row.settings_data:{};
+    if(cloudSettings.salesDistribution) shaped.salesDistribution=normalizeSalesDistribution(cloudSettings.salesDistribution);
+    else if(existing?.salesDistribution) shaped.salesDistribution=normalizeSalesDistribution(existing.salesDistribution);
     return shaped;
 }
 async function fetchCloudContext(){
@@ -18365,93 +18515,19 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   }
 
   async function repairCloudRoomScope187(){
-    try{
-      const client=initSupabaseClient();
-      if(!client) return false;
-      const authUser=await getSupabaseSessionUser();
-      if(!authUser) return false;
-      const {data:props,error:pe}=await client.from('properties').select('id,code,name').in('code',['H001','H002']);
-      if(pe) throw pe;
-      const rows=props||[];
-      let changed=false;
-
-      for(const cp of rows){
-        const code=String(cp.code||'').toUpperCase();
-        if(code!=='H001' && code!=='H002') continue;
-        const desired=code==='H001'
-          ? ['1','2','3','4','5','101','102','103','104','105','106','201','301']
-          : ['201','202','203','204','205'];
-
-        const {data:cloudRooms,error:re}=await client.from('property_rooms')
-          .select('property_id,room_id,room_data,active,housekeeping_status,updated_at')
-          .eq('property_id',String(cp.id));
-        if(re) throw re;
-        const current=cloudRooms||[];
-        const byId=new Map(current.map(r=>[String(r.room_id),r]));
-
-        let localProp=(window.signaturePMSState?.properties||[]).find(p=>String(p.id)===String(cp.id));
-        if(!localProp) localProp=(window.signaturePMSState?.properties||[]).find(p=>String(p.code||'').toUpperCase()===code);
-        const localRooms=Array.isArray(localProp?.rooms)?localProp.rooms:[];
-        const localById=new Map(localRooms.map(r=>[String(r.id),r]));
-
-        const now=new Date().toISOString();
-        const payload=desired.map(id=>{
-          let room=localById.get(id) || byId.get(id)?.room_data;
-          if(!room && code==='H002' && id!=='201') room=localById.get('201') || byId.get('201')?.room_data;
-          room=cleanRoomTemplate(room,id);
-          if(!room.roomConfigUpdatedAt) room.roomConfigUpdatedAt=now;
-          return {
-            property_id:String(cp.id),
-            room_id:String(id),
-            room_data:{...room,propertyId:String(cp.id)},
-            active:room.active!==false,
-            housekeeping_status:String(room.housekeepingStatus||byId.get(id)?.housekeeping_status||'clean'),
-            updated_at:now
-          };
-        });
-
-        const {error:ue}=await client.from('property_rooms').upsert(payload,{onConflict:'property_id,room_id'});
-        if(ue) throw ue;
-
-        const stale=current.map(r=>String(r.room_id)).filter(id=>!desired.includes(id));
-        if(stale.length){
-          const {error:de}=await client.from('property_rooms').delete().eq('property_id',String(cp.id)).in('room_id',stale);
-          if(de) throw de;
-        }
-
-        if(localProp){
-          localProp.rooms=payload.map(x=>clone(x.room_data));
-          localProp.cloudManaged=true;
-        }
-        changed=true;
-      }
-
-      const state=window.signaturePMSState;
-      if(state){
-        state.saveProperties();
-        if(currentPropertyId && state.properties.some(p=>String(p.id)===String(currentPropertyId))){
-          state.loadCurrentPropertyData();
-        }
-        state.renderPropertySwitcher();
-        state.renderPropertyManager();
-        state.renderAll();
-      }
-      if(changed) setSupabaseCloudMessage('Multi-property room scope repaired: H001 = 13 rooms, H002 = 5 rooms.','success');
-      return changed;
-    }catch(err){
-      console.warn('v2.1.187 room-scope repair skipped:',err);
-      setSupabaseCloudMessage('Room scope repair failed: '+(err?.message||err),'error');
-      return false;
-    }
+    /* v2.1.234: DISABLED. The old v2.1.187 repair hard-coded H002 to 5 rooms
+       and therefore overwrote valid property configurations such as Shani Manor
+       (7 rooms). Property configuration is now the source of truth via the
+       replace_property_configuration RPC. */
+    return false;
   }
 
-  /* Run the repair after the existing cloud-property refresh. */
+  /* Keep the legacy wrapper harmless for compatibility, but never rewrite
+     property room configurations during cloud refresh. */
   const originalSyncProperties=window.syncSupabaseProperties;
   if(typeof originalSyncProperties==='function'){
     window.syncSupabaseProperties=async function(){
-      const result=await originalSyncProperties.apply(this,arguments);
-      try{ await repairCloudRoomScope187(); }catch(e){ console.warn(e); }
-      return result;
+      return originalSyncProperties.apply(this,arguments);
     };
   }
 
@@ -19232,7 +19308,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(ue) throw ue;
     let ids=[];
     if(isAdmin){
-      const {data:allRows,error}=await client.from('properties').select('id,code,name,address,city,country,phone,email');
+      const {data:allRows,error}=await client.from('properties').select('id,code,name,address,city,country,phone,email,settings_data');
       if(error) throw error;
       ids=(allRows||[]).map(x=>x.id).filter(Boolean);
       const state=window.signaturePMSState;
@@ -19248,7 +19324,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     let rows=[];
     if(ids.length){
       const {data,error}=await client.from('properties')
-        .select('id,code,name,address,city,country,phone,email').in('id',ids);
+        .select('id,code,name,address,city,country,phone,email,settings_data').in('id',ids);
       if(error) throw error; rows=data||[];
     }
     const state=window.signaturePMSState;
