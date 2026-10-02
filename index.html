@@ -2469,7 +2469,7 @@ function ensureRestaurantOutletData(){
  const current=outlets.find(o=>String(o.id)===String(POS_OUTLET_ID))||active;
  settings.posMenu=JSON.parse(JSON.stringify(current.posMenu||[]));
  const idx=properties.findIndex(p=>p.id===currentPropertyId);
- if(idx>=0){
+ if(idx>=0 && !window.__signatureCloudHydrating){
    properties[idx]={...properties[idx],restaurants:JSON.parse(JSON.stringify(outlets)),posMenu:JSON.parse(JSON.stringify(settings.posMenu))};
    saveProperties();
  }
@@ -17302,7 +17302,8 @@ function cloudPropertyToLocal(row,existing){
       'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
       'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
       'roomTypes','mealPlanFoodPercentages','licenseHolder','licenseKey','supportContact',
-      'installationId','experiences','eventBookings'
+      'installationId','experiences','eventBookings',
+      'restaurants','posMenu','selectedPOSOutletId'
     ];
     CONFIG_KEYS.forEach(k=>{
       if(Object.prototype.hasOwnProperty.call(cloudSettings,k)){
@@ -18996,7 +18997,8 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
     'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
     'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
     'roomTypes','mealPlanFoodPercentages','licenseHolder','licenseKey','supportContact',
-    'installationId','experiences','eventBookings'
+    'installationId','experiences','eventBookings',
+    'restaurants','posMenu','selectedPOSOutletId'
   ];
   function mergeCloudConfig(property,row){
     const cloud=(row?.settings_data&&typeof row.settings_data==='object')?row.settings_data:{};
@@ -19025,6 +19027,65 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
           }
         }
       }catch(e){console.warn('v2.1.244 final config hydration skipped:',e);}
+      return result;
+    };
+  }
+})();
+</script>
+
+<script id="v2-1-246-config-restaurant-source-of-truth">
+/* v2.1.246 — CONFIG + RESTAURANT CLOUD SOURCE OF TRUTH
+   Targeted fix only. Reservations, Rooms, Accounting and POS transaction flows
+   remain unchanged. Existing Supabase settings_data wins during hydration.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV246ConfigRestaurantSourceOfTruth)return;
+  window.__signatureV246ConfigRestaurantSourceOfTruth=true;
+
+  /* Do not let automatic normalization write defaults while cloud data is being
+     hydrated. Explicit user saves are unaffected. */
+  const originalLoadCurrentPropertyData=window.loadCurrentPropertyData;
+  if(typeof originalLoadCurrentPropertyData==='function'){
+    window.loadCurrentPropertyData=function(){
+      window.__signatureCloudHydrating=true;
+      try{return originalLoadCurrentPropertyData.apply(this,arguments);}
+      finally{window.__signatureCloudHydrating=false;}
+    };
+  }
+
+  /* Restaurant menu saves must also reach properties.settings_data so a new
+     HTML deployment does not fall back to DEFAULT_POS_MENU. */
+  const originalSaveRestaurantMenu=window.saveRestaurantMenu;
+  if(typeof originalSaveRestaurantMenu==='function'){
+    window.saveRestaurantMenu=function(){
+      const result=originalSaveRestaurantMenu.apply(this,arguments);
+      Promise.resolve().then(async()=>{
+        try{
+          const fn=window.__signatureSavePropertyConfigToCloud;
+          if(typeof fn==='function' && !window.__signatureCloudHydrating){
+            await fn();
+            if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Restaurant menu saved and synchronized to cloud.','success');
+          }
+        }catch(e){
+          console.error('v2.1.246 restaurant menu cloud save failed:',e);
+        }
+      });
+      return result;
+    };
+  }
+
+  /* Outlet configuration changes use the same cloud source of truth. */
+  const originalSavePOSOutlets=window.savePOSOutlets;
+  if(typeof originalSavePOSOutlets==='function'){
+    window.savePOSOutlets=function(){
+      const result=originalSavePOSOutlets.apply(this,arguments);
+      Promise.resolve().then(async()=>{
+        try{
+          const fn=window.__signatureSavePropertyConfigToCloud;
+          if(typeof fn==='function' && !window.__signatureCloudHydrating) await fn();
+        }catch(e){console.error('v2.1.246 outlet cloud save failed:',e);}
+      });
       return result;
     };
   }
@@ -19763,7 +19824,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
     'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
     'roomTypes','mealPlanFoodPercentages','licenseHolder','licenseKey','supportContact',
-    'installationId','experiences','eventBookings'
+    'installationId','experiences','eventBookings',
+    'restaurants','posMenu','selectedPOSOutletId'
   ];
 
   function configSnapshot(src){
@@ -19868,6 +19930,40 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
 
     const oldProperties=Array.isArray(properties)?properties:[];
+
+    /* v2.1.246: one-time migration of configuration that was saved in the
+       previous browser/local property record but was not yet included in
+       properties.settings_data. Only fill MISSING cloud keys; never replace
+       an existing cloud value. This is used for the Admin's current property
+       so older saved settings/menu data can become cloud source-of-truth. */
+    if(isAdmin && rows.length){
+      const clientForMigration=client;
+      for(const row of rows){
+        const existing=oldProperties.find(p=>String(p?.id)===String(row?.id));
+        const cloud=(row?.settings_data && typeof row.settings_data==='object')?row.settings_data:{};
+        if(!existing) continue;
+        const missing={};
+        ['currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
+         'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+         'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
+         'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
+         'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
+         'roomTypes','mealPlanFoodPercentages','experiences','eventBookings',
+         'restaurants','posMenu','selectedPOSOutletId'].forEach(k=>{
+          if(!Object.prototype.hasOwnProperty.call(cloud,k) && Object.prototype.hasOwnProperty.call(existing,k)){
+            try{missing[k]=JSON.parse(JSON.stringify(existing[k]));}catch(e){missing[k]=existing[k];}
+          }
+        });
+        if(Object.keys(missing).length){
+          const merged={...cloud,...missing};
+          const {error:migErr}=await clientForMigration.from('properties').update({settings_data:merged}).eq('id',String(row.id));
+          if(migErr) console.warn('v2.1.246 config migration skipped for '+row.id,migErr);
+          else row.settings_data=merged;
+        }
+      }
+    }
+
+    window.__signatureCloudHydrating=true;
     properties=rows.map(row=>{
       const existing=oldProperties.find(p=>String(p?.id)===String(row?.id));
       return applyCloudConfig(row,existing);
@@ -19884,6 +19980,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     renderAll();
 
     try{await hydrateSupabaseRooms();}catch(e){console.warn('Room cloud refresh after config refresh skipped:',e);}
+    window.__signatureCloudHydrating=false;
     setSupabaseCloudBadge('Connected','green');
     setSupabaseCloudMessage('Cloud properties, Property Settings and Rate Plans refreshed successfully.','success');
     return true;
