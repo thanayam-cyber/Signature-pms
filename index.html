@@ -7293,11 +7293,11 @@ function saveReservation(){
         reservation.rate=rate;
         reservation.total=total;
         reservation.guestType=String(guestType||"foreign").toLowerCase();
-        reservation.baseCurrency=String(settings?.baseCurrency||"LKR").toUpperCase();
-        reservation.currency=(reservation.guestType==="local"?reservation.baseCurrency:String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase();
-        reservation.postingRateAtBooking=reservation.currency===reservation.baseCurrency?1:Number(settings?.postingRate||320);
-        reservation.baseAmount=reservation.currency===reservation.baseCurrency?Number(total):Number(total)*Number(reservation.postingRateAtBooking||320);
-        reservation.foreignAmount=reservation.currency===reservation.baseCurrency?0:Number(total);
+        reservation.baseCurrency="LKR";
+        reservation.currency="LKR";
+        reservation.postingRateAtBooking=1;
+        reservation.baseAmount=Number(total);
+        reservation.foreignAmount=0;
         reservation.adults=adults;
         reservation.children=children;
         reservation.childrenAges=childrenAges;
@@ -7387,9 +7387,11 @@ function saveReservation(){
         mealPlan,
         breakfastIncluded:bookingType==="room",
         deposit,
-        currency:(typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase(),
-        baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
-        postingRateAtBooking:((typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase()===String(settings?.baseCurrency||"LKR").toUpperCase()?1:Number(settings?.postingRate||320)),
+        currency:"LKR",
+        baseCurrency:"LKR",
+        postingRateAtBooking:1,
+        baseAmount:Number(total),
+        foreignAmount:0,
         status:"Reserved",
         notes,
         createdAt:localDateTime()
@@ -7407,9 +7409,11 @@ function saveReservation(){
         taxes:0,
         serviceCharges:0,
         total,
-        currency:(typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase(),
-        baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
-        postingRateAtBooking:((typeof currencyForGuest==='function'?currencyForGuest(guestType):String(settings?.guestCurrency||settings?.currency||"USD")).toUpperCase()===String(settings?.baseCurrency||"LKR").toUpperCase()?1:Number(settings?.postingRate||320)),
+        currency:"LKR",
+        baseCurrency:"LKR",
+        postingRateAtBooking:1,
+        baseAmount:Number(total),
+        foreignAmount:0,
         createdAt:localDateTime()
     });
 
@@ -18899,111 +18903,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
 })();
 </script>
 
-<script>
-/* =========================================================
-   LKR-ONLY ROOM / RESERVATION CURRENCY PATCH — v2.1.239
-   Local and Foreign rates are both entered and stored as LKR.
-   No USD conversion is applied to accommodation reservations.
-========================================================= */
-(function(){
-  'use strict';
-  function forceLKR(){
-    if(!settings) return;
-    settings.baseCurrency='LKR';
-    settings.guestCurrency='LKR';
-    settings.currency='LKR';
-    settings.postingRate=1;
-    settings.settlementRate=1;
-    settings.cashRate=1;
-    if(typeof getProperty==='function'){
-      const p=getProperty();
-      if(p){p.currency='LKR';p.baseCurrency='LKR';p.guestCurrency='LKR';p.postingRate=1;p.settlementRate=1;p.cashRate=1;}
-    }
-    (Array.isArray(reservations)?reservations:[]).forEach(r=>{
-      if(!r)return;
-      const total=Number(r.total||0);
-      r.currency='LKR';
-      r.guestCurrency='LKR';
-      r.baseCurrency='LKR';
-      r.postingRateAtBooking=1;
-      r.postingRateAtCalculation=1;
-      r.accountingRate=1;
-      r.baseAmount=total;
-      r.foreignAmount=0;
-    });
-  }
-
-  /* Foreign is still a guest type, but its rate is a LKR rate. */
-  window.getConfiguredRate=function(mealPlan,adults,children,roomId,guestType){
-    guestType=String(guestType||document.getElementById('guestType')?.value||'foreign').toLowerCase();
-    const m=String(mealPlan||'').toUpperCase(), a=Number(adults||0), c=Number(children||0);
-    let dual={local:{},foreign:{}};
-    try{ if(typeof ensureDual==='function') dual=ensureDual(); }catch(e){}
-    const rt=roomId!=null && typeof getRoomTypeForRoom==='function' ? getRoomTypeForRoom(roomId) : null;
-    const id=rt?String(rt.id):null;
-    const matrix=(guestType==='local'?dual.local:dual.foreign)[id];
-    if(!matrix)return null;
-    const row=matrix[m];if(!row)return null;
-    const key=(a===2&&c===2)?'2A2C':(a===2&&c===1)?'2A1C':(a===3&&c===0)?'3A':((a>=1&&a<=2&&c===0)?'2A':null);
-    if(!key)return null;
-    const v=Number(row[key]||0);return v>0?v:null;
-  };
-
-  window.calculateReservation=function(){
-    forceLKR();
-    const type=document.getElementById('bookingType')?.value||'room';
-    const guestType=document.getElementById('guestType')?.value||'foreign';
-    const roomId=Number(document.getElementById('roomSelect')?.value||0);
-    const adults=Number(document.getElementById('adults')?.value||1);
-    const children=Number(document.getElementById('children')?.value||0);
-    const plan=document.getElementById('mealPlan')?.value||'BB';
-    let rate=0;
-    if(type==='villa') rate=guestType==='foreign'?Number(settings?.villaForeign||0):Number(settings?.villaLocal||0);
-    else {
-      const room=(settings?.rooms||[]).find(r=>String(r.id)===String(roomId));
-      rate=guestType==='local' ? Number(room?.localRate||settings?.roomBaseLocal||room?.rate||settings?.roomRate||0)
-                                : Number(room?.foreignRate||settings?.roomBaseForeign||room?.rate||settings?.roomRate||0);
-      const cr=window.getConfiguredRate(plan,adults,children,roomId,guestType);
-      if(cr!==null) rate=Number(cr);
-    }
-    const ci=document.getElementById('checkIn')?.value, co=document.getElementById('checkOut')?.value;
-    const nights=ci&&co?Math.max(0,Math.round((new Date(co)-new Date(ci))/86400000)):0;
-    const total=rate*nights;
-    const fmt=v=>'LKR '+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const re=document.getElementById('reservationRate'),te=document.getElementById('reservationTotal'),ne=document.getElementById('reservationNights');
-    if(re)re.textContent=fmt(rate); if(te)te.textContent=fmt(total); if(ne)ne.textContent=nights;
-    return total;
-  };
-
-  const previousSave=window.saveReservation;
-  window.saveReservation=function(){
-    forceLKR();
-    const result=previousSave.apply(this,arguments);
-    const list=Array.isArray(reservations)?reservations:[];
-    const r=(typeof editingReservationId!=='undefined'&&editingReservationId)?list.find(x=>x.id===editingReservationId):list[list.length-1];
-    if(r){
-      r.currency='LKR';r.guestCurrency='LKR';r.baseCurrency='LKR';r.postingRateAtBooking=1;r.postingRateAtCalculation=1;r.accountingRate=1;
-      r.baseAmount=Number(r.total||0);r.foreignAmount=0;
-      const f=typeof getFolio==='function'?getFolio(r.id):null;
-      if(f){f.currency='LKR';f.baseCurrency='LKR';f.postingRateAtBooking=1;}
-      if(typeof saveData==='function')saveData();
-      try{Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(()=>{});}catch(e){}
-    }
-    return result;
-  };
-
-  function applyUI(){
-    forceLKR();
-    document.querySelectorAll('#genCurrency,#settingCurrency').forEach(e=>{if(e)e.value='LKR';});
-    document.querySelectorAll('#rr_foreign_2A,#rr_foreign_3A').forEach(()=>{});
-    document.querySelectorAll('#dynamicRoomRatePlans small').forEach(e=>{if(String(e.textContent).trim()==='USD')e.textContent='LKR';});
-    document.querySelectorAll('label').forEach(e=>{if(e.textContent.includes('Foreign Base Rate / Night (USD)'))e.textContent=e.textContent.replace('(USD)','(LKR)');});
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(applyUI,0));
-  else setTimeout(applyUI,0);
-  setInterval(()=>{try{forceLKR();}catch(e){}},1500);
-})();
-</script>
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -19267,19 +19166,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     });
     return {local:settings.roomRateMatrixLocal,foreign:settings.roomRateMatrixForeign};
   }
-  function currencyForGuest(type){return String(type||'foreign').toLowerCase()==='local' ? String(settings?.baseCurrency||'LKR').toUpperCase() : String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();}
+  function currencyForGuest(type){return 'LKR';}
   function applyReservationCurrencyMetadata(r, guestType){
     if(!r) return r;
-    const base=String(settings?.baseCurrency||'LKR').toUpperCase();
     const type=String(guestType||r.guestType||'foreign').toLowerCase();
-    const cur=type==='local' ? base : String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
-    r.guestType=type; r.currency=cur; r.baseCurrency=base;
-    r.postingRateAtBooking=cur===base ? 1 : Number(settings?.postingRate||320);
-    if(cur===base){ r.baseAmount=Number(r.total||0); r.foreignAmount=0; }
-    else { r.foreignAmount=Number(r.total||0); r.baseAmount=Number(r.total||0)*Number(r.postingRateAtBooking||320); }
+    r.guestType=type;
+    r.currency='LKR';
+    r.baseCurrency='LKR';
+    r.postingRateAtBooking=1;
+    r.baseAmount=Number(r.total||0);
+    r.foreignAmount=0;
     return r;
   }
-  function rateText(v,c){return currencyForGuest(c).toUpperCase()==='LKR'?'LKR '+Number(v||0).toFixed(2):'USD '+Number(v||0).toFixed(2);}
+  function rateText(v,c){return 'LKR '+Number(v||0).toFixed(2);}
   function baseRateForGuest(guestType,roomId){
     const local=Number(settings?.roomBaseLocal||0), foreign=Number(settings?.roomBaseForeign||settings?.roomRate||0);
     const r=(settings?.rooms||[]).find(x=>String(x.id)===String(roomId));
@@ -19334,9 +19233,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const edited=(typeof editingReservationId!=='undefined'&&editingReservationId)?reservations.find(r=>r.id===editingReservationId):null;
     const r=changed[0]||edited;
     if(r){
-      r.guestType=guestType;r.currency=currencyForGuest(guestType);r.baseCurrency=String(settings?.baseCurrency||'LKR').toUpperCase();r.postingRateAtBooking=r.currency===r.baseCurrency?1:Number(r.postingRateAtBooking||settings?.postingRate||320);
-      if(r.currency==='LKR'){r.baseAmount=Number(r.total||0);r.foreignAmount=0;}else{r.foreignAmount=Number(r.total||0);r.baseAmount=Number(r.total||0)*Number(r.postingRateAtBooking||320);}
-      const f=getFolio(r.id);if(f){f.currency=r.currency;f.baseCurrency=r.baseCurrency;f.postingRateAtBooking=r.postingRateAtBooking;}
+      r.guestType=String(guestType||'foreign').toLowerCase();
+      r.currency='LKR';
+      r.baseCurrency='LKR';
+      r.postingRateAtBooking=1;
+      r.baseAmount=Number(r.total||0);
+      r.foreignAmount=0;
+      const f=getFolio(r.id);if(f){f.currency='LKR';f.baseCurrency='LKR';f.postingRateAtBooking=1;}
       saveData();
       /* Sync only after the complete save chain has finalized the reservation.
          This prevents the background cloud refresh from restoring a stale USD snapshot. */
