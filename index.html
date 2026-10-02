@@ -2320,29 +2320,37 @@ function renderRoomRatePlans(){
     setTimeout(renderRateRevenueAllocation,0);
 }
 
-function saveRatePlans(){
+async function saveRatePlans(){
     if(!requireRole("Admin","Manager")) return;
     if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
     const plans=["BB","HB","FB","AI"], keys=["2A","3A","2A1C","2A2C"];
     const matrix={};
     (settings.roomTypes||[]).forEach(t=>{
-        const id=String(t.id); matrix[id]=defaultRateMatrix();
-        plans.forEach(plan=>keys.forEach(key=>{
-            matrix[id][plan][key]=Math.max(0,Number(document.getElementById(`rr_${id}_${plan}_${key}`)?.value||0));
-        }));
+      const id=String(t.id); matrix[id]=defaultRateMatrix();
+      plans.forEach(plan=>keys.forEach(key=>{
+        matrix[id][plan][key]=Math.max(0,Number(document.getElementById(`rr_${id}_${plan}_${key}`)?.value||0));
+      }));
     });
     settings.roomRateMatrix=matrix;
     const mealPct={...DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES};
     ["RO","BB","HB","FB","AI"].forEach(code=>{
-        const value=Number(document.getElementById("mealAlloc_"+code)?.value);
-        mealPct[code]=Math.max(0,Math.min(100,Number.isFinite(value)?value:DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES[code]));
+      const value=Number(document.getElementById("mealAlloc_"+code)?.value);
+      mealPct[code]=Math.max(0,Math.min(100,Number.isFinite(value)?value:DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES[code]));
     });
     settings.mealPlanFoodPercentages=mealPct;
     saveData(); renderAll();
-    setTimeout(renderRoomRatePlans,0);
-    setTimeout(renderMealPlanRevenuePercentages,0);
-    alert("Room Type Rate Plans and Meal Plan Percentages saved successfully.");
+    setTimeout(renderRoomRatePlans,0); setTimeout(renderMealPlanRevenuePercentages,0);
+    try{
+      if(typeof window.__signatureSavePropertyConfigToCloud!=="function") throw new Error("Cloud configuration saver is unavailable.");
+      await window.__signatureSavePropertyConfigToCloud();
+      alert("Room Type Rate Plans and Meal Plan Percentages saved successfully and synchronized to the cloud.");
+    }catch(e){
+      console.error("Rate Plans cloud save failed:",e);
+      setSupabaseCloudMessage("Rate Plans were saved locally, but cloud verification failed: "+(e?.message||e),"error");
+      alert("Rate Plans were saved locally, but the cloud update was NOT verified.\n\n"+(e?.message||e));
+    }
 }
+
 
 function renderExperiences(){
     const container=document.getElementById("experiencesList");
@@ -2500,7 +2508,7 @@ function selectPOSOutlet(id){
  renderRestaurantMenuManager();
  renderRestaurantOutletManager();
 }
-function savePOSOutlets(){if(!settings||!currentPropertyId)return;settings.restaurants=normalizePOSOutlets(settings.restaurants,settings.posMenu);settings.selectedPOSOutletId=String(POS_OUTLET_ID||settings.restaurants.find(x=>x.active!==false)?.id||"");const selected=settings.restaurants.find(x=>String(x.id)===String(settings.selectedPOSOutletId))||settings.restaurants[0];if(selected){selected.posMenu=normalizePOSMenu(selected.posMenu,selected.id,selected.name);settings.posMenu=JSON.parse(JSON.stringify(selected.posMenu));}const idx=properties.findIndex(p=>p.id===currentPropertyId);if(idx>=0){properties[idx]={...properties[idx],restaurants:JSON.parse(JSON.stringify(settings.restaurants)),posMenu:JSON.parse(JSON.stringify(settings.posMenu)),selectedPOSOutletId:settings.selectedPOSOutletId};saveProperties();}}
+async function savePOSOutlets(){if(!settings||!currentPropertyId)return false;settings.restaurants=normalizePOSOutlets(settings.restaurants,settings.posMenu);settings.selectedPOSOutletId=String(POS_OUTLET_ID||settings.restaurants.find(x=>x.active!==false)?.id||"");const selected=settings.restaurants.find(x=>String(x.id)===String(settings.selectedPOSOutletId))||settings.restaurants[0];if(selected){selected.posMenu=normalizePOSMenu(selected.posMenu,selected.id,selected.name);settings.posMenu=JSON.parse(JSON.stringify(selected.posMenu));}const idx=properties.findIndex(p=>p.id===currentPropertyId);if(idx>=0){properties[idx]={...properties[idx],restaurants:JSON.parse(JSON.stringify(settings.restaurants)),posMenu:JSON.parse(JSON.stringify(settings.posMenu)),selectedPOSOutletId:settings.selectedPOSOutletId};saveProperties();}if(typeof window.__signatureSavePropertyConfigToCloud==="function"&&!window.__signatureCloudHydrating){try{await window.__signatureSavePropertyConfigToCloud();}catch(e){console.error("Restaurant outlet cloud save failed:",e);setSupabaseCloudMessage("Restaurant outlet was saved locally, but cloud verification failed: "+(e?.message||e),"error");return false;}}return true;}
 function defaultBarMenu(){
  return [
   {id:"bar_beer",name:"Local Beer",category:"Beer",price:8,active:true},
@@ -6458,7 +6466,7 @@ function deletePOSMenuItem(id){
     POS_MENU=POS_MENU.filter(x=>String(x.id)!==String(id));saveRestaurantMenu();saveData();renderAll();
 }
 
-function saveRestaurantMenu(){
+async function saveRestaurantMenu(){
     if(!settings||!currentPropertyId)return false;
 
     /* Always rebuild the outlet structure from the CURRENT POS_MENU before saving.
@@ -6484,6 +6492,10 @@ function saveRestaurantMenu(){
         posMenu:JSON.parse(JSON.stringify(settings.posMenu))
     };
     saveProperties();
+    if(typeof window.__signatureSavePropertyConfigToCloud==="function" && !window.__signatureCloudHydrating){
+      try{ await window.__signatureSavePropertyConfigToCloud(); }
+      catch(e){ console.error("Restaurant menu cloud save failed:",e); setSupabaseCloudMessage("Restaurant menu was saved locally, but cloud verification failed: "+(e?.message||e),"error"); return false; }
+    }
     return true;
 }
 function renderRestaurantOutletManager(){
@@ -6845,66 +6857,32 @@ async function updateAgentField(id,key,value){const sd=normalizeSalesDistributio
 async function removeTravelAgent(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this travel agent from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.travelAgents=settings.salesDistribution.travelAgents.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 async function saveSalesDistribution(){if(!requireRole('Admin','Manager'))return;if(!settings||!currentPropertyId){alert('Please select a property first.');return;}const sd=normalizeSalesDistribution(settings.salesDistribution);const set=(id)=>document.getElementById(id)?.value||'';sd.channelManager={provider:String(set('channelManagerProvider')).trim(),status:String(set('channelManagerStatus')||'Not Connected'),channels:String(set('channelManagerChannels')).trim(),mapping:String(set('channelManagerMapping')).trim()};settings.salesDistribution=sd;saveData();renderSalesDistribution();const cloudSaved=await persistSalesDistributionToCloud();alert('Sales & Distribution settings saved for '+(getProperty(currentPropertyId)?.property||'this property')+(cloudSaved?' and synced to cloud.':'. Cloud sync is not available yet.'));}
 
-function saveSettings(){
-
-    if(!requireRole("Admin","Manager"))
-        return;
-
+async function saveSettings(){
+    if(!requireRole("Admin","Manager")) return;
     if(!settings || !currentPropertyId){
         alert("Please add or import a property before saving property settings.");
         return;
     }
-
-
-    settings.property=
-        document.getElementById("settingProperty")
-        .value.trim();
-
-    settings.location=
-        document.getElementById("settingLocation")
-        .value.trim();
-
-    settings.maxGuests=
-        Math.max(0,Number(document.getElementById("settingMaxGuests")?.value||0));
-
-    settings.foodCostMarkup=
-        Math.max(0,Number(document.getElementById("settingFoodCostMarkup")?.value||20));
-
-    settings.villaLocal=
-        Number(
-            document.getElementById("settingVillaLocal")
-            .value||0
-        );
-
-    settings.villaForeign=
-        Number(
-            document.getElementById("settingVillaForeign")
-            .value||0
-        );
-
-    settings.roomRate=
-        Number(
-            document.getElementById("settingRoomRate")
-            .value||0
-        );
-
-    // IMPORTANT: Do not overwrite individually configured room rates when
-    // saving general property settings. The global roomRate is only a
-    // fallback/default; each room may have its own configured rate.
-    settings.rooms=(settings.rooms||[]).map(r=>({
-        ...r,
-        rate:Number.isFinite(Number(r?.rate)) ? Math.max(0,Number(r.rate)) : Math.max(0,Number(settings.roomRate||0))
-    }));
+    settings.property=document.getElementById("settingProperty")?.value.trim()||settings.property||"";
+    settings.location=document.getElementById("settingLocation")?.value.trim()||settings.location||"";
+    settings.maxGuests=Math.max(0,Number(document.getElementById("settingMaxGuests")?.value||0));
+    settings.foodCostMarkup=Math.max(0,Number(document.getElementById("settingFoodCostMarkup")?.value||20));
+    settings.villaLocal=Number(document.getElementById("settingVillaLocal")?.value||0);
+    settings.villaForeign=Number(document.getElementById("settingVillaForeign")?.value||0);
+    settings.roomRate=Number(document.getElementById("settingRoomRate")?.value||0);
+    settings.rooms=(settings.rooms||[]).map(r=>({...r,rate:Number.isFinite(Number(r?.rate))?Math.max(0,Number(r.rate)):Math.max(0,Number(settings.roomRate||0))}));
     settings.rateMatrix=normalizeRateMatrix(settings.rateMatrix);
-
     saveData();
-
     renderAll();
-
-    alert(
-        "Settings saved successfully."
-    );
-
+    try{
+      if(typeof window.__signatureSavePropertyConfigToCloud!=="function") throw new Error("Cloud configuration saver is unavailable.");
+      await window.__signatureSavePropertyConfigToCloud();
+      alert("Property Settings saved successfully and synchronized to the cloud.");
+    }catch(e){
+      console.error("Property Settings cloud save failed:",e);
+      setSupabaseCloudMessage("Property Settings were saved locally, but cloud verification failed: "+(e?.message||e),"error");
+      alert("Property Settings were saved locally, but the cloud update was NOT verified.\n\n"+(e?.message||e));
+    }
 }
 
 
@@ -19091,6 +19069,17 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   }
 })();
 </script>
+<script id="v2-1-247-cloud-write-verify-final">
+/* v2.1.247 — authoritative cloud write verification.
+   Property Settings, Rate Plans and Restaurant configuration are written directly
+   by their save functions and verified with Supabase .select() after update.
+   Existing reservations/accounting/room flows are otherwise unchanged.
+*/
+(function(){
+  'use strict';
+  window.__signatureV247CloudWriteVerify=true;
+})();
+</script>
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -19864,10 +19853,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       city:String(settings.location||row.city||'')
     };
 
-    const {error:updateError}=await client.from('properties')
+    const {data:verifiedRow,error:updateError}=await client.from('properties')
       .update(payload)
-      .eq('id',String(cloudId));
+      .eq('id',String(cloudId))
+      .select('id,settings_data')
+      .maybeSingle();
     if(updateError)throw updateError;
+    if(!verifiedRow) throw new Error('Supabase did not return the property after the cloud update. The update may be blocked by RLS or the property ID is not writable.');
+    const saved=(verifiedRow.settings_data&&typeof verifiedRow.settings_data==='object')?verifiedRow.settings_data:{};
+    for(const k of CONFIG_KEYS){
+      if(Object.prototype.hasOwnProperty.call(merged,k) && JSON.stringify(saved[k])!==JSON.stringify(merged[k])){
+        throw new Error('Cloud verification failed for configuration field: '+k);
+      }
+    }
     return true;
   }
 
