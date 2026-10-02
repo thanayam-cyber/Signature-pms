@@ -18899,6 +18899,111 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
 })();
 </script>
 
+<script>
+/* =========================================================
+   LKR-ONLY ROOM / RESERVATION CURRENCY PATCH — v2.1.239
+   Local and Foreign rates are both entered and stored as LKR.
+   No USD conversion is applied to accommodation reservations.
+========================================================= */
+(function(){
+  'use strict';
+  function forceLKR(){
+    if(!settings) return;
+    settings.baseCurrency='LKR';
+    settings.guestCurrency='LKR';
+    settings.currency='LKR';
+    settings.postingRate=1;
+    settings.settlementRate=1;
+    settings.cashRate=1;
+    if(typeof getProperty==='function'){
+      const p=getProperty();
+      if(p){p.currency='LKR';p.baseCurrency='LKR';p.guestCurrency='LKR';p.postingRate=1;p.settlementRate=1;p.cashRate=1;}
+    }
+    (Array.isArray(reservations)?reservations:[]).forEach(r=>{
+      if(!r)return;
+      const total=Number(r.total||0);
+      r.currency='LKR';
+      r.guestCurrency='LKR';
+      r.baseCurrency='LKR';
+      r.postingRateAtBooking=1;
+      r.postingRateAtCalculation=1;
+      r.accountingRate=1;
+      r.baseAmount=total;
+      r.foreignAmount=0;
+    });
+  }
+
+  /* Foreign is still a guest type, but its rate is a LKR rate. */
+  window.getConfiguredRate=function(mealPlan,adults,children,roomId,guestType){
+    guestType=String(guestType||document.getElementById('guestType')?.value||'foreign').toLowerCase();
+    const m=String(mealPlan||'').toUpperCase(), a=Number(adults||0), c=Number(children||0);
+    let dual={local:{},foreign:{}};
+    try{ if(typeof ensureDual==='function') dual=ensureDual(); }catch(e){}
+    const rt=roomId!=null && typeof getRoomTypeForRoom==='function' ? getRoomTypeForRoom(roomId) : null;
+    const id=rt?String(rt.id):null;
+    const matrix=(guestType==='local'?dual.local:dual.foreign)[id];
+    if(!matrix)return null;
+    const row=matrix[m];if(!row)return null;
+    const key=(a===2&&c===2)?'2A2C':(a===2&&c===1)?'2A1C':(a===3&&c===0)?'3A':((a>=1&&a<=2&&c===0)?'2A':null);
+    if(!key)return null;
+    const v=Number(row[key]||0);return v>0?v:null;
+  };
+
+  window.calculateReservation=function(){
+    forceLKR();
+    const type=document.getElementById('bookingType')?.value||'room';
+    const guestType=document.getElementById('guestType')?.value||'foreign';
+    const roomId=Number(document.getElementById('roomSelect')?.value||0);
+    const adults=Number(document.getElementById('adults')?.value||1);
+    const children=Number(document.getElementById('children')?.value||0);
+    const plan=document.getElementById('mealPlan')?.value||'BB';
+    let rate=0;
+    if(type==='villa') rate=guestType==='foreign'?Number(settings?.villaForeign||0):Number(settings?.villaLocal||0);
+    else {
+      const room=(settings?.rooms||[]).find(r=>String(r.id)===String(roomId));
+      rate=guestType==='local' ? Number(room?.localRate||settings?.roomBaseLocal||room?.rate||settings?.roomRate||0)
+                                : Number(room?.foreignRate||settings?.roomBaseForeign||room?.rate||settings?.roomRate||0);
+      const cr=window.getConfiguredRate(plan,adults,children,roomId,guestType);
+      if(cr!==null) rate=Number(cr);
+    }
+    const ci=document.getElementById('checkIn')?.value, co=document.getElementById('checkOut')?.value;
+    const nights=ci&&co?Math.max(0,Math.round((new Date(co)-new Date(ci))/86400000)):0;
+    const total=rate*nights;
+    const fmt=v=>'LKR '+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const re=document.getElementById('reservationRate'),te=document.getElementById('reservationTotal'),ne=document.getElementById('reservationNights');
+    if(re)re.textContent=fmt(rate); if(te)te.textContent=fmt(total); if(ne)ne.textContent=nights;
+    return total;
+  };
+
+  const previousSave=window.saveReservation;
+  window.saveReservation=function(){
+    forceLKR();
+    const result=previousSave.apply(this,arguments);
+    const list=Array.isArray(reservations)?reservations:[];
+    const r=(typeof editingReservationId!=='undefined'&&editingReservationId)?list.find(x=>x.id===editingReservationId):list[list.length-1];
+    if(r){
+      r.currency='LKR';r.guestCurrency='LKR';r.baseCurrency='LKR';r.postingRateAtBooking=1;r.postingRateAtCalculation=1;r.accountingRate=1;
+      r.baseAmount=Number(r.total||0);r.foreignAmount=0;
+      const f=typeof getFolio==='function'?getFolio(r.id):null;
+      if(f){f.currency='LKR';f.baseCurrency='LKR';f.postingRateAtBooking=1;}
+      if(typeof saveData==='function')saveData();
+      try{Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(()=>{});}catch(e){}
+    }
+    return result;
+  };
+
+  function applyUI(){
+    forceLKR();
+    document.querySelectorAll('#genCurrency,#settingCurrency').forEach(e=>{if(e)e.value='LKR';});
+    document.querySelectorAll('#rr_foreign_2A,#rr_foreign_3A').forEach(()=>{});
+    document.querySelectorAll('#dynamicRoomRatePlans small').forEach(e=>{if(String(e.textContent).trim()==='USD')e.textContent='LKR';});
+    document.querySelectorAll('label').forEach(e=>{if(e.textContent.includes('Foreign Base Rate / Night (USD)'))e.textContent=e.textContent.replace('(USD)','(LKR)');});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(applyUI,0));
+  else setTimeout(applyUI,0);
+  setInterval(()=>{try{forceLKR();}catch(e){}},1500);
+})();
+</script>
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -19198,7 +19303,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(!types.length){box.innerHTML='<div class="empty">Create at least one active Room Type before setting rates.</div>';return;}
     box.innerHTML=types.map(t=>{
       const id=String(t.id), lm=normal(settings.roomRateMatrixLocal[id]), fm=normal(settings.roomRateMatrixForeign[id]);
-      return `<div class="card" style="margin-bottom:14px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'')}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Local 2A<br><small>LKR</small></th><th>Foreign 2A<br><small>USD</small></th><th>Local 3A<br><small>LKR</small></th><th>Foreign 3A<br><small>USD</small></th><th>Local 2A+1C<br><small>LKR</small></th><th>Foreign 2A+1C<br><small>USD</small></th><th>Local 2A+2C<br><small>LKR</small></th><th>Foreign 2A+2C<br><small>USD</small></th></tr></thead><tbody>${PLANS.map(plan=>`<tr><td><strong>${plan}</strong> — ${labels[plan]}</td>${KEYS.map(k=>`<td><input id="rr_local_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(lm[plan][k]||0)}"></td><td><input id="rr_foreign_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(fm[plan][k]||0)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+      return `<div class="card" style="margin-bottom:14px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'')}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Local 2A<br><small>LKR</small></th><th>Foreign 2A<br><small>LKR</small></th><th>Local 3A<br><small>LKR</small></th><th>Foreign 3A<br><small>LKR</small></th><th>Local 2A+1C<br><small>LKR</small></th><th>Foreign 2A+1C<br><small>LKR</small></th><th>Local 2A+2C<br><small>LKR</small></th><th>Foreign 2A+2C<br><small>LKR</small></th></tr></thead><tbody>${PLANS.map(plan=>`<tr><td><strong>${plan}</strong> — ${labels[plan]}</td>${KEYS.map(k=>`<td><input id="rr_local_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(lm[plan][k]||0)}"></td><td><input id="rr_foreign_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(fm[plan][k]||0)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
     }).join('');
   };
   window.saveRatePlans=function(){
@@ -19243,7 +19348,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   window.openReservationModal=function(){const r=arguments[2]&&reservations.find(x=>x.id===arguments[2]);const out=oldOpen.apply(this,arguments);setTimeout(()=>{if(r&&document.getElementById('guestType')){document.getElementById('guestType').value=r.guestType||'foreign';window.calculateReservation();}},0);return out;};
   function injectRateBaseFields(){
     const room=document.getElementById('settingRoomRate');if(!room||document.getElementById('settingRoomBaseLocal'))return;
-    const wrap=document.createElement('div');wrap.className='form-grid';wrap.style.marginTop='8px';wrap.innerHTML=`<div class="form-group"><label>Individual Room — Local Base Rate / Night (LKR)</label><input id="settingRoomBaseLocal" type="number" min="0" step="0.01"></div><div class="form-group"><label>Individual Room — Foreign Base Rate / Night (USD)</label><input id="settingRoomBaseForeign" type="number" min="0" step="0.01"></div>`;
+    const wrap=document.createElement('div');wrap.className='form-grid';wrap.style.marginTop='8px';wrap.innerHTML=`<div class="form-group"><label>Individual Room — Local Base Rate / Night (LKR)</label><input id="settingRoomBaseLocal" type="number" min="0" step="0.01"></div><div class="form-group"><label>Individual Room — Foreign Base Rate / Night (LKR)</label><input id="settingRoomBaseForeign" type="number" min="0" step="0.01"></div>`;
     room.closest('.form-group')?.parentElement?.insertBefore(wrap,room.closest('.form-group').nextSibling);
     document.getElementById('settingRoomBaseLocal').value=Number(settings?.roomBaseLocal||0);document.getElementById('settingRoomBaseForeign').value=Number(settings?.roomBaseForeign||settings?.roomRate||0);
   }
