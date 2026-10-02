@@ -6223,6 +6223,10 @@ function importPropertyFile(event){
     reader.readAsText(file);
 }
 
+/* v2.1.242 — Restaurant Edit Item price field displays/accepts LKR only.
+   Internal stored menu price remains unchanged to preserve POS/accounting behaviour.
+========================================================= */
+
 /* =========================================================
    RESTAURANT MENU MANAGEMENT
 ========================================================= */
@@ -6338,7 +6342,7 @@ function openPOSMenuItemModal(id=null){
       <div class="form-group"><label>Menu Item Name</label><input id="pmName" value="${escapeHtml(item?.name||"")}" placeholder="e.g. Chicken Curry"></div>
       <div class="form-group"><label>Category</label><input id="pmCategory" value="${escapeHtml(item?.category||"General")}" placeholder="Main Course"></div>
       <div class="form-group"><label>Restaurant / Outlet</label><select id="pmOutletId">${outletOptions}</select></div>
-      <div class="form-group"><label>Selling Price</label><input id="pmPrice" type="number" min="0" step="0.01" value="${Number(item?.price||0)}"></div>
+      <div class="form-group"><label>Selling Price (LKR)</label><input id="pmPrice" type="number" min="0" step="0.01" value="${Number(posAmountLKR(item?.price||0)).toFixed(2)}"></div>
       <div class="form-group"><label>Status</label><select id="pmActive"><option value="true" ${item?.active!==false?'selected':''}>Active</option><option value="false" ${item?.active===false?'selected':''}>Inactive</option></select></div>
     </div>
     <div id="pmRecipeSummary" style="margin-top:10px;padding:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;color:#475569">Recipe details will be available after this menu item is saved.</div>`;
@@ -6364,10 +6368,14 @@ function savePOSMenuItemModal(id){
     const name=document.getElementById('pmName')?.value.trim();
     const category=document.getElementById('pmCategory')?.value.trim()||'General';
     const outletId=document.getElementById('pmOutletId')?.value || POS_OUTLET_ID || getCurrentPOSOutlet()?.id;
-    const price=Number(document.getElementById('pmPrice')?.value||0);
+    const enteredPriceLKR=Number(document.getElementById('pmPrice')?.value||0);
     const active=document.getElementById('pmActive')?.value!=='false';
     if(!name){alert('Menu item name is required.');return;}
-    if(!Number.isFinite(price)||price<0){alert('Please enter a valid selling price.');return;}
+    if(!Number.isFinite(enteredPriceLKR)||enteredPriceLKR<0){alert('Please enter a valid LKR selling price.');return;}
+    /* Restaurant Menu Manager edit field is LKR-only. Keep the existing
+       internal menu currency model untouched so POS/accounting behaviour
+       remains exactly as before. */
+    const price=enteredPriceLKR/Math.max(0.000001,Number(posRate()||1));
     const outlets=ensureRestaurantOutletData();
     const outlet=outlets.find(o=>String(o.id)===String(outletId));
     if(!outlet){alert('Please select a valid restaurant / outlet.');return;}
@@ -17285,6 +17293,23 @@ function cloudPropertyToLocal(row,existing){
         shaped.rooms=JSON.parse(JSON.stringify(existingRooms));
     }
     const cloudSettings=(row && row.settings_data && typeof row.settings_data==='object')?row.settings_data:{};
+    /* v2.1.244: cloud settings are applied during the initial login/context
+       load as well as manual Cloud Refresh. */
+    const CONFIG_KEYS=[
+      'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
+      'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+      'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
+      'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
+      'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
+      'roomTypes','mealPlanFoodPercentages','licenseHolder','licenseKey','supportContact',
+      'installationId','experiences','eventBookings'
+    ];
+    CONFIG_KEYS.forEach(k=>{
+      if(Object.prototype.hasOwnProperty.call(cloudSettings,k)){
+        try{shaped[k]=JSON.parse(JSON.stringify(cloudSettings[k]));}
+        catch(e){shaped[k]=cloudSettings[k];}
+      }
+    });
     if(cloudSettings.salesDistribution) shaped.salesDistribution=normalizeSalesDistribution(cloudSettings.salesDistribution);
     else if(existing?.salesDistribution) shaped.salesDistribution=normalizeSalesDistribution(existing.salesDistribution);
     return shaped;
@@ -17305,11 +17330,11 @@ async function fetchCloudContext(){
     const isAdmin=normalizedRole==="Admin";
     let propertyRows=[];
     if(isAdmin){
-        const {data,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email");
+        const {data,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email,settings_data");
         if(error)throw error;
         propertyRows=data||[];
     }else if(propertyIds.length){
-        const {data,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email").in("id",propertyIds);
+        const {data,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email,settings_data").in("id",propertyIds);
         if(error)throw error;
         propertyRows=data||[];
     }
@@ -17520,7 +17545,7 @@ async function repairUnmappedLocalPropertiesToCloud(){
     const {data:{session}}=await client.auth.getSession();
     if(!session?.user) return false;
 
-    const {data:cloudProps,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email");
+    const {data:cloudProps,error}=await client.from("properties").select("id,code,name,address,city,country,phone,email,settings_data");
     if(error) throw error;
     const rows=Array.isArray(cloudProps)?cloudProps:[];
     const usedCodes=new Set(rows.map(x=>String(x.code||"").trim().toUpperCase()).filter(Boolean));
@@ -18903,6 +18928,108 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
 })();
 </script>
 
+
+<script id="v2-1-241-property-base-rate-ui-sync">
+/* v2.1.241 — PROPERTY-SPECIFIC BASE RATE UI SYNC
+   Fix: the injected Local/Foreign base-rate fields were only populated when
+   the fields were first created. After switching properties, the same DOM
+   inputs could continue showing the previous property's values. This patch
+   refreshes the displayed values from the CURRENT property's settings after
+   property changes/rendering, without changing the saved data model.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV241BaseRateUISync)return;
+  window.__signatureV241BaseRateUISync=true;
+
+  function syncCurrentPropertyBaseRateFields(){
+    try{
+      const local=document.getElementById('settingRoomBaseLocal');
+      const foreign=document.getElementById('settingRoomBaseForeign');
+      if(!local && !foreign)return;
+      if(typeof settings==='undefined' || !settings)return;
+      const l=Number(settings.roomBaseLocal||0);
+      const f=Number(settings.roomBaseForeign||settings.roomRate||0);
+      /* Do not overwrite values while the user is actively editing them. */
+      const active=document.activeElement;
+      if(local && active!==local) local.value=l;
+      if(foreign && active!==foreign) foreign.value=f;
+    }catch(e){console.warn('v2.1.241 base-rate UI sync skipped:',e);}
+  }
+
+  const previousRenderAll=window.renderAll;
+  if(typeof previousRenderAll==='function'){
+    window.renderAll=function(){
+      const result=previousRenderAll.apply(this,arguments);
+      setTimeout(syncCurrentPropertyBaseRateFields,0);
+      return result;
+    };
+  }
+
+  const previousLoadCurrentPropertyData=window.loadCurrentPropertyData;
+  if(typeof previousLoadCurrentPropertyData==='function'){
+    window.loadCurrentPropertyData=function(){
+      const result=previousLoadCurrentPropertyData.apply(this,arguments);
+      setTimeout(syncCurrentPropertyBaseRateFields,0);
+      return result;
+    };
+  }
+
+  window.__signatureSyncCurrentPropertyBaseRateFields=syncCurrentPropertyBaseRateFields;
+  setTimeout(syncCurrentPropertyBaseRateFields,0);
+})();
+</script>
+
+<script id="v2-1-244-config-source-of-truth-final">
+/* v2.1.244 — CONFIG SOURCE OF TRUTH FINAL
+   Supabase properties.settings_data is authoritative for Property Settings,
+   Base Rates and Rate Plans across HTML deployments. Other modules untouched.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV244ConfigSourceOfTruth)return;
+  window.__signatureV244ConfigSourceOfTruth=true;
+  const KEYS=[
+    'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
+    'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+    'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
+    'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
+    'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
+    'roomTypes','mealPlanFoodPercentages','licenseHolder','licenseKey','supportContact',
+    'installationId','experiences','eventBookings'
+  ];
+  function mergeCloudConfig(property,row){
+    const cloud=(row?.settings_data&&typeof row.settings_data==='object')?row.settings_data:{};
+    KEYS.forEach(k=>{
+      if(Object.prototype.hasOwnProperty.call(cloud,k)){
+        try{property[k]=JSON.parse(JSON.stringify(cloud[k]));}catch(e){property[k]=cloud[k];}
+      }
+    });
+    return property;
+  }
+  const originalSync=window.syncSupabaseProperties;
+  if(typeof originalSync==='function'){
+    window.syncSupabaseProperties=async function(){
+      const result=await originalSync.apply(this,arguments);
+      try{
+        const client=initSupabaseClient();
+        if(client&&currentPropertyId){
+          const cloudId=await resolveSupabasePropertyId(String(currentPropertyId));
+          if(cloudId){
+            const {data:row,error}=await client.from('properties').select('settings_data').eq('id',String(cloudId)).maybeSingle();
+            if(error)throw error;
+            if(row?.settings_data){
+              const active=properties.find(p=>String(p.id)===String(currentPropertyId));
+              if(active){mergeCloudConfig(active,row);saveProperties();loadCurrentPropertyData();renderAll();}
+            }
+          }
+        }
+      }catch(e){console.warn('v2.1.244 final config hydration skipped:',e);}
+      return result;
+    };
+  }
+})();
+</script>
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -19617,3 +19744,254 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   };
 })();
 </script>
+
+<script id="v2-1-240-property-settings-rateplan-cloud-persistence">
+/* v2.1.240 — PROPERTY SETTINGS + RATE PLAN CLOUD PERSISTENCE
+   Keep the proven v2.1.239 room/reservation/user cloud flows unchanged.
+   Persist only property configuration fields to properties.settings_data.
+   Room configuration remains in property_rooms and is never overwritten here.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV240ConfigCloudPatch)return;
+  window.__signatureV240ConfigCloudPatch=true;
+
+  const CONFIG_KEYS=[
+    'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
+    'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+    'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
+    'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
+    'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
+    'roomTypes','mealPlanFoodPercentages','licenseHolder','licenseKey','supportContact',
+    'installationId','experiences','eventBookings'
+  ];
+
+  function configSnapshot(src){
+    const out={};
+    CONFIG_KEYS.forEach(k=>{
+      if(src && Object.prototype.hasOwnProperty.call(src,k)){
+        try{ out[k]=JSON.parse(JSON.stringify(src[k])); }
+        catch(e){ out[k]=src[k]; }
+      }
+    });
+    return out;
+  }
+
+  async function savePropertyConfigToCloud(){
+    const client=initSupabaseClient();
+    if(!client || !currentPropertyId || !settings)return false;
+    const authUser=await getSupabaseSessionUser();
+    if(!authUser)return false;
+
+    const cloudId=await resolveSupabasePropertyId(String(currentPropertyId));
+    if(!cloudId)throw new Error('Cloud property could not be resolved.');
+
+    const {data:row,error:readError}=await client.from('properties')
+      .select('id,name,address,city,country,phone,email,settings_data')
+      .eq('id',String(cloudId)).maybeSingle();
+    if(readError)throw readError;
+    if(!row)throw new Error('Cloud property was not found.');
+
+    const existing=(row.settings_data && typeof row.settings_data==='object')?row.settings_data:{};
+    const merged={...existing,...configSnapshot(settings)};
+
+    const payload={
+      settings_data:merged,
+      name:String(settings.property||row.name||''),
+      address:String(settings.location||row.address||''),
+      city:String(settings.location||row.city||'')
+    };
+
+    const {error:updateError}=await client.from('properties')
+      .update(payload)
+      .eq('id',String(cloudId));
+    if(updateError)throw updateError;
+    return true;
+  }
+
+  function applyCloudConfig(row,existing){
+    const cloud=(row?.settings_data && typeof row.settings_data==='object')?row.settings_data:{};
+    const out=existing?{...existing}:{id:String(row?.id||'')};
+    out.id=String(row?.id||out.id||'');
+    out.property=String(row?.name||out.property||'Cloud Property');
+    out.location=[row?.address,row?.city,row?.country].filter(Boolean).join(', ')||out.location||'';
+    out.code=row?.code||out.code||'';
+    out.phone=row?.phone||out.phone||'';
+    out.email=row?.email||out.email||'';
+
+    /* settings_data is configuration only. Never take rooms from it. */
+    CONFIG_KEYS.forEach(k=>{
+      if(Object.prototype.hasOwnProperty.call(cloud,k)){
+        try{out[k]=JSON.parse(JSON.stringify(cloud[k]));}
+        catch(e){out[k]=cloud[k];}
+      }
+    });
+
+    /* Preserve the browser's known room set. property_rooms remains the
+       authoritative room configuration and is hydrated separately. */
+    if(existing && Array.isArray(existing.rooms))out.rooms=JSON.parse(JSON.stringify(existing.rooms));
+    if(existing && existing.restaurants)out.restaurants=JSON.parse(JSON.stringify(existing.restaurants));
+    if(existing && existing.posMenu)out.posMenu=JSON.parse(JSON.stringify(existing.posMenu));
+    if(existing && existing.selectedPOSOutletId)out.selectedPOSOutletId=existing.selectedPOSOutletId;
+    return out;
+  }
+
+  async function refreshPropertiesWithConfig(){
+    const client=initSupabaseClient();
+    if(!client)throw new Error('Supabase client unavailable.');
+    const {data:{session}}=await client.auth.getSession();
+    if(!session?.user)throw new Error('Please sign in with Supabase first.');
+
+    const {data:profile,error:profileError}=await client.from('profiles')
+      .select('id,username,role,status').eq('id',session.user.id).maybeSingle();
+    if(profileError)throw profileError;
+    const isAdmin=String(profile?.role||'').toLowerCase().replace(/\s+/g,'')==='admin' || String(profile?.username||'').toLowerCase()==='admin';
+
+    const {data:ups,error:upError}=await client.from('user_properties')
+      .select('property_id,is_primary').eq('user_id',session.user.id);
+    if(upError)throw upError;
+
+    let rows=[];
+    if(isAdmin){
+      const {data,error}=await client.from('properties')
+        .select('id,code,name,address,city,country,phone,email,settings_data');
+      if(error)throw error;
+      rows=data||[];
+    }else{
+      const ids=[...new Set((ups||[]).map(x=>x.property_id).filter(Boolean))];
+      if(ids.length){
+        const {data,error}=await client.from('properties')
+          .select('id,code,name,address,city,country,phone,email,settings_data').in('id',ids);
+        if(error)throw error;
+        rows=data||[];
+      }
+    }
+
+    const oldProperties=Array.isArray(properties)?properties:[];
+    properties=rows.map(row=>{
+      const existing=oldProperties.find(p=>String(p?.id)===String(row?.id));
+      return applyCloudConfig(row,existing);
+    });
+    saveProperties();
+
+    const primary=(ups||[]).find(x=>x.is_primary)?.property_id || rows[0]?.id || null;
+    if(primary){
+      currentPropertyId=String(primary);
+      loadCurrentPropertyData();
+    }
+    renderPropertySwitcher();
+    renderPropertyManager();
+    renderAll();
+
+    try{await hydrateSupabaseRooms();}catch(e){console.warn('Room cloud refresh after config refresh skipped:',e);}
+    setSupabaseCloudBadge('Connected','green');
+    setSupabaseCloudMessage('Cloud properties, Property Settings and Rate Plans refreshed successfully.','success');
+    return true;
+  }
+
+  const oldSaveSettings=window.saveSettings;
+  if(typeof oldSaveSettings==='function'){
+    window.saveSettings=function(){
+      const result=oldSaveSettings.apply(this,arguments);
+      Promise.resolve().then(async()=>{
+        try{
+          const ok=await savePropertyConfigToCloud();
+          if(ok)setSupabaseCloudMessage('Property Settings saved and synchronized to cloud.','success');
+        }catch(e){
+          console.error('Property Settings cloud save failed:',e);
+          setSupabaseCloudMessage('Property Settings saved locally, but cloud save failed: '+(e?.message||e),'error');
+          alert('Property Settings were saved locally, but the cloud update failed.\n\n'+(e?.message||e));
+        }
+      });
+      return result;
+    };
+  }
+
+  const oldSaveRatePlans=window.saveRatePlans;
+  if(typeof oldSaveRatePlans==='function'){
+    window.saveRatePlans=function(){
+      const result=oldSaveRatePlans.apply(this,arguments);
+      Promise.resolve().then(async()=>{
+        try{
+          const ok=await savePropertyConfigToCloud();
+          if(ok)setSupabaseCloudMessage('Rate Plans saved and synchronized to cloud.','success');
+        }catch(e){
+          console.error('Rate Plans cloud save failed:',e);
+          setSupabaseCloudMessage('Rate Plans saved locally, but cloud save failed: '+(e?.message||e),'error');
+          alert('Rate Plans were saved locally, but the cloud update failed.\n\n'+(e?.message||e));
+        }
+      });
+      return result;
+    };
+  }
+
+  window.syncSupabaseProperties=refreshPropertiesWithConfig;
+  window.__signatureSavePropertyConfigToCloud=savePropertyConfigToCloud;
+})();
+</script>
+
+<script id="v2-1-243-config-persistence-hardening">
+/* v2.1.244 — PROPERTY SETTINGS + RATE PLAN PERSISTENCE HARDENING
+   Scope: only Property Settings and Rate Plans.
+   Keep Restaurant/POS, Reservations, Rooms, Accounting and all other modules unchanged.
+   This final wrapper makes the cloud write awaitable and prevents a stale local
+   snapshot from being considered the saved configuration.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV243ConfigPersistenceFix)return;
+  window.__signatureV243ConfigPersistenceFix=true;
+
+  async function persistConfig(label){
+    const fn=window.__signatureSavePropertyConfigToCloud;
+    if(typeof fn!=='function') throw new Error('Property configuration cloud saver is unavailable.');
+    const ok=await fn();
+    if(!ok) throw new Error('Cloud configuration save was not completed.');
+    if(typeof setSupabaseCloudBadge==='function') setSupabaseCloudBadge('Connected','green');
+    if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage(label+' saved and synchronized to cloud.','success');
+    return true;
+  }
+
+  const baseSaveSettings=window.saveSettings;
+  if(typeof baseSaveSettings==='function'){
+    window.saveSettings=async function(){
+      const result=baseSaveSettings.apply(this,arguments);
+      /* The existing saveSettings chain updates local settings first. Wait for
+         that chain, then write the final values (including room base rates) to cloud. */
+      await Promise.resolve(result);
+      try{
+        await persistConfig('Property Settings');
+      }catch(e){
+        console.error('v2.1.243 Property Settings cloud save failed:',e);
+        if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Property Settings saved locally, but cloud save failed: '+(e?.message||e),'error');
+        alert('Property Settings were saved locally, but the cloud update failed.\n\n'+(e?.message||e));
+      }
+      return result;
+    };
+  }
+
+  const baseSaveRatePlans=window.saveRatePlans;
+  if(typeof baseSaveRatePlans==='function'){
+    window.saveRatePlans=async function(){
+      const result=baseSaveRatePlans.apply(this,arguments);
+      await Promise.resolve(result);
+      try{
+        await persistConfig('Rate Plans');
+      }catch(e){
+        console.error('v2.1.243 Rate Plans cloud save failed:',e);
+        if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Rate Plans saved locally, but cloud save failed: '+(e?.message||e),'error');
+        alert('Rate Plans were saved locally, but the cloud update failed.\n\n'+(e?.message||e));
+      }
+      return result;
+    };
+  }
+
+  /* Always use the config-aware refresh. It reads properties.settings_data,
+     then hydrates rooms separately, so saved rates/settings are not replaced
+     by the room table. */
+  if(typeof window.syncSupabaseProperties==='function' && typeof window.__signatureSavePropertyConfigToCloud==='function'){
+    /* v2.1.240 already installed the config-aware refresh. Keep it authoritative. */
+  }
+})();
+</script>
+
