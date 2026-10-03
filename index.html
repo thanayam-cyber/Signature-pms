@@ -884,6 +884,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
             </button>
 </div>
 </div>
+<div class="section" style="margin-top:18px" id="fnbTableServiceSection"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close & settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTableService()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
 <div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Invoices</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Latest 25 restaurant bills. Every POS order (cash, card, room charge) gets an invoice number.</div></div></div><div class="table-wrap"><table><thead><tr><th>Invoice No</th><th>Date / Time</th><th>Outlet</th><th>Customer</th><th>Method</th><th style="text-align:right">Total</th><th>Action</th></tr></thead><tbody id="posInvoiceTable"><tr><td colspan="7" class="empty">No restaurant invoices yet.</td></tr></tbody></table></div></div>
 </section>
 <!-- PAYMENTS -->
@@ -1410,9 +1411,23 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div style="font-size:12px;color:#6b7280;margin-top:10px">The generated file starts with one clean property and separate storage keys, so it will not inherit Master/demo reservations, guests, folios or payments.</div>
 </div>
+<div class="section" id="dataMigrationSection" style="border:2px solid #dbeafe;background:#f8fbff">
+<div class="section-header"><div><h3>Data Migration / Import Center</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Import a hotel's existing data into the selected property with preview, validation, duplicate protection and a backup step.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
+<div class="summary-box" style="margin-bottom:12px"><strong>Migration flow</strong><br>Download template → prepare CSV → Preview &amp; Validate → Download backup → Import valid records → review migration result.</div>
+<div class="form-grid">
+<div class="form-group"><label>Import Type</label><select id="migrationType" onchange="migrationTypeChanged()"><option value="guests">Guest Profiles</option><option value="rooms">Rooms / Units</option><option value="reservations">Reservations / Opening Bookings</option></select></div>
+<div class="form-group"><label>Data Mode</label><select id="migrationMode"><option value="historical">Historical records</option><option value="opening">Opening / active bookings</option></select></div>
+<div class="form-group"><label>Source System</label><input id="migrationSourceSystem" placeholder="e.g. Opera, Cloudbeds, Excel, Manual"></div>
+<div class="form-group"><label>Source Currency</label><select id="migrationCurrency"><option value="LKR">LKR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="Other">Other</option></select></div>
+<div class="form-group"><label>Conversion Rate to LKR</label><input id="migrationFxRate" type="number" min="0.000001" step="0.000001" value="1"></div>
+<div class="form-group full"><label>CSV File</label><input id="migrationFile" type="file" accept=".csv,text/csv,.txt" onchange="handleMigrationFile(event)"><div style="font-size:11px;color:#6b7280;margin-top:5px">For Excel, save the sheet as CSV UTF-8 first. Existing PMS data is never deleted by this importer.</div></div>
+</div>
+<div style="margin-top:12px;padding:12px;border:1px dashed #93c5fd;border-radius:10px;background:#ffffff"><div style="font-weight:700">Safe Test Property</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">Create/select a completely separate H999 property for migration testing. Existing H001/H002 data is not modified.</div><button class="btn btn-secondary" type="button" onclick="createMigrationTestProperty()">Create / Open H999 Migration Test Hotel</button><div id="migrationTestPropertyStatus" style="font-size:12px;color:#475569;margin-top:8px"></div></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-secondary" type="button" onclick="downloadMigrationTemplate()">Download Template</button><button class="btn btn-secondary" type="button" onclick="downloadCurrentDataBackup()">Download Current Data Backup</button><button class="btn btn-primary" type="button" onclick="previewMigration()">Preview &amp; Validate</button><button class="btn btn-success" type="button" onclick="executeMigrationImport()" id="migrationImportBtn" disabled>Import Valid Records</button></div>
+<div id="migrationFileStatus" style="font-size:12px;color:#475569;margin-top:10px">No file selected.</div><div id="migrationPreview" class="table-wrap" style="margin-top:12px;display:none"></div><div id="migrationResult" style="margin-top:12px"></div>
+</div>
 <div class="section">
-<div class="section-header">
-<h3>Property Settings</h3>
+<div class="section-header"><h3>Property Settings</h3>
 </div>
 <div class="form-grid">
 <div class="form-group">
@@ -1450,6 +1465,23 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-danger" id="clearRevenueBtn" onclick="clearRevenueHistory()" style="margin-top:15px">
             Clear Revenue History
         </button>
+</div>
+<div class="section" id="sriLankaTaxConfigurationSection" style="border:2px solid #dbeafe;background:#f8fbff">
+<div class="section-header"><div><h3>Sri Lanka Tax &amp; Billing Configuration</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Configure customer-facing VAT/service charge separately from statutory turnover levies. Rates are property-specific.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
+<div class="form-grid">
+<div class="form-group"><label>VAT Registration</label><select id="slVatEnabled"><option value="no">Not Registered / Do Not Charge VAT</option><option value="yes">VAT Registered / Charge VAT</option></select></div>
+<div class="form-group"><label>VAT Rate %</label><input id="slVatRate" type="number" min="0" step="0.01" value="18"></div>
+<div class="form-group"><label>VAT Pricing</label><select id="slVatInclusive"><option value="no">VAT Exclusive — Add VAT</option><option value="yes">VAT Inclusive — Extract VAT</option></select></div>
+<div class="form-group"><label>Service Charge</label><select id="slServiceChargeEnabled"><option value="no">Disabled</option><option value="yes">Enabled</option></select></div>
+<div class="form-group"><label>Service Charge Rate %</label><input id="slServiceChargeRate" type="number" min="0" step="0.01" value="10"></div>
+<div class="form-group"><label>TDL</label><select id="slTdlEnabled"><option value="no">Reporting Only / Not on Guest Bill</option><option value="yes">Track TDL Liability</option></select></div>
+<div class="form-group"><label>TDL Standard Rate %</label><input id="slTdlRate" type="number" min="0" step="0.01" value="1"></div>
+<div class="form-group"><label>TDL Small Turnover Rate %</label><input id="slTdlSmallRate" type="number" min="0" step="0.01" value="0.5"></div>
+<div class="form-group"><label>SSCL</label><select id="slSsclEnabled"><option value="no">Reporting Only / Not on Guest Bill</option><option value="yes">Track SSCL Liability</option></select></div>
+<div class="form-group"><label>SSCL Rate %</label><input id="slSsclRate" type="number" min="0" step="0.01" value="2.5"></div>
+</div>
+<div class="summary-box" style="margin-top:12px"><strong>Important:</strong> VAT is a customer-facing tax when the property is VAT-registered. Service charge is separate from VAT. TDL and SSCL are statutory business levies and are tracked separately; they are not automatically added to the guest bill by this configuration.</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-primary" type="button" onclick="saveSriLankaTaxSettings()">Save Tax &amp; Billing Settings</button></div>
 </div>
 <div class="section" id="roomTypesConfigurationSection">
 <div class="section-header"><div><h3>Room Type Management</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Create unlimited room types for this property. Room types are used by individual rooms and availability.</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="addRoomType()">+ Add Room Type</button><button class="btn btn-primary" onclick="saveRoomTypesConfiguration()">Save Room Types</button></div></div>
@@ -2009,7 +2041,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div class="section" style="margin-top:16px;padding:14px;background:#f8faf9">
-<div class="section-header" style="margin-bottom:10px"><div><strong>Individual User Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Assign the exact modules this user can access. Access is controlled by these rights, not by the role name.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(true)" type="button">Select All</button><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(false)" type="button">Clear All</button></div></div>
+<div class="section-header" style="margin-bottom:10px"><div><strong>Individual User Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Assign the exact modules this user can access. Access is controlled by these tick-box rights, not by the role name. Manager/Admin users can assign the rights they are authorized to manage.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(true)" type="button">Select All</button><button class="btn btn-secondary btn-small" onclick="setAllUserPermissions(false)" type="button">Clear All</button></div></div>
 <div id="userPermissionsGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
 </div>
 <div class="section" style="margin-top:12px;padding:14px;background:#f8faf9"><div class="section-header" style="margin-bottom:10px"><div><strong>Module Action Rights</strong><div style="font-size:11px;color:#6b7280;margin-top:3px">Expand Reservations, Restaurant POS, Cashier, Purchasing, or HR &amp; Payroll to assign individual action rights.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(true)" type="button">Select All Actions</button><button class="btn btn-secondary btn-small" onclick="setAllUserActionPermissions(false)" type="button">Clear Actions</button></div></div><div id="userActionPermissionsGrid"></div></div>
@@ -2028,7 +2060,16 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* v2.1.304 — Supabase loader fallback.
+   Keep the stable PMS logic untouched; if jsDelivr is blocked/unavailable,
+   synchronously load the same official package from unpkg before app code runs. */
+if(!window.supabase || typeof window.supabase.createClient!=="function"){
+  document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');
+}
+</script>
+<script>
 // Build mode: the Master keeps the Customer Edition Generator; generated hotel editions set this to true.
+// v2.1.304 LOGIN CLOUD LOADER FIX — based directly on v2.1.300 stable.
 const CUSTOMER_BUILD=true;
 // Reservation status consistency fix: canonical stored values are Reserved / Confirmed / Checked-In / Checked-Out / Cancelled / No-Show.
 
@@ -2134,7 +2175,7 @@ function renderMealPlanRevenuePercentages(){
     }).join("");
 }
 function saveMealPlanRevenuePercentages(){
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.mealplan")) return;
     if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
     const next={...DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES};
     ["RO","BB","HB","FB","AI"].forEach(code=>{
@@ -2239,7 +2280,7 @@ function renderRateRevenueAllocation(){
     }).join(""):"<div class='empty'>Create at least one active Room Type before setting revenue allocations.</div>";
 }
 function saveRateRevenueAllocation(){
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.mealplan")) return;
     if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
     const plans=["BB","HB","FB","AI"], keys=["2A","3A","2A1C","2A2C"], local={}, foreign={}, localRates=settings.roomRateMatrixLocal||{}, foreignRates=settings.roomRateMatrixForeign||normalizeRoomRateMatrix(settings.roomRateMatrix);
     let errors=[];
@@ -2321,7 +2362,7 @@ function renderRoomRatePlans(){
 }
 
 async function saveRatePlans(){
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.rateplans")) return;
     if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
     const plans=["BB","HB","FB","AI"], keys=["2A","3A","2A1C","2A2C"];
     const matrix={};
@@ -2414,7 +2455,9 @@ const STORAGE = {
     cashierClosings:"signature_pms_cashier_closings",
     fnbClosings:"signature_pms_fnb_closings",
     pmAccounts:"signature_pms_pm_accounts",
-    pmTransactions:"signature_pms_pm_transactions"
+    pmTransactions:"signature_pms_pm_transactions",
+    migrationBatches:"signature_pms_migration_batches",
+    fnbTables:"signature_pms_fnb_tables"
 };
 
 const DEFAULT_POS_MENU = [
@@ -2525,7 +2568,7 @@ function defaultBarMenu(){
  ];
 }
 function addBarOutlet(){
- if(!requireRole("Admin","Manager"))return; if(!settings)return;
+ if(!hasActionPermission("settings.pos")) return; if(!settings)return;
  const outlets=getPOSOutlets();
  const existing=outlets.find(o=>String(o.outletType||"").toLowerCase()==="bar");
  if(existing){selectPOSOutlet(existing.id);alert("A Bar outlet already exists. It has been selected.");return;}
@@ -2533,10 +2576,10 @@ function addBarOutlet(){
  outlets.push(outlet); settings.restaurants=outlets; POS_OUTLET_ID=outlet.id; POS_MENU.length=0; POS_MENU.push(...outlet.posMenu);
  savePOSOutlets(); saveData(); renderAll();
 }
-function addRestaurantOutlet(){if(!requireRole("Admin","Manager"))return;if(!settings)return;const name=prompt("Restaurant / Outlet name:","Restaurant "+(getPOSOutlets().length+1));if(name===null||!name.trim())return;const outlet={id:"outlet_"+Date.now()+"_"+Math.random().toString(36).slice(2,7),name:name.trim(),outletType:"Restaurant",active:true,posMenu:normalizePOSMenu(DEFAULT_POS_MENU)};settings.restaurants=getPOSOutlets();settings.restaurants.push(outlet);POS_OUTLET_ID=outlet.id;POS_MENU.length=0;POS_MENU.push(...outlet.posMenu);savePOSOutlets();saveData();renderAll();}
-function editRestaurantOutlet(id){if(!requireRole("Admin","Manager"))return;const o=getPOSOutlets().find(x=>x.id===id);if(!o)return;const name=prompt("Restaurant / Outlet name:",o.name);if(name===null||!name.trim())return;o.name=name.trim();savePOSOutlets();saveData();renderAll();}
-function toggleRestaurantOutlet(id){if(!requireRole("Admin","Manager"))return;const o=getPOSOutlets().find(x=>x.id===id);if(!o)return;if(o.active!==false&&getPOSOutlets().filter(x=>x.active!==false).length<=1){alert("At least one restaurant / outlet must remain active.");return;}o.active=o.active===false;if(!o.active&&POS_OUTLET_ID===id){const next=getPOSOutlets().find(x=>x.active!==false);if(next)selectPOSOutlet(next.id);}savePOSOutlets();saveData();renderAll();}
-function deleteRestaurantOutlet(id){if(!requireRole("Admin","Manager"))return;const outlets=getPOSOutlets();if(outlets.length<=1){alert("At least one restaurant / outlet is required.");return;}const o=outlets.find(x=>x.id===id);if(!o)return;if(sales.some(s=>String(s.outletId||"")===String(id))){alert("This restaurant has sales history and cannot be deleted. Deactivate it instead.");return;}if(!confirm("Delete "+o.name+"?"))return;settings.restaurants=outlets.filter(x=>x.id!==id);const next=settings.restaurants.find(x=>x.active!==false)||settings.restaurants[0];POS_OUTLET_ID=next.id;POS_MENU.length=0;POS_MENU.push(...next.posMenu);savePOSOutlets();saveData();renderAll();}
+function addRestaurantOutlet(){if(!hasActionPermission("settings.pos")) return;if(!settings)return;const name=prompt("Restaurant / Outlet name:","Restaurant "+(getPOSOutlets().length+1));if(name===null||!name.trim())return;const outlet={id:"outlet_"+Date.now()+"_"+Math.random().toString(36).slice(2,7),name:name.trim(),outletType:"Restaurant",active:true,posMenu:normalizePOSMenu(DEFAULT_POS_MENU)};settings.restaurants=getPOSOutlets();settings.restaurants.push(outlet);POS_OUTLET_ID=outlet.id;POS_MENU.length=0;POS_MENU.push(...outlet.posMenu);savePOSOutlets();saveData();renderAll();}
+function editRestaurantOutlet(id){if(!hasActionPermission("settings.pos")) return;const o=getPOSOutlets().find(x=>x.id===id);if(!o)return;const name=prompt("Restaurant / Outlet name:",o.name);if(name===null||!name.trim())return;o.name=name.trim();savePOSOutlets();saveData();renderAll();}
+function toggleRestaurantOutlet(id){if(!hasActionPermission("settings.pos")) return;const o=getPOSOutlets().find(x=>x.id===id);if(!o)return;if(o.active!==false&&getPOSOutlets().filter(x=>x.active!==false).length<=1){alert("At least one restaurant / outlet must remain active.");return;}o.active=o.active===false;if(!o.active&&POS_OUTLET_ID===id){const next=getPOSOutlets().find(x=>x.active!==false);if(next)selectPOSOutlet(next.id);}savePOSOutlets();saveData();renderAll();}
+function deleteRestaurantOutlet(id){if(!hasActionPermission("settings.pos")) return;const outlets=getPOSOutlets();if(outlets.length<=1){alert("At least one restaurant / outlet is required.");return;}const o=outlets.find(x=>x.id===id);if(!o)return;if(sales.some(s=>String(s.outletId||"")===String(id))){alert("This restaurant has sales history and cannot be deleted. Deactivate it instead.");return;}if(!confirm("Delete "+o.name+"?"))return;settings.restaurants=outlets.filter(x=>x.id!==id);const next=settings.restaurants.find(x=>x.active!==false)||settings.restaurants[0];POS_OUTLET_ID=next.id;POS_MENU.length=0;POS_MENU.push(...next.posMenu);savePOSOutlets();saveData();renderAll();}
 
 
 function defaultProperty(id,name,location,roomCount,roomRate,options={}){
@@ -2599,6 +2642,8 @@ let currentUser=null;
 let editingUserId=null;
 let editingReservationId=null;
 let posOrder=[];
+let fnbTables=[];
+let activeFNBTableId="";
 
 let calendarStartDate=new Date();
 calendarStartDate.setHours(0,0,0,0);
@@ -2614,7 +2659,7 @@ const ROLE_PAGES={
 };
 
 const PERMISSION_PAGES=[
- ["dashboard","Dashboard"],["frontoffice","Front Office Dashboard"],["reservations","Reservations"],["guests","Guest Profiles"],["rooms","Rooms"],["engineering","Engineering"],["availability","Availability"],["checkin","Check-In"],["checkout","Check-Out"],["folios","Guest Folios"],["pmrooms","PM Rooms / Posting"],["pos","Restaurant POS"],["experiences","Experiences"],["eventbookings","Event Booking"],["payments","Payments"],["cashiershift","Cashier Shift & Daily Closing"],["reports","Reports"],["nightaudit","Night Audit"],["accounting","Accounting"],["purchasing","Purchasing"],["stores","Stores & Recipes"],["hr","HR & Payroll"],["settings","Settings"],["users","Users Management"]
+ ["dashboard","Dashboard"],["frontoffice","Front Office Dashboard"],["reservations","Reservations"],["guests","Guest Profiles"],["rooms","Rooms"],["engineering","Engineering"],["availability","Availability"],["checkin","Check-In"],["checkout","Check-Out"],["folios","Guest Folios"],["pmrooms","PM Rooms / Posting"],["pos","Restaurant POS"],["experiences","Experiences"],["eventbookings","Event Booking"],["payments","Payments"],["cashiershift","Cashier Shift & Daily Closing"],["reports","Reports"],["nightaudit","Night Audit"],["accounting","Accounting"],["purchasing","Purchasing"],["stores","Stores & Recipes"],["hr","HR & Payroll"],["settings","Settings"],["users","User Permissions / User Management"]
 ];
 const REPORT_PERMISSION_OPTIONS=[
  ["daily_summary","Daily / Operational Summary"],["revenue_summary","Revenue Summary"],["reservation_report","Reservation Report"],["payment_report","Payments by Method"],["closing_report","Daily Closing / Reconciliation"],
@@ -2636,14 +2681,14 @@ const ACTION_PERMISSION_GROUPS={
   ["reservations.create","Create reservations"],["reservations.edit","Edit reservations"],["reservations.cancel","Cancel reservations"],["reservations.uncheck","Un-check reservations"],
   ["reservations.group","Manage group bookings"],["reservations.corporate","Manage corporate contracts"],["reservations.ota","Manage OTA rates"],
   ["reservations.checkin","Guest check-in"],["reservations.checkout","Guest check-out"],["reservations.room_override","Room assignment override"],
-  ["reservations.rate_override","Override daily room rates"],["reservations.discount","Apply percentage/fixed discounts"],["folios.split","Split folios"],["folios.merge","Merge folios"],["folios.transfer","Transfer folios"],["folios.close","Close folios"],
+  ["reservations.rate_override","Override daily room rates"],["reservations.discount","Apply percentage/fixed discounts"],["folios.discount","Apply Guest Folio Discounts"],["folios.split","Split folios"],["folios.merge","Merge folios"],["folios.transfer","Transfer folios"],["folios.close","Close folios"],
   ["folios.manual_charge","Post manual room charges"],["payments.deposit","Post deposits"],["payments.void","Void charges/payments"],["payments.refund","Process refunds"],["reservations.view_guests","View arrival/departure/in-house profiles"],["nightaudit.run","Night audit / daily financial closure"]
  ],
  "Housekeeping":[
   ["housekeeping.room_status","Update room cleaning status"],["housekeeping.oos","Set rooms OOO/OOS"],["housekeeping.roster","Assign daily cleaning rosters"],["housekeeping.minibar","Log minibar consumption / post to folio"],["housekeeping.lost_found","Manage Lost & Found"],["maintenance.manage","Create/assign/resolve maintenance tickets"]
  ],
  "POS / Outlet":[
-  ["pos.menu","Create menus, pricing, tax/service charges"],["pos.kot","Issue KOT/BOT"],["pos.room_post","Post outlet bills to room folios"],["pos.settlement","Cash/card/QR/city ledger settlements"],["pos.void","Void orders / cancel printed items"],["pos.discount","Apply POS discounts"],["pos.split_table","Split tables"],["pos.shift_summary","Shift-end sales summaries"],["pos.shift_openclose","Open/close cashier shifts and floats"]
+  ["pos.view_tables","View Restaurant Tables"],["pos.open_table","Open / Reopen Table"],["pos.add_items","Add Items / Take Orders"],["pos.edit_quantity","Edit / Remove Order Quantity"],["pos.kot","Send KOT / BOT"],["pos.history","View KOT / BOT History"],["pos.reprint_kotbot","Reprint KOT / BOT"],["pos.request_bill","Request / Print Final Bill"],["pos.close_table","Close Table / Settle Bill"],["pos.cash","Take Cash Payment"],["pos.card","Take Card Payment"],["pos.room_charge","Post Room Charge"],["pos.room_post","Post outlet bills to room folios"],["pos.settlement","Cash/card/QR/city ledger settlements"],["pos.discount","Apply POS Discounts"],["pos.void","Void Orders / Cancel Printed Items"],["pos.split_table","Split Tables"],["pos.transfer_table","Transfer Tables"],["pos.merge_table","Merge Tables"],["pos.refund","Refund Restaurant Payment"],["pos.shift_summary","Shift-end sales summaries"],["pos.shift_openclose","Open/close cashier shifts and floats"],["pos.menu","Create / Edit Menus, Pricing, Tax & Service Charges"]
  ],
  "Cashiering":[
   ["cashier.shift_openclose","Open / close cashier shift and cashier day"],["cashier.reconcile","Cash count / physical cash reconciliation / variance"],["cashier.petty_cash","Petty cash expenses / payouts"]
@@ -2661,24 +2706,13 @@ const ACTION_PERMISSION_GROUPS={
   ["hr.clock","Clock-in / clock-out"],["hr.self_attendance","Personal roster / attendance / leave balances"],["hr.roster","Create/edit/publish department rosters"],["hr.attendance_override","Manual attendance overrides"],["hr.approve","Approve OT / shift swaps / leave"],["hr.payroll","Employee master / salary / payroll"]
  ],
  "Security / Admin":[
-  ["users.manage","Create user accounts / granular rights"],["security.audit","View security logs / audit trails"],["system.backup","Cloud DB backup / restore / data export"],["system.integrations","Channel manager / hardware integrations"]
+  ["users.manage","Create user accounts / granular rights"],["security.audit","View security logs / audit trails"],["system.backup","Cloud DB backup / restore / data export"],["system.migration","Data Migration / Import Center"],["system.integrations","Channel manager / hardware integrations"]
  ]
 };
 const ACTION_PERMISSION_OPTIONS=Object.entries(ACTION_PERMISSION_GROUPS).flatMap(([group,items])=>items.map(([id,label])=>[id,label,group]));
 const ACTION_PERMISSION_KEYS=ACTION_PERMISSION_OPTIONS.map(x=>x[0]);
-const ROLE_ACTION_DEFAULTS={
- "Admin":ACTION_PERMISSION_KEYS,
- "Manager":["experiences.view","experiences.create","experiences.edit","experiences.post_folio","events.view","events.create","events.edit","events.confirm","events.post_accounting","reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.room_override","reservations.rate_override","reservations.discount","folios.split","folios.merge","folios.transfer","folios.close","folios.manual_charge","payments.deposit","payments.refund","reservations.view_guests","nightaudit.run","housekeeping.room_status","housekeeping.oos","maintenance.manage","pos.use","pos.room_post","pos.settlement","pos.void","pos.discount","cashier.petty_cash","cashier.reconcile","accounting.reports","purchasing.request_po","purchasing.grn","inventory.adjust","hr.approve","security.audit"],
- "Front Office":["reservations.create","reservations.edit","reservations.cancel","reservations.checkin","reservations.checkout","reservations.view_guests","folios.manual_charge","payments.deposit"],
- "Housekeeping":["housekeeping.room_status","housekeeping.oos","housekeeping.roster","housekeeping.minibar","housekeeping.lost_found","maintenance.manage"],
- "Cashier":["payments.deposit","payments.refund","cashier.shift_openclose","cashier.reconcile","cashier.petty_cash","pos.settlement","pos.room_post"],
- "Department Supervisor":["hr.clock","hr.self_attendance","hr.roster","hr.attendance_override"],
- "Viewer":[]
-};
-const ROLE_PERMISSION_DEFAULTS={
- "Admin":PERMISSION_PAGES.map(x=>x[0]),
- "Manager":[],"Front Office":[],"Housekeeping":[],"Cashier":[],"Viewer":[],"Department Supervisor":[]
-};
+/* Roles are labels only. Non-Admin permissions are intentionally NOT hard-coded;
+   access is granted only by the selected User Rights checkboxes. */
 function getUserPermissions(user=currentUser){
     if(user?.role==="Admin") return {pages:PERMISSION_PAGES.map(x=>x[0]),actions:ACTION_PERMISSION_KEYS.slice()};
     return {
@@ -2834,6 +2868,14 @@ function ensurePropertyShape(p){
     out.cashRate=Number(out.cashRate||out.settlementRate||320);
     out.serviceChargeRate=Number(out.serviceChargeRate||0);
     out.taxRate=Number(out.taxRate||0);
+    out.vatEnabled=out.vatEnabled===true;
+    out.vatRate=Number(out.vatRate||18);
+    out.vatInclusive=out.vatInclusive===true;
+    out.tdlEnabled=out.tdlEnabled===true;
+    out.tdlRate=Number(out.tdlRate||1);
+    out.tdlSmallRate=Number(out.tdlSmallRate||0.5);
+    out.ssclEnabled=out.ssclEnabled===true;
+    out.ssclRate=Number(out.ssclRate||2.5);
     out.roomRate=Number(out.roomRate||0);
     out.villaLocal=Number(out.villaLocal||0);
     out.villaForeign=Number(out.villaForeign||0);
@@ -3042,6 +3084,10 @@ function loadCurrentPropertyData(){
     guests=readArray(STORAGE.guests).filter(sameProperty);
     pmAccounts=readArray(STORAGE.pmAccounts).filter(sameProperty);
     pmTransactions=readArray(STORAGE.pmTransactions).filter(sameProperty);
+    fnbTables=readArray(STORAGE.fnbTables).filter(sameProperty);
+    if(!fnbTables.length) fnbTables=defaultFNBTableList();
+    activeFNBTableId="";
+    posOrder=[];
 }
 
 function saveProperties(){
@@ -3070,6 +3116,7 @@ function saveData(){
     mergePropertyData(STORAGE.guests,guests);
     mergePropertyData(STORAGE.pmAccounts,pmAccounts);
     mergePropertyData(STORAGE.pmTransactions,pmTransactions);
+    mergePropertyData(STORAGE.fnbTables,fnbTables);
 
     if(settings){
         settings.posMenu=normalizePOSMenu(POS_MENU);
@@ -4356,6 +4403,12 @@ function renderUsers(){
 
 
 const USER_MODULE_ACTION_GROUPS={
+  settings:{title:"Settings Action Rights",items:[
+    ["settings.property","Property Settings"],["settings.currency","Currency / FX Rate"],["settings.rateplans","Rate Plans"],
+    ["settings.mealplan","Meal Plan Revenue Allocation"],["settings.roomtypes","Room Type Management"],["settings.rooms","Room / Unit Configuration"],
+    ["settings.pos","Restaurant / POS Settings"],["settings.sales","Sales & Distribution"],["settings.backup","Backup / Restore / Data Export"],
+    ["settings.migration","Data Migration / Import Center"],["settings.system","System Settings / Integrations"]
+  ]},
   reservations:{title:"Reservations Action Rights",items:ACTION_PERMISSION_GROUPS["Front Office / Reservations"]||[]},
   pos:{title:"Restaurant POS Action Rights",items:ACTION_PERMISSION_GROUPS["POS / Outlet"]||[]},
   experiences:{title:"Experiences Action Rights",items:ACTION_PERMISSION_GROUPS["Experiences"]||[]},
@@ -4403,7 +4456,7 @@ function renderUserActionPermissionCheckboxes(selected=[]){
  });
 }
 function toggleUserModuleActions(module){const box=document.getElementById("user-module-actions-"+module);if(!box)return;box.style.display=box.style.display==="none"?"block":"none";}
-function getSelectedUserPermissions(){return Array.from(document.querySelectorAll(".user-permission:checked")).map(el=>el.value);}
+function getSelectedUserPermissions(){const pages=Array.from(document.querySelectorAll(".user-permission:checked")).map(el=>el.value); const actions=getSelectedUserActionPermissions(); if(actions.some(a=>String(a).startsWith("settings.")) && !pages.includes("settings")) pages.push("settings"); return pages;}
 function setAllUserPermissions(value){document.querySelectorAll(".user-permission").forEach(el=>el.checked=!!value);if(value){Object.keys(USER_MODULE_ACTION_GROUPS).forEach(m=>{const b=document.getElementById("user-module-actions-"+m);if(b)b.style.display="block";});setAllUserActionPermissions(true);}}
 function getSelectedUserActionPermissions(){return Array.from(document.querySelectorAll(".user-action-permission:checked")).map(el=>el.dataset.displayAction||el.value);}
 function setAllUserActionPermissions(value){document.querySelectorAll(".user-action-permission").forEach(el=>el.checked=!!value);}
@@ -5311,7 +5364,7 @@ function backupAllData(silent=false){
 }
 
 function backupCurrentProperty(silent=false){
-    if(!requireRole("Admin","Manager")) return false;
+    if(!hasActionPermission("settings.backup")) return false;
 
     if(!currentPropertyId || !settings){
         alert("Please select a property before creating a property backup.");
@@ -5702,6 +5755,56 @@ function renderPropertyManager(){
         </div>`;
 }
 
+async function createMigrationTestProperty(){
+    if(!requireRole("Admin")) return;
+    try{
+        const client=initSupabaseClient();
+        const authUser=await getSupabaseSessionUser();
+        if(!client || !authUser) throw new Error("Please sign in to Supabase before creating the migration test property.");
+        const {data:existing,error:findError}=await client.from("properties").select("id,code,name,address,city,country,phone,email").eq("code","H999").maybeSingle();
+        if(findError) throw findError;
+        let cloudRow=existing;
+        if(!cloudRow){
+            const {data,error}=await client.from("properties").insert({code:"H999",name:"Signature Migration Test Hotel",address:"Migration Test Property",city:"Test",country:"Sri Lanka",phone:"",email:""}).select("id,code,name,address,city,country,phone,email").single();
+            if(error) throw error;
+            cloudRow=data;
+        }
+        const cloudId=String(cloudRow.id);
+        let property=properties.find(x=>String(x.id)===cloudId);
+        if(!property){
+            property=defaultProperty(cloudId,"Signature Migration Test Hotel","Migration Test Property",3,10000,{bookingTypes:["room"]});
+            property.code="H999";
+            property.cloudManaged=true;
+            properties.push(property);
+        }else{
+            property.code="H999";
+            property.property="Signature Migration Test Hotel";
+            property.location="Migration Test Property";
+            property.cloudManaged=true;
+            property.rooms=Array.isArray(property.rooms)?property.rooms:[];
+            if(!property.rooms.length){
+                const seeded=defaultProperty(cloudId,"Signature Migration Test Hotel","Migration Test Property",3,10000,{bookingTypes:["room"]});
+                property.rooms=seeded.rooms;
+            }
+        }
+        const {error:assignError}=await client.from("user_properties").upsert({user_id:authUser.id,property_id:cloudId,is_primary:false},{onConflict:"user_id,property_id"});
+        if(assignError) throw assignError;
+        saveProperties();
+        currentPropertyId=cloudId;
+        setSession(currentUser);
+        loadCurrentPropertyData();
+        renderAll();
+        await syncCurrentPropertyRoomsToSupabase(property.rooms||[]);
+        await syncSupabaseProperties();
+        const msg=document.getElementById("migrationTestPropertyStatus");
+        if(msg) msg.innerHTML='<strong>H999 ready:</strong> Signature Migration Test Hotel selected with 3 test rooms. H001/H002 data is untouched.';
+        alert("H999 — Signature Migration Test Hotel is ready for migration testing. Current property switched to H999.");
+    }catch(e){
+        console.error(e);
+        alert("Could not create/open H999 migration test property: "+(e?.message||e));
+    }
+}
+
 async function addProperty(){
     if(!requireRole("Admin")) return;
 
@@ -5812,7 +5915,7 @@ function renderRoomTypesConfiguration(){
 
 function addRoomType(){
     const isManager=currentUser?.role==="Manager";
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.roomtypes")) return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p)return;
@@ -5824,7 +5927,7 @@ function addRoomType(){
 
 function deleteRoomType(id){
     const isManager=currentUser?.role==="Manager";
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.roomtypes")) return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);if(!p)return;
     const t=(p.roomTypes||[]).find(x=>String(x.id)===String(id));if(!t)return;
@@ -5837,7 +5940,7 @@ function deleteRoomType(id){
 
 function saveRoomTypesConfiguration(){
     const isManager=currentUser?.role==="Manager";
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.roomtypes")) return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);if(!p)return;
     const rows=Array.isArray(p.roomTypes)?p.roomTypes:[];
@@ -5900,6 +6003,7 @@ function renderRoomConfiguration(){
 }
 
 function configurePropertyRooms(id){
+    if(!hasActionPermission("settings.rooms")) return;
     const isManager=currentUser?.role==="Manager";
     if(!requireRole("Admin","Manager"))return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(id))) return;
@@ -5915,7 +6019,7 @@ function configurePropertyRooms(id){
 
 function addRoomToCurrentProperty(){
     const isManager=currentUser?.role==="Manager";
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.rooms")) return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p){alert("Please select a property first.");return;}
@@ -5953,7 +6057,7 @@ function addRoomToCurrentProperty(){
 
 async function saveRoomConfiguration(){
     const isManager=currentUser?.role==="Manager";
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.rooms")) return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p)return;
@@ -6033,7 +6137,7 @@ async function saveRoomConfiguration(){
 
 async function editProperty(id){
     const isManager=currentUser?.role==="Manager";
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.property")) return;
     if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(id))) return;
 
     const p=properties.find(x=>x.id===id);
@@ -6364,7 +6468,7 @@ function filterPOSMenuManager(){
 }
 
 function openPOSMenuItemModal(id=null){
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.pos")) return;
     if(!settings)return;
     const item=id?POS_MENU.find(x=>String(x.id)===String(id)):null;
     const outlets=ensureRestaurantOutletData();
@@ -6397,7 +6501,7 @@ function openPOSMenuItemModal(id=null){
     }
 }
 async function savePOSMenuItemModal(id){
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.pos")) return;
     const name=document.getElementById('pmName')?.value.trim();
     const category=document.getElementById('pmCategory')?.value.trim()||'General';
     const outletId=document.getElementById('pmOutletId')?.value || POS_OUTLET_ID || getCurrentPOSOutlet()?.id;
@@ -6560,12 +6664,12 @@ function viewPOSMenuRecipe(id){
 }
 
 function togglePOSMenuItem(id){
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.pos")) return;
     const item=POS_MENU.find(x=>String(x.id)===String(id));if(!item)return;
     item.active=item.active===false;saveRestaurantMenu();saveData();renderAll();
 }
 function deletePOSMenuItem(id){
-    if(!requireRole("Admin","Manager"))return;
+    if(!hasActionPermission("settings.pos")) return;
     const item=POS_MENU.find(x=>String(x.id)===String(id));if(!item)return;
     if(!confirm("Delete "+item.name+" from this property's restaurant menu?"))return;
     POS_MENU=POS_MENU.filter(x=>String(x.id)!==String(id));saveRestaurantMenu();saveData();renderAll();
@@ -6670,7 +6774,7 @@ function loadRatePlans(){
 }
 
 function saveLegacyPropertyRatePlans(){
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.rateplans")) return;
     if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
     const matrix=defaultRateMatrix();
     ["BB","HB","FB","AI"].forEach(plan=>["2A","3A","2A1C","2A2C"].forEach(key=>{
@@ -6808,6 +6912,177 @@ function postExperienceToFolio(experienceId){
     addExperienceToFolio(r.id,e.id);
 }
 
+
+/* =========================================================
+   DATA MIGRATION / IMPORT CENTER
+========================================================= */
+let migrationState={type:'guests',rows:[],validRows:[],errors:[],headers:[],rawText:'',batchId:null};
+function migrationParseCSV(text){
+ const rows=[];let row=[];let cell='';let quoted=false;text=String(text||'').replace(/^\uFEFF/,'');
+ for(let i=0;i<text.length;i++){const ch=text[i],next=text[i+1];if(ch==='\"'){if(quoted&&next==='\"'){cell+='\"';i++;}else quoted=!quoted;}else if(ch===','&&!quoted){row.push(cell);cell='';}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&next==='\n')i++;row.push(cell);cell='';if(row.some(v=>String(v).trim()!==''))rows.push(row);row=[];}else cell+=ch;}
+ if(cell!==''||row.length){row.push(cell);if(row.some(v=>String(v).trim()!==''))rows.push(row);}return rows;
+}
+function migrationCsv(rows){return rows.map(r=>r.map(v=>{const x=String(v??'');return /[",\n\r]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;}).join(',')).join('\r\n');}
+function migrationDownload(name,text){const b=new Blob([text],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function downloadMigrationTemplate(){if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration'))return;const t=document.getElementById('migrationType')?.value||'guests';const h={guests:['guest_id','guest_name','phone','email','passport_or_national_id','date_of_birth','country','company_name','notes'],rooms:['room_number','room_name','room_type','base_rate_lkr','active','housekeeping_status'],reservations:['booking_no','guest_name','phone','email','passport_or_national_id','guest_type','room_number','check_in','check_out','adults','children','meal_plan','total','currency','status','notes']};const sample={guests:[['G-OLD-001','John Smith','+1 555 0100','john@example.com','P123456','1985-05-12','USA','','VIP guest']],rooms:[['101','Deluxe 101','Deluxe','12000','true','clean']],reservations:[['OLD-2026-0001','John Smith','+1 555 0100','john@example.com','P123456','Foreign','101','2026-11-05','2026-11-07','2','0','BB','24000','LKR','Confirmed','Imported opening booking']]};migrationDownload('Signature_PMS_'+t+'_import_template.csv',migrationCsv([h[t],...(sample[t]||[])]));}
+function downloadCurrentDataBackup(){if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration'))return;const payload={exportedAt:new Date().toISOString(),propertyId:currentPropertyId,property:getProperty(),guests,reservations,folios,payments,sales,settings};const b=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='Signature_PMS_backup_'+String(currentPropertyId||'property')+'_'+localDateString()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function handleMigrationFile(e){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{migrationState.rawText=String(r.result||'');const el=document.getElementById('migrationFileStatus');if(el)el.textContent=f.name+' — '+(f.size<1024?(f.size+' bytes'):(f.size/1024).toFixed(1)+' KB')+' loaded. Click Preview & Validate.';const b=document.getElementById('migrationImportBtn');if(b)b.disabled=true;};r.readAsText(f,'UTF-8');}
+function migrationTypeChanged(){migrationState={type:document.getElementById('migrationType')?.value||'guests',rows:[],validRows:[],errors:[],headers:[],rawText:'',batchId:null};const f=document.getElementById('migrationFile');if(f)f.value='';const p=document.getElementById('migrationPreview');if(p){p.style.display='none';p.innerHTML='';}const b=document.getElementById('migrationImportBtn');if(b)b.disabled=true;}
+function migrationDate(v){const x=String(v??'').trim();if(!x)return '';if(/^\d{4}-\d{2}-\d{2}$/.test(x))return x;const m=x.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);return m?`${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`:x;}
+function migrationRoomMatch(v){const x=String(v??'').trim().toLowerCase();if(!x)return null;const list=Array.isArray(getProperty()?.rooms)?getProperty().rooms:[];return list.find(r=>[r.number,r.code,r.name,r.id].some(a=>String(a??'').trim().toLowerCase()===x))||null;}
+function migrationGuestFind(r){const p=String(r.passport_or_national_id||'').trim().toLowerCase(),e=String(r.email||'').trim().toLowerCase(),ph=String(r.phone||'').replace(/\D/g,'');return guests.find(g=>String(g.propertyId||currentPropertyId)===String(currentPropertyId)&&((p&&String(g.passportOrNationalId||g.passport||'').trim().toLowerCase()===p)||(e&&String(g.email||'').trim().toLowerCase()===e)||(ph&&String(g.phone||'').replace(/\D/g,'')===ph)));}
+function migrationRowObject(headers,row){const o={};headers.forEach((h,i)=>o[String(h||'').trim().toLowerCase()]=String(row[i]??'').trim());return o;}
+function previewMigration(){if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}if(!currentPropertyId){alert('Select a property before importing data.');return;}if(!migrationState.rawText){alert('Please select a CSV file first.');return;}const parsed=migrationParseCSV(migrationState.rawText);if(parsed.length<2){alert('The CSV needs a header row and at least one data row.');return;}const headers=parsed[0].map(x=>String(x||'').trim().toLowerCase()),type=document.getElementById('migrationType')?.value||'guests',rows=parsed.slice(1).map(r=>migrationRowObject(headers,r));migrationState={...migrationState,type,headers,rows,validRows:[],errors:[],rawText:migrationState.rawText};rows.forEach((r,i)=>{const line=i+2;if(type==='guests'){if(!r.guest_name)migrationState.errors.push(`Line ${line}: guest_name is required.`);else migrationState.validRows.push({...r,__line:line});}else if(type==='rooms'){if(!r.room_number)migrationState.errors.push(`Line ${line}: room_number is required.`);else migrationState.validRows.push({...r,__line:line});}else{const ci=migrationDate(r.check_in),co=migrationDate(r.check_out);if(!r.guest_name)migrationState.errors.push(`Line ${line}: guest_name is required.`);else if(!ci||!co)migrationState.errors.push(`Line ${line}: check_in and check_out are required.`);else if(co<=ci)migrationState.errors.push(`Line ${line}: check_out must be after check_in.`);else if(r.room_number&&!migrationRoomMatch(r.room_number))migrationState.errors.push(`Line ${line}: room ${r.room_number} was not found in this property.`);else migrationState.validRows.push({...r,__line:line});}});renderMigrationPreview(type);}
+function renderMigrationPreview(type){const box=document.getElementById('migrationPreview');if(!box)return;const cols=type==='guests'?['guest_name','phone','email','passport_or_national_id']:type==='rooms'?['room_number','room_name','room_type','base_rate_lkr','active']:['booking_no','guest_name','room_number','check_in','check_out','total','currency','status'];const rows=migrationState.rows.slice(0,20);box.style.display='block';box.innerHTML=`<div style="padding:10px;background:#eff6ff;border:1px solid #bfdbfe;margin-bottom:8px"><strong>Validation:</strong> ${migrationState.validRows.length} valid · ${migrationState.errors.length} errors · ${migrationState.rows.length} total.</div>${migrationState.errors.length?`<div style="padding:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;margin-bottom:8px"><strong>Errors</strong><br>${migrationState.errors.slice(0,12).map(escapeHtml).join('<br>')}</div>`:''}<table><thead><tr><th>Line</th>${cols.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}<th>Result</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.__line}</td>${cols.map(c=>`<td>${escapeHtml(r[c]||'')}</td>`).join('')}<td>${migrationState.validRows.some(v=>Number(v.__line)===Number(r.__line))?'<span class="badge badge-green">Valid</span>':'<span class="badge badge-red">Error</span>'}</td></tr>`).join('')}</tbody></table>`;const b=document.getElementById('migrationImportBtn');if(b)b.disabled=migrationState.validRows.length===0;}
+function migrationMakeGuest(r){const existing=migrationGuestFind(r);if(existing)return {guest:existing,created:false};const g={id:'g_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,name:r.guest_name,guestName:r.guest_name,phone:r.phone||'',email:r.email||'',passportOrNationalId:r.passport_or_national_id||'',dateOfBirth:r.date_of_birth||'',country:r.country||'',companyName:r.company_name||'',notes:r.notes||'',createdAt:localDateTime(),sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',migrationBatchId:migrationState.batchId};guests.push(g);return {guest:g,created:true};}
+async function executeMigrationImport(){
+ if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+ if(!migrationState.validRows.length){alert('There are no valid records to import.');return;}
+ if(!confirm('Import '+migrationState.validRows.length+' valid record(s) into the current property? Existing records will not be deleted.'))return;
+ const batchId='MIG-'+Date.now();migrationState.batchId=batchId;
+ const type=migrationState.type,mode=document.getElementById('migrationMode')?.value||'historical',source=document.getElementById('migrationSourceSystem')?.value||'External PMS';
+ let created=0,skipped=0,updated=0,cloud=0;const errors=[];const importedBookingNos=[];
+ if(type==='guests'){
+   migrationState.validRows.forEach(r=>{const x=migrationMakeGuest(r);x.created?created++:skipped++;});
+ }else if(type==='rooms'){
+   const prop=getProperty();prop.rooms=Array.isArray(prop.rooms)?prop.rooms:[];
+   migrationState.validRows.forEach(r=>{let room=prop.rooms.find(x=>String(x.number||x.code||'').trim().toLowerCase()===r.room_number.toLowerCase());if(!room){room={id:prop.rooms.length+1,number:r.room_number,code:r.room_number,name:r.room_name||r.room_number,type:r.room_type||'Guest Room',rate:Number(r.base_rate_lkr||0),active:r.active.toLowerCase()!=='false',housekeepingStatus:r.housekeeping_status||'clean',maintenanceNote:'',oosReason:'',propertyId:currentPropertyId,sourceSystem:source,migrationBatchId:batchId};prop.rooms.push(room);created++;}else{room.name=r.room_name||room.name;room.type=r.room_type||room.type;if(r.base_rate_lkr!=='')room.rate=Number(r.base_rate_lkr||0);if(r.active!=='')room.active=r.active.toLowerCase()!=='false';updated++;}});
+   const pi=properties.findIndex(x=>String(x.id)===String(currentPropertyId));if(pi>=0)properties[pi]={...properties[pi],rooms:prop.rooms};
+ }else{
+   const fx=Math.max(0.000001,Number(document.getElementById('migrationFxRate')?.value||1));
+   const existingBookingNos=new Set();
+   const normalizeBookingNo=v=>String(v??'').trim().toLowerCase();
+   const migrationDuplicateKey=n=>`SignaturePMS:migration:${String(currentPropertyId)}:${normalizeBookingNo(n)}`;
+
+   /* v2.1.279 — three-layer duplicate protection:
+      1) current local reservations for this property
+      2) previous migration batches recorded for this property
+      3) Supabase reservations for the resolved cloud property
+      The persistent migration key is written only after a reservation is
+      successfully created/synced, so re-importing the same CSV is idempotent. */
+   (Array.isArray(reservations)?reservations:[]).forEach(x=>{
+     if(String(x?.propertyId||currentPropertyId)!==String(currentPropertyId))return;
+     const n=normalizeBookingNo(x?.bookingNo||x?.booking_no||x?.reservation_data?.bookingNo);if(n)existingBookingNos.add(n);
+   });
+
+   try{
+     const batches=JSON.parse(localStorage.getItem(STORAGE.migrationBatches)||'[]');
+     (Array.isArray(batches)?batches:[]).forEach(b=>{
+       if(String(b?.propertyId)!==String(currentPropertyId)||String(b?.type)!=='reservations')return;
+       (Array.isArray(b?.bookingNos)?b.bookingNos:[]).forEach(n=>{if(normalizeBookingNo(n))existingBookingNos.add(normalizeBookingNo(n));});
+     });
+   }catch(e){console.warn('v2.1.279 migration batch duplicate ledger read skipped:',e);}
+
+   let cloudClient=null,cloudPropertyId=null;
+   try{
+     if(typeof initSupabaseClient!=='function'||typeof resolveSupabasePropertyId!=='function'){
+       throw new Error('Supabase migration duplicate check is unavailable.');
+     }
+     cloudClient=initSupabaseClient();
+     if(!cloudClient)throw new Error('Supabase client is not available.');
+     cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+     if(!cloudPropertyId)throw new Error('Cloud property ID could not be resolved.');
+
+     const q=await cloudClient.from('reservations')
+       .select('id,property_id,booking_no,reservation_data')
+       .eq('property_id',String(cloudPropertyId));
+     if(q.error)throw q.error;
+     (q.data||[]).forEach(x=>{
+       const n=normalizeBookingNo(x?.booking_no||x?.reservation_data?.bookingNo);
+       const sourceNo=normalizeBookingNo(x?.source_booking_no||x?.reservation_data?.migrationSourceBookingNo||x?.reservation_data?.sourceBookingNo);
+       if(n)existingBookingNos.add(n);
+       if(sourceNo)existingBookingNos.add(sourceNo);
+     });
+
+     /* v2.1.281 — the PMS booking-number migration can intentionally rewrite
+        imported booking_no values (for example TEST-001 -> H999-2026-0001).
+        Therefore booking_no alone is NOT a stable migration duplicate key.
+        The original external PMS booking number is stored separately as
+        migrationSourceBookingNo and checked before creating a new reservation. */
+     for(const r of migrationState.validRows){
+       const n=normalizeBookingNo(r?.booking_no);
+       if(!n)continue;
+       if(existingBookingNos.has(n))continue;
+       /* Do not require the property filter for the exact lookup. Some legacy
+          migration rows can have a stale/missing property_id while the
+          reservation_data still identifies the correct property. Read by
+          booking_no first, then accept only rows belonging to this property. */
+       const exact=await cloudClient.from('reservations')
+         .select('id,property_id,booking_no,reservation_data')
+         .eq('booking_no',String(r.booking_no).trim())
+         .limit(20);
+       if(exact.error)throw exact.error;
+       const sameProperty=(exact.data||[]).some(x=>{
+         const pid=String(x?.property_id||'');
+         const rpid=String(x?.reservation_data?.propertyId||'');
+         const sourceNo=normalizeBookingNo(x?.source_booking_no||x?.reservation_data?.migrationSourceBookingNo||x?.reservation_data?.sourceBookingNo);
+         return (pid===String(cloudPropertyId)||rpid===String(currentPropertyId)) && (normalizeBookingNo(x?.booking_no||x?.reservation_data?.bookingNo)===n || sourceNo===n);
+       });
+       if(sameProperty){existingBookingNos.add(n);continue;}
+       const broad=(q.data||[]).find(x=>normalizeBookingNo(x?.reservation_data?.bookingNo)===n);
+       if(broad)existingBookingNos.add(n);
+       /* Stable source-booking lookup. This still works after v2.1.190
+          converts the displayed PMS booking number to H999-YYYY-NNNN. */
+       const sourceExact=await cloudClient.from('reservations')
+         .select('id,property_id,booking_no,reservation_data')
+         .filter('reservation_data->>migrationSourceBookingNo','eq',String(r.booking_no).trim())
+         .limit(20);
+       if(sourceExact.error)throw sourceExact.error;
+       const sourceSame=(sourceExact.data||[]).some(x=>String(x?.property_id||'')===String(cloudPropertyId)||String(x?.reservation_data?.propertyId||'')===String(currentPropertyId));
+       if(sourceSame)existingBookingNos.add(n);
+
+       /* Final JSON-field lookup for rows whose top-level booking_no is blank. */
+       const jsonExact=await cloudClient.from('reservations')
+         .select('id,property_id,booking_no,reservation_data')
+         .filter('reservation_data->>bookingNo','eq',String(r.booking_no).trim())
+         .limit(20);
+       if(jsonExact.error)throw jsonExact.error;
+       const jsonSame=(jsonExact.data||[]).some(x=>String(x?.property_id||'')===String(cloudPropertyId)||String(x?.reservation_data?.propertyId||'')===String(currentPropertyId));
+       if(jsonSame)existingBookingNos.add(n);
+     }
+   }catch(e){
+     alert('Migration stopped — duplicate protection could not verify the cloud reservations safely.\n\n'+(e?.message||e));
+     console.error('v2.1.279 migration duplicate check failed:',e);
+     return;
+   }
+
+   for(const r of migrationState.validRows){
+     const bookingNoRaw=String(r?.booking_no||'').trim();
+     const bookingNo=normalizeBookingNo(bookingNoRaw);
+     if(bookingNo&&existingBookingNos.has(bookingNo)){skipped++;continue;}
+
+     const gr=migrationMakeGuest(r);
+     const ci=migrationDate(r.check_in),co=migrationDate(r.check_out),nights=Math.max(1,Math.round((new Date(co)-new Date(ci))/86400000));
+     const sc=(r.currency||document.getElementById('migrationCurrency')?.value||'LKR').toUpperCase(),sourceTotal=Number(String(r.total||0).replace(/,/g,''))||0,totalLkr=sc==='LKR'?sourceTotal:sourceTotal*fx,room=migrationRoomMatch(r.room_number);
+     const res={id:'r_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,bookingNo:bookingNoRaw||('MIG-'+Date.now()+'-'+(created+1)),guestId:gr.guest.id,guestName:r.guest_name,phone:r.phone||'',email:r.email||'',passportOrNationalId:r.passport_or_national_id||'',guestType:r.guest_type||'Foreign',bookingType:'room',roomId:room?.id||null,checkIn:ci,checkOut:co,nights,rate:totalLkr/nights,total:totalLkr,adults:Number(r.adults||1),children:Number(r.children||0),childrenAges:[],mealPlan:r.meal_plan||'RO',breakfastIncluded:false,deposit:0,currency:'LKR',baseCurrency:'LKR',postingRateAtBooking:sc==='LKR'?1:fx,baseAmount:totalLkr,foreignAmount:sc==='LKR'?0:sourceTotal,sourceCurrency:sc,sourceAmount:sourceTotal,sourceSystem:source,migrationSourceBookingNo:bookingNoRaw,migrationBatchId:batchId,historical:mode==='historical',status:r.status||'Confirmed',notes:r.notes||'Imported from '+source,createdAt:localDateTime()};
+     reservations.push(res);
+     if(bookingNo)existingBookingNos.add(bookingNo);
+     if(bookingNo)importedBookingNos.push(bookingNo);
+     created++;
+     if(typeof syncReservationToSupabase==='function'&&navigator.onLine){
+       try{if(await syncReservationToSupabase(res))cloud++;else errors.push((r.booking_no||res.bookingNo)+': cloud sync returned false.');}
+       catch(e){errors.push((r.booking_no||res.bookingNo)+': cloud sync failed — '+(e?.message||e));}
+     }
+   }
+ }
+ saveData();renderAll();
+ const batches=JSON.parse(localStorage.getItem(STORAGE.migrationBatches)||'[]');
+ batches.push({id:batchId,propertyId:currentPropertyId,type,mode,source,created,updated,skipped,cloud,errors,bookingNos:importedBookingNos,importedAt:localDateTime()});
+ localStorage.setItem(STORAGE.migrationBatches,JSON.stringify(batches.slice(-100)));
+ const out=document.getElementById('migrationResult');
+ if(out)out.innerHTML=`<div style="padding:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46"><strong>Migration completed — ${batchId}</strong><br>Created: ${created} · Updated: ${updated} · Skipped duplicates: ${skipped} · Cloud reservations synced: ${cloud}${errors.length?`<br><span style="color:#991b1b">${escapeHtml(errors.slice(0,5).join(' | '))}</span>`:''}</div>`;
+ migrationState.validRows=[];document.getElementById('migrationImportBtn').disabled=true;
+}
+
+/* v2.1.281 marker */
+window.__signatureV281MigrationSourceBookingDuplicateFix=true;
+
+function applySettingsPermissionVisibility(){
+ const can=k=>currentUser?.role==='Admin'||hasActionPermission(k);
+ const map={customerGeneratorSection:'settings.system',dataMigrationSection:'settings.migration',roomTypesConfigurationSection:'settings.roomtypes',roomConfigurationSection:'settings.rooms',ratePlanSection:'settings.rateplans',mealPlanRevenueAllocationSection:'settings.mealplan',salesDistributionSection:'settings.sales',restaurantOutletSection:'settings.pos',restaurantMenuSection:'settings.pos',supabaseCloudSection:'settings.system'};
+ Object.entries(map).forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.style.display=can(key)?'':'none';});
+ const ps=document.querySelector('#settings .section:not(#customerGeneratorSection):has(#settingProperty)');if(ps)ps.style.display=can('settings.property')?'':'none';
+}
 function loadSettings(){
 
     const set=(id,value)=>{const el=document.getElementById(id);if(el)el.value=value??"";};
@@ -6963,7 +7238,7 @@ async function removeTravelAgent(id){if(!requireRole('Admin','Manager'))return;i
 async function saveSalesDistribution(){if(!requireRole('Admin','Manager'))return;if(!settings||!currentPropertyId){alert('Please select a property first.');return;}const sd=normalizeSalesDistribution(settings.salesDistribution);const set=(id)=>document.getElementById(id)?.value||'';sd.channelManager={provider:String(set('channelManagerProvider')).trim(),status:String(set('channelManagerStatus')||'Not Connected'),channels:String(set('channelManagerChannels')).trim(),mapping:String(set('channelManagerMapping')).trim()};settings.salesDistribution=sd;saveData();renderSalesDistribution();const cloudSaved=await persistSalesDistributionToCloud();alert('Sales & Distribution settings saved for '+(getProperty(currentPropertyId)?.property||'this property')+(cloudSaved?' and synced to cloud.':'. Cloud sync is not available yet.'));}
 
 async function saveSettings(){
-    if(!requireRole("Admin","Manager")) return;
+    if(!hasActionPermission("settings.property")) return;
     if(!settings || !currentPropertyId){
         alert("Please add or import a property before saving property settings.");
         return;
@@ -7216,46 +7491,29 @@ function updateReservationForm(){
     }
 }
 
-function normalizeStayDate(v){
-    const s=String(v||"").trim();
-    if(!s) return "";
-    const m=s.match(/^(\d{4}-\d{2}-\d{2})/);
-    if(m) return m[1];
-    const d=new Date(s);
-    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0,10);
-}
-
 function datesOverlap(a,b,c,d){
-    const A=normalizeStayDate(a), B=normalizeStayDate(b), C=normalizeStayDate(c), D=normalizeStayDate(d);
-    if(!A||!B||!C||!D||A>=B||C>=D) return false;
-    // Hotel stay dates are half-open: [check-in, check-out).
-    // 03→04 and 04→05 are consecutive stays and do not overlap.
-    return A<D && C<B;
+    return a<d && c<b;
 }
 
 function isBookingAvailable(type,roomId,checkIn,checkOut,excludeId=null){
-    const ci=normalizeStayDate(checkIn), co=normalizeStayDate(checkOut);
-    if(!ci||!co||ci>=co) return false;
-    const propertyId=String(currentPropertyId||"");
 
     return !reservations.some(r=>{
-        if(excludeId!=null && String(r.id)===String(excludeId)) return false;
+        if(r.id===excludeId) return false;
 
-        // Reservations from another property must never block this property.
-        const rp=String(r.propertyId||r.property_id||"");
-        if(propertyId && rp && rp!==propertyId) return false;
-
+        // Accept both the current canonical status and any older saved variant.
         const status=String(r.status||"").toLowerCase().replace(/_/g,"-");
         if(!["reserved","confirmed","checked-in"].includes(status)) return false;
 
-        const rci=normalizeStayDate(r.checkIn||r.check_in);
-        const rco=normalizeStayDate(r.checkOut||r.check_out);
-        if(!datesOverlap(ci,co,rci,rco)) return false;
+        // Hotel stay dates are half-open: [check-in, check-out).
+        // A guest checking out on 15th releases the room for a new guest
+        // checking in on 15th. Any true overlap must be rejected.
+        if(!datesOverlap(checkIn,checkOut,r.checkIn,r.checkOut)) return false;
 
-        if(String(type||"").toLowerCase()==="villa") return true;
-        if(String(r.bookingType||r.booking_type||"").toLowerCase()==="villa") return true;
+        // A villa booking occupies the entire accommodation inventory.
+        if(type==="villa") return true;
+        if(r.bookingType==="villa") return true;
 
-        return String(r.roomId??r.room_id??"")===String(roomId??"");
+        return Number(r.roomId)===Number(roomId);
     });
 }
 
@@ -8744,7 +9002,10 @@ function viewFolio(reservationId){
 
         <div class="report-line">
             <span>Discounts</span>
-            <strong>-${accMoney(f?.discounts||0)}</strong>
+            <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end">
+                <strong>-${accMoney(f?.discounts||0)}</strong>
+                ${typeof requireActionPermission==='function' && requireActionPermission('folios.discount') ? `<button class="btn btn-warning btn-small" type="button" onclick="applyFolioDiscount('${r.id}')">+ Discount</button>` : ""}
+            </div>
         </div>
 
         <div class="report-line">
@@ -10442,6 +10703,7 @@ function renderPOS(){
 function addPOSItem(id){
 
     if(!currentUser){showLoginScreen();return;}
+    if(!hasActionPermission("pos.add_items")){alert("Access denied. Add Items / Take Orders has not been assigned to your user account.");return;}
     if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}
 
 
@@ -10480,6 +10742,7 @@ function addPOSItem(id){
 
             id:item.id,
             name:item.name,
+            category:item.category||"",
             price:item.price,
             qty:1,
             outletId:outlet.id,
@@ -10496,6 +10759,7 @@ function addPOSItem(id){
 function changePOSQty(id,change){
 
     if(!currentUser){showLoginScreen();return;}
+    if(!hasActionPermission("pos.edit_quantity")){alert("Access denied. Edit / Remove Order Quantity has not been assigned to your user account.");return;}
     if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}
 
 
@@ -10526,6 +10790,7 @@ function changePOSQty(id,change){
 
 function clearPOSOrder(){
 
+    if(!hasActionPermission("pos.void") && !hasActionPermission("pos.edit_quantity")){alert("Access denied. Clear / remove order items has not been assigned to your user account.");return;}
     posOrder=[];
 
     renderPOSOrder();
@@ -10653,6 +10918,7 @@ function nextPOSInvoiceNo(){
     return prefix+String(next).padStart(6,"0");
 }
 function printPOSInvoice(saleId){
+    if(!hasActionPermission("pos.request_bill")){alert("Access denied. Request / Print Final Bill has not been assigned to your user account.");return;}
     const sale=(sales||[]).find(x=>x.id===saleId);
     if(!sale){alert("Restaurant sale not found.");return;}
     if(!sale.invoiceNo){sale.invoiceNo=nextPOSInvoiceNo();saveData();try{renderPOSInvoices();}catch(e){}}
@@ -10780,6 +11046,55 @@ function fnbVoidInvoice(saleId){
 }
 
 /* v2.1.131 — Reception / Front Office may post normal Restaurant POS orders; preserve selected in-house guest during POS refresh. */
+/* =========================================================
+   F&B TABLE SERVICE / KOT / BOT — v2.1.307
+========================================================= */
+function defaultFNBTableList(){
+ const a=[]; for(let i=1;i<=12;i++) a.push({id:"tbl_"+String(i).padStart(2,"0"),tableNo:String(i),name:"Table "+i,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]}); return a;
+}
+function saveFNBTableData(){if(!currentPropertyId)return;const all=readArray(STORAGE.fnbTables);const keep=all.filter(x=>String(x?.propertyId||"")!==String(currentPropertyId));localStorage.setItem(STORAGE.fnbTables,JSON.stringify(keep.concat((fnbTables||[]).map(x=>({...x,propertyId:currentPropertyId})))));}
+function fnbTableById(id){return (fnbTables||[]).find(x=>String(x.id)===String(id));}
+function fnbTableTotal(t){return (t?.items||[]).reduce((s,i)=>s+Number(i.price||0)*Number(i.qty||0),0);}
+function fnbEnsureHistory(t){if(!Array.isArray(t.ticketHistory))t.ticketHistory=[];return t.ticketHistory;}
+function fnbTicketHistoryHtml(t){const h=fnbEnsureHistory(t);if(!h.length)return '<div class="empty">No KOT / BOT history yet.</div>';return '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Type</th><th>Time</th><th>Items</th></tr></thead><tbody>'+h.slice().reverse().map(x=>'<tr><td><strong>'+escapeHtml(x.no||'')+'</strong></td><td>'+escapeHtml(x.type||'')+'</td><td>'+escapeHtml(x.time||'')+'</td><td>'+escapeHtml((x.items||[]).map(i=>String(i.name||'')+' × '+Number(i.qty||0)).join(', '))+'</td></tr>').join('')+'</tbody></table></div>';}
+function fnbIsBarItem(i){
+  /* POS table-order lines created by older versions did not copy the menu category.
+     Resolve the category from the live property menu as a safe fallback so
+     Beverage / Bar items route to BOT and food items route to KOT. */
+  const menuItem=(typeof POS_MENU!=="undefined"&&Array.isArray(POS_MENU))?POS_MENU.find(x=>String(x?.id)===String(i?.id)):null;
+  const category=String(i?.category||i?.menuCategory||menuItem?.category||"");
+  const name=String(i?.name||menuItem?.name||"");
+  return /beverage|bar|drink|cocktail|wine|beer|juice|soft\s*drink|water|coffee|tea/i.test(category)
+      || /cocktail|wine|beer|soft\s*drink|juice|water|coffee|tea/i.test(name);
+}
+function fnbNextTicket(t,type){if(type==="BOT")t.botNo=Number(t.botNo||0)+1;else t.kotNo=Number(t.kotNo||0)+1;return type+"-"+t.tableNo+"-"+String(type==="BOT"?t.botNo:t.kotNo).padStart(3,"0");}
+function refreshFNBTableService(){
+ const g=document.getElementById("fnbTableGrid"),p=document.getElementById("fnbActiveTablePanel");if(!g||!p)return;
+ if(!fnbTables.length){fnbTables=defaultFNBTableList();saveFNBTableData();}
+ g.innerHTML=fnbTables.map(t=>{const open=t.status==="Open";return `<button class="btn ${open?'btn-primary':'btn-secondary'}" style="min-height:72px;text-align:left" onclick="selectFNBTable('${escapeHtml(t.id)}')"><strong>${escapeHtml(t.name)}</strong><br><span style="font-size:11px">${open?'OPEN · '+posMoney(fnbTableTotal(t)):'AVAILABLE'}</span></button>`}).join("");
+ const t=fnbTableById(activeFNBTableId);if(!t){p.innerHTML='<div class="empty">Select an available table to open it.</div>';return;}
+ p.innerHTML=`<div style="border:1px solid #d1d5db;border-radius:10px;padding:14px;background:#fff"><div style="display:flex;justify-content:space-between"><div><h3 style="margin:0">${escapeHtml(t.name)}</h3><div style="font-size:11px;color:#64748b">${t.status} · KOT ${t.kotNo||0} · BOT ${t.botNo||0}</div></div><button class="btn btn-secondary btn-small" onclick="closeFNBTableSelection()">Close</button></div><div class="form-grid" style="margin:12px 0"><div class="form-group"><label>Customer</label><select id="fnbTableCustomerType" onchange="updateFNBTableGuestMode()"><option value="In-House" ${t.customerType==='In-House'?'selected':''}>In-House Guest</option><option value="Walk-In" ${t.customerType!=='In-House'?'selected':''}>Walk-In</option></select></div><div class="form-group" id="fnbTableGuestWrap" style="display:${t.customerType==='In-House'?'block':'none'}"><label>Guest / Folio</label><select id="fnbTableGuest" onchange="updateFNBTableGuest()"><option value="">Select checked-in guest</option>${reservations.filter(r=>r.status==='Checked-In').map(r=>`<option value="${escapeHtml(r.id)}" ${String(t.guestId)===String(r.id)?'selected':''}>${escapeHtml(r.guestName)} — ${escapeHtml(r.bookingNo)}</option>`).join('')}</select></div><div class="form-group" id="fnbTableWalkWrap" style="display:${t.customerType==='In-House'?'none':'block'}"><label>Walk-In Name</label><input id="fnbTableWalkName" value="${escapeHtml(t.guestName||'')}" oninput="updateFNBTableGuest()" placeholder="Optional"/></div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Sent</th><th>New</th><th>Amount</th></tr></thead><tbody>${t.items.length?t.items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td>${i.qty}</td><td>${i.sentQty||0}</td><td>${Math.max(0,Number(i.qty)-Number(i.sentQty||0))}</td><td>${posMoney(Number(i.price)*Number(i.qty))}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No items. Add items from the POS menu above.</td></tr>'}</tbody></table></div><div style="display:flex;justify-content:space-between;margin-top:12px"><strong>Total</strong><strong>${posMoney(fnbTableTotal(t))}</strong></div><div class="toolbar" style="margin-top:12px"><button class="btn btn-primary" onclick="sendFNBTableTickets()">Send New KOT / BOT</button><button class="btn btn-success" onclick="settleFNBTable()">Close Table & Settle</button></div><div style="font-size:11px;color:#64748b;margin-top:7px">Only NEW quantities are sent. Previous KOT/BOT items are never duplicated.</div><div style="margin-top:16px"><h4 style="margin:0 0 8px">KOT / BOT History</h4>${hasActionPermission("pos.history")?fnbTicketHistoryHtml(t):'<div class="empty">KOT / BOT History access has not been assigned to this user.</div>'}</div></div>`;
+}
+function selectFNBTable(id){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const t=fnbTableById(id);if(!t)return;if(!hasActionPermission("pos.view_tables")){alert("Access denied. View Restaurant Tables has not been assigned to your user account.");return;}if(t.status!=="Open"){if(!hasActionPermission("pos.open_table")){alert("Access denied. Open / Reopen Table has not been assigned to your user account.");return;}t.status="Open";t.items=[];t.kotNo=0;t.botNo=0;t.customerType="Walk-In";t.guestId="";t.guestName="";}fnbEnsureHistory(t);activeFNBTableId=t.id;posOrder=t.items.map(i=>({...i}));saveFNBTableData();renderPOSOrder();refreshFNBTableService();}
+function closeFNBTableSelection(){activeFNBTableId="";posOrder=[];renderPOSOrder();refreshFNBTableService();}
+function syncFNBActiveTable(){const t=fnbTableById(activeFNBTableId);if(!t)return false;t.items=posOrder.map(i=>({...i,sentQty:Number(i.sentQty||0)}));t.status="Open";saveFNBTableData();return true;}
+function updateFNBTableGuestMode(){const t=fnbTableById(activeFNBTableId);if(!t)return;t.customerType=document.getElementById("fnbTableCustomerType")?.value||"Walk-In";if(t.customerType!=="In-House"){t.guestId="";t.guestName="";}saveFNBTableData();refreshFNBTableService();}
+function updateFNBTableGuest(){const t=fnbTableById(activeFNBTableId);if(!t)return;const type=document.getElementById("fnbTableCustomerType")?.value||"Walk-In";t.customerType=type;if(type==="In-House"){t.guestId=document.getElementById("fnbTableGuest")?.value||"";t.guestName=reservations.find(r=>String(r.id)===String(t.guestId))?.guestName||"";}else t.guestName=String(document.getElementById("fnbTableWalkName")?.value||"").trim();saveFNBTableData();}
+function sendFNBTableTickets(){
+ if(!hasActionPermission("pos.kot")){alert("Access denied. Send KOT / BOT has not been assigned to your user account.");return;}
+ const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}syncFNBActiveTable();const pending=t.items.map(i=>({...i,newQty:Math.max(0,Number(i.qty)-Number(i.sentQty||0))})).filter(i=>i.newQty>0);if(!pending.length){alert("No new items to send.");return;}const kot=pending.filter(i=>!fnbIsBarItem(i)),bot=pending.filter(i=>fnbIsBarItem(i));
+ const printTicket=(type,rows,no)=>{const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to print KOT/BOT.");return;}const title=type==="BOT"?"BAR ORDER TICKET":"KITCHEN ORDER TICKET";w.document.write(`<html><head><title>${title} ${no}</title><style>body{font-family:Arial;padding:20px;max-width:360px;margin:auto}h1,h2{text-align:center}.line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #999}</style></head><body><h1>${title}</h1><h2>${escapeHtml(t.name)} · ${no}</h2><p>Guest: ${escapeHtml(t.guestName||'Walk-In')}<br>Time: ${escapeHtml(localDateTime())}</p>${rows.map(i=>`<div class="line"><span>${escapeHtml(i.name)}</span><strong>${i.newQty}</strong></div>`).join('')}<script>window.onload=function(){window.print();}<\/script></body></html>`);w.document.close();};
+ if(kot.length){const no=fnbNextTicket(t,"KOT");printTicket("KOT",kot,no);fnbEnsureHistory(t).push({no,type:"KOT",time:localDateTime(),items:kot.map(i=>({name:i.name,qty:i.newQty}))});kot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}if(bot.length){const no=fnbNextTicket(t,"BOT");printTicket("BOT",bot,no);fnbEnsureHistory(t).push({no,type:"BOT",time:localDateTime(),items:bot.map(i=>({name:i.name,qty:i.newQty}))});bot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}saveFNBTableData();posOrder=t.items.map(i=>({...i}));renderPOSOrder();refreshFNBTableService();}
+function settleFNBTable(){
+ if(!hasActionPermission("pos.close_table")){alert("Access denied. Close Table / Settle Bill has not been assigned to your user account.");return;}
+ const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}syncFNBActiveTable();if(!t.items.length){alert("Table has no items.");return;}if(t.items.some(i=>Number(i.qty)>Number(i.sentQty||0))){if(confirm("There are unsent items. Send KOT/BOT first?")){sendFNBTableTickets();}return;}
+ const raw=prompt("Payment method: Cash / Card / Room Charge","Cash");if(raw===null)return;const map={cash:"Cash",card:"Card","room charge":"Room Charge"},method=map[String(raw).trim().toLowerCase()];if(!method){alert("Enter Cash, Card, or Room Charge.");return;}if(method==="Cash"&&!hasActionPermission("pos.cash")){alert("Access denied. Take Cash Payment has not been assigned to your user account.");return;}if(method==="Card"&&!hasActionPermission("pos.card")){alert("Access denied. Take Card Payment has not been assigned to your user account.");return;}if(method==="Room Charge"&&(!hasActionPermission("pos.room_charge")||!hasActionPermission("pos.room_post"))){alert("Access denied. Room Charge has not been assigned to your user account.");return;}if(method==="Room Charge"&&t.customerType!=="In-House"){alert("Room Charge requires an in-house guest.");return;}if(method==="Room Charge"&&!t.guestId){alert("Select the guest / folio first.");return;}const outlet=getCurrentPOSOutlet();if(!outlet)return;const guest=t.guestId?reservations.find(r=>String(r.id)===String(t.guestId)):null,total=fnbTableTotal(t),saleId="sale_"+Date.now(),invoiceNo=nextPOSInvoiceNo(),bizDate=cashierBusinessDate(),sale={id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:t.items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,outletId:outlet.id,outletName:outlet.name})),total,paymentMethod:method,customerType:t.customerType||"Walk-In",customerName:guest?.guestName||t.guestName||"",outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),tableNo:t.tableNo,tableName:t.name,kotCount:Number(t.kotNo||0),botCount:Number(t.botNo||0)};sales.push(sale);
+ if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const lkr=fnbSaleAmountLKR({currency:sale.currency,baseCurrency:sale.baseCurrency,postingRateAtBooking:sale.postingRateAtBooking},total);folio.restaurant=Number(folio.restaurant||0)+lkr;folio.total=getFolioTotal(guest.id);}
+ if(method!=="Room Charge")payments.push({id:"p_"+Date.now(),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",notes:"Table settlement — "+t.name});
+ saveData();try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);t.status="Available";t.items=[];t.kotNo=0;t.botNo=0;t.customerType="Walk-In";t.guestId="";t.guestName="";activeFNBTableId="";posOrder=[];saveFNBTableData();renderAll();if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
+}
+function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
+
 function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
 if(guest && typeof syncReservationToSupabase==='function'){
   // v2.1.133 — explicitly sync the updated guest reservation snapshot after
@@ -12438,6 +12753,7 @@ function normalizeAllReservationStatuses(){
 }
 
 function renderAll(){
+ try{applySettingsPermissionVisibility();}catch(e){console.warn("Settings permission visibility:",e);}
     normalizeAllReservationStatuses();
 
     loadCurrentPropertyData();
@@ -12803,10 +13119,10 @@ function getRoomById(roomId){ return getProperty()?.rooms?.find(x=>String(x.id)=
 function roomAvailableForDates(roomId,checkIn,checkOut,excludeId=""){
     const room=getRoomById(roomId);
     if(!room || room.active===false || room.housekeepingStatus==="out_of_order") return false;
-    return isBookingAvailable("room",String(roomId),checkIn,checkOut,excludeId);
+    return !reservations.some(r=>String(r.id)!==String(excludeId) && String(r.roomId)===String(roomId) && activeReservation(r) && dateRangesOverlap(r.checkIn,r.checkOut,checkIn,checkOut));
 }
 function availableRoomsForDates(checkIn,checkOut,excludeId=""){
-    return (settings?.rooms||[]).filter(room=>room.active!==false && roomAvailableForDates(room.id,checkIn,checkOut,excludeId));
+    return (getProperty()?.rooms||[]).filter(room=>room.active!==false && roomAvailableForDates(room.id,checkIn,checkOut,excludeId));
 }
 function reservationBookingSourceValue(r){ return r?.bookingSource || r?.source || "Direct"; }
 function reservationRate(r){
@@ -12819,19 +13135,15 @@ function reservationStatusClass(status){
 
 function applyReservations20Form(){
     const room=document.getElementById("roomSelect");
-    const ci=normalizeStayDate(document.getElementById("checkIn")?.value);
-    const co=normalizeStayDate(document.getElementById("checkOut")?.value);
+    const ci=document.getElementById("checkIn")?.value;
+    const co=document.getElementById("checkOut")?.value;
     const exclude=editingReservationId||"";
-    const type=document.getElementById("bookingType")?.value||"room";
-    if(!room || !ci || !co) return;
-
-    // Use the same availability rule as saveReservation().
-    // Checkout on 04/10 releases the room for check-in on 04/10.
-    const current=String(room.value||"");
-    const rooms=(settings?.rooms||[]).filter(r=>r && r.active!==false && isBookingAvailable(type,String(r.id),ci,co,exclude));
-    room.innerHTML=rooms.map(x=>`<option value="${escapeHtml(String(x.id))}">${escapeHtml(x.name||("Room "+String(x.id).padStart(2,"0")))}</option>`).join("") || '<option value="">No rooms available</option>';
-    if(rooms.some(x=>String(x.id)===current)) room.value=current;
-    else if(rooms.length) room.value=String(rooms[0].id);
+    if(room && ci && co){
+        const current=room.value;
+        const rooms=availableRoomsForDates(ci,co,exclude);
+        room.innerHTML=rooms.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join("") || '<option value="">No rooms available</option>';
+        if(rooms.some(x=>String(x.id)===String(current))) room.value=current;
+    }
 }
 
 function reservation2SaveNormalize(r){
@@ -14288,26 +14600,23 @@ window.signatureCurrency={baseCurrency:base,guestCurrency:guest,postingRate:post
 function shape(p){if(!p)return;p.baseCurrency=p.baseCurrency||'LKR';p.guestCurrency=p.guestCurrency||p.currency||'USD';p.postingRate=n(p.postingRate,320);p.settlementRate=n(p.settlementRate,p.postingRate);p.cashRate=n(p.cashRate,p.settlementRate);p.serviceChargeRate=Math.max(0,n(p.serviceChargeRate,0));p.taxRate=Math.max(0,n(p.taxRate,0));}
 try{if(typeof settings!=='undefined')shape(settings);if(typeof properties!=='undefined'&&Array.isArray(properties))properties.forEach(shape);}catch(e){}
 
-window.recalculateFolioTaxesAndService=function(id,opts){
+window.recalculateFolioTaxesAndService=function(id){
  const r=(typeof reservations!=='undefined'?reservations:[]).find(x=>x.id===id),f=typeof getFolio==='function'?getFolio(id):null;if(!r||!f)return null;
- const p=prop(),sr=opts&&opts.serviceRate!=null?Math.max(0,n(opts.serviceRate)):Math.max(0,n(f.serviceChargeRate,p.serviceChargeRate||0)),tr=opts&&opts.taxRate!=null?Math.max(0,n(opts.taxRate)):Math.max(0,n(f.taxRate,p.taxRate||0));
+ const p=prop(),scEnabled=p.serviceChargeEnabled===true || cfg().serviceChargeEnabled===true,vatEnabled=p.vatEnabled===true || cfg().vatEnabled===true;
+ const sr=scEnabled?Math.max(0,n(p.serviceChargeRate!=null?p.serviceChargeRate:cfg().serviceChargeRate,0)):0;
+ const tr=vatEnabled?Math.max(0,n(p.vatRate!=null?p.vatRate:cfg().vatRate,18)):0;
  const subtotal=Math.max(0,n(r.total)+n(f.restaurant)+n(f.extras)-n(f.discounts));
- f.serviceChargeRate=sr;f.taxRate=tr;f.serviceCharges=Number((subtotal*sr/100).toFixed(2));f.taxes=Number(((subtotal+f.serviceCharges)*tr/100).toFixed(2));f.currency=f.currency||guest();f.baseCurrency=f.baseCurrency||base();f.postingRateAtCalculation=postRate();f.total=n(r.total)+n(f.restaurant)+n(f.extras)+n(f.serviceCharges)+n(f.taxes)-n(f.discounts);f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();return f;
+ f.serviceChargeRate=sr;f.taxRate=tr;f.serviceCharges=Number((subtotal*sr/100).toFixed(2));f.taxes=Number(((subtotal+f.serviceCharges)*tr/100).toFixed(2));f.currency=f.currency||guest();f.baseCurrency=f.baseCurrency||'LKR';f.postingRateAtCalculation=postRate();f.total=n(r.total)+n(f.restaurant)+n(f.extras)+n(f.serviceCharges)+n(f.taxes)-n(f.discounts);f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();return f;
 };
-window.setFolioServiceCharge=function(id,rate){if(typeof requireRole==='function'&&!requireRole('Admin','Manager','Front Office','Cashier'))return;recalculateFolioTaxesAndService(id,{serviceRate:Math.max(0,n(rate))});if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
-window.setFolioTax=function(id,rate){if(typeof requireRole==='function'&&!requireRole('Admin','Manager','Front Office','Cashier'))return;recalculateFolioTaxesAndService(id,{taxRate:Math.max(0,n(rate))});if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
-window.removeFolioServiceCharge=function(id){setFolioServiceCharge(id,0);};window.removeFolioTax=function(id){setFolioTax(id,0);};
+window.setFolioServiceCharge=function(id){recalculateFolioTaxesAndService(id);if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
+window.setFolioTax=function(id){recalculateFolioTaxesAndService(id);if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
+window.removeFolioServiceCharge=function(id){setFolioServiceCharge(id);};window.removeFolioTax=function(id){setFolioTax(id);};
 
-function addSettings(){
-  /* Currency & Hotel Accounting UI was intentionally removed.
-     Currency handling now belongs to Reservation/Rate Plan flow. */
-  return;
-}
-function loadSettingsPanel(){const s=cfg(),v={sigBaseCurrency:s.baseCurrency||'LKR',sigGuestCurrency:s.guestCurrency||s.currency||'USD',sigPostingRate:s.postingRate||320,sigSettlementRate:s.settlementRate||s.postingRate||320,sigCashRate:s.cashRate||s.settlementRate||320,sigServiceChargeRate:s.serviceChargeRate||0,sigTaxRate:s.taxRate||0};Object.entries(v).forEach(([id,x])=>{const e=document.getElementById(id);if(e)e.value=x;});}
-window.saveSignatureCurrencySettings=function(){if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;if(typeof settings==='undefined'||!settings){alert('Please select a property first.');return;}const v=id=>document.getElementById(id)?.value;const b=String(v('sigBaseCurrency')||'LKR').trim().toUpperCase()||'LKR',g=String(v('sigGuestCurrency')||'USD').trim().toUpperCase()||'USD',pr=Math.max(0,n(v('sigPostingRate'),320)),sr=Math.max(0,n(v('sigSettlementRate'),pr)),cr=Math.max(0,n(v('sigCashRate'),sr)),sc=Math.max(0,n(v('sigServiceChargeRate'),0)),tx=Math.max(0,n(v('sigTaxRate'),0));Object.assign(settings,{baseCurrency:b,guestCurrency:g,currency:g,postingRate:pr,settlementRate:sr,cashRate:cr,serviceChargeRate:sc,taxRate:tx});if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p)Object.assign(p,{baseCurrency:b,guestCurrency:g,currency:g,postingRate:pr,settlementRate:sr,cashRate:cr,serviceChargeRate:sc,taxRate:tx});}if(typeof saveData==='function')saveData();loadSettingsPanel();if(typeof renderAll==='function')renderAll();alert('Currency and charge settings saved. Historical transaction rates are not changed.');};
+function addSettings(){return;}
+function loadSettingsPanel(){}
+window.saveSignatureCurrencySettings=window.saveSignatureCurrencySettings||function(){};
 
-function folioControls(){const host=document.getElementById('folioModalContent');if(!host||host.querySelector('#folioChargeControls'))return;let rid='';const buttons=host.querySelectorAll('[onclick]');for(const b of buttons){const x=String(b.getAttribute('onclick')||'');let m=x.match(/(?:addManualFolioCharge|openPaymentModal|checkInReservation|checkOutReservation)\(\'([^\']+)\'\)/);if(m){rid=m[1];break;}}if(!rid)return;const f=typeof getFolio==='function'?getFolio(rid):null;if(!f)return;const p=prop(),sr=f.serviceChargeRate!=null?f.serviceChargeRate:(p.serviceChargeRate||0),tr=f.taxRate!=null?f.taxRate:(p.taxRate||0);const d=document.createElement('div');d.id='folioChargeControls';d.className='section';d.style.cssText='padding:12px;margin-top:16px;border:1px solid #d1d5db';d.innerHTML='<div class="section-header"><div><h3>Service Charge &amp; Tax</h3><div style="font-size:12px;color:#6b7280">Service charge is calculated first; tax is calculated on subtotal plus service charge.</div></div></div><div class="form-grid"><div class="form-group"><label>Service Charge %</label><input id="folioServiceRate" type="number" min="0" step="0.01" value="'+sr+'"></div><div class="form-group"><label>Tax %</label><input id="folioTaxRate" type="number" min="0" step="0.01" value="'+tr+'"></div></div><div class="toolbar" style="margin-top:8px"><button class="btn btn-success btn-small" onclick="setFolioServiceCharge(\''+rid+'\',document.getElementById(\'folioServiceRate\').value)">Apply Service Charge</button><button class="btn btn-success btn-small" onclick="setFolioTax(\''+rid+'\',document.getElementById(\'folioTaxRate\').value)">Apply Tax</button><button class="btn btn-secondary btn-small" onclick="setFolioServiceCharge(\''+rid+'\',document.getElementById(\'folioServiceRate\').value);setFolioTax(\''+rid+'\',document.getElementById(\'folioTaxRate\').value)">Apply Both</button><button class="btn btn-danger btn-small" onclick="removeFolioServiceCharge(\''+rid+'\');removeFolioTax(\''+rid+'\')">Clear Both</button></div>';host.appendChild(d);}
-const observer=new MutationObserver(()=>{try{folioControls();}catch(e){}});function boot(){addSettings();try{if(typeof folios!=='undefined')folios.forEach(f=>{const p=prop();f.currency=f.currency||p.guestCurrency||p.currency||'USD';f.baseCurrency=f.baseCurrency||p.baseCurrency||'LKR';if(f.serviceChargeRate==null)f.serviceChargeRate=n(p.serviceChargeRate,0);if(f.taxRate==null)f.taxRate=n(p.taxRate,0);});}catch(e){}const h=document.getElementById('folioModalContent');if(h)observer.observe(h,{childList:true,subtree:true});}
+function boot(){try{if(typeof folios!=='undefined')folios.forEach(f=>{const p=prop();f.currency=f.currency||p.guestCurrency||p.currency||'USD';f.baseCurrency=f.baseCurrency||p.baseCurrency||'LKR';if(f.serviceChargeRate==null)f.serviceChargeRate=n(p.serviceChargeRate,0);if(f.taxRate==null)f.taxRate=n(p.taxRate,0);});}catch(e){}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
@@ -17281,7 +17590,10 @@ let supabaseCloudReady=false;
 
 function initSupabaseClient(){
     try{
-        if(!window.supabase || typeof window.supabase.createClient!=="function") return null;
+        if(!window.supabase || typeof window.supabase.createClient!=="function") {
+            console.error("Signature PMS: Supabase JS library is unavailable. Both configured CDN loaders may be blocked or unreachable.");
+            return null;
+        }
         if(!supabaseClient) supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
         return supabaseClient;
     }catch(err){
@@ -19283,7 +19595,855 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   };
 })();
 </script>
-<!-- v2.1.271: safe New Reservation date-availability fix based on v2.1.268. -->
+
+<script id="v2-1-282-h999-safe-duplicate-cleanup">
+/* v2.1.282 — H999 SAFE DUPLICATE CLEANUP
+   Temporary, property-scoped cleanup for the Migration Test Hotel only.
+   Keeps the first reservation in each exact duplicate group and removes only
+   duplicate reservations with no financial activity. Cloud deletion is done
+   by the reservation UUID after local safety checks.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV282H999Cleanup)return;
+  window.__signatureV282H999Cleanup=true;
+
+  function esc(v){
+    return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+  function norm(v){return String(v??'').trim().toLowerCase().replace(/\s+/g,' ');}
+  function num(v){const n=Number(v);return Number.isFinite(n)?n:0;}
+  function bookingSeq(v){
+    const m=String(v??'').match(/-(\d+)$/); return m?Number(m[1]):Number.MAX_SAFE_INTEGER;
+  }
+  function h999Rows(){
+    return (Array.isArray(reservations)?reservations:[]).filter(r=>String(r?.propertyId||currentPropertyId)!=='').filter(r=>String(r?.propertyId||currentPropertyId)===String(currentPropertyId));
+  }
+  function exactFingerprint(r){
+    return [
+      norm(r?.guestName||r?.guest_name),
+      norm(r?.roomId||r?.room_number),
+      String(r?.checkIn||r?.check_in||''),
+      String(r?.checkOut||r?.check_out||''),
+      num(r?.total),
+      norm(r?.currency||'LKR'),
+      norm(r?.status||'')
+    ].join('|');
+  }
+  function hasFinancialActivity(id){
+    const pp=Array.isArray(payments)?payments.filter(x=>String(x?.reservationId||'')===String(id)):[];
+    const ss=Array.isArray(sales)?sales.filter(x=>String(x?.reservationId||'')===String(id)):[];
+    let f=null; try{f=typeof getFolio==='function'?getFolio(id):null;}catch(e){}
+    const fc=f && (
+      num(f.restaurant)!==0 || num(f.extras)!==0 || num(f.discounts)!==0 ||
+      num(f.taxes)!==0 || num(f.serviceCharges)!==0
+    );
+    return pp.length>0 || ss.length>0 || !!fc;
+  }
+  function getGroups(){
+    if(String(currentPropertyId)!=='H999') return [];
+    const map=new Map();
+    h999Rows().forEach(r=>{
+      if(!r?.id)return;
+      const key=exactFingerprint(r);
+      if(!map.has(key))map.set(key,[]);
+      map.get(key).push(r);
+    });
+    return [...map.values()].filter(g=>g.length>1).map(g=>g.slice().sort((a,b)=>{
+      const sa=bookingSeq(a.bookingNo||a.booking_no), sb=bookingSeq(b.bookingNo||b.booking_no);
+      if(sa!==sb)return sa-sb;
+      return String(a.createdAt||a.created_at||'').localeCompare(String(b.createdAt||b.created_at||''));
+    }));
+  }
+  function ensureButton(){
+    if(String(currentPropertyId)!=='H999')return;
+    if(document.getElementById('v282H999CleanupBtn'))return;
+    const candidates=[
+      document.querySelector('#reservations .page-header'),
+      document.querySelector('#reservations .section-header'),
+      document.querySelector('#reservations')
+    ].filter(Boolean);
+    const host=candidates[0]; if(!host)return;
+    const b=document.createElement('button');
+    b.id='v282H999CleanupBtn';
+    b.type='button';
+    b.className='btn btn-danger btn-small';
+    b.textContent='H999 Duplicate Cleanup';
+    b.style.marginLeft='8px';
+    b.onclick=openCleanup;
+    host.appendChild(b);
+  }
+  function openCleanup(){
+    if(String(currentPropertyId)!=='H999'){alert('This cleanup is restricted to H999 – Signature Migration Test Hotel.');return;}
+    const groups=getGroups();
+    let totalDup=0, protectedRows=0;
+    const body=groups.map((g,idx)=>{
+      const keep=g[0];
+      const dup=g.slice(1);
+      totalDup+=dup.length;
+      dup.forEach(r=>{if(hasFinancialActivity(r.id))protectedRows++;});
+      return `<div style="border:1px solid #d1d5db;border-radius:8px;padding:12px;margin-bottom:10px;background:#fff"><div style="font-weight:700;margin-bottom:6px">Group ${idx+1}: ${esc(keep.guestName||keep.guest_name)} · Room ${esc(keep.roomId||keep.room_number)} · ${esc(keep.checkIn||keep.check_in)} → ${esc(keep.checkOut||keep.check_out)}</div><div style="font-size:13px;color:#475569;margin-bottom:7px">Keep: <strong>${esc(keep.bookingNo||keep.booking_no)}</strong></div>${dup.map(r=>`<div style="font-size:13px;padding:5px 0;border-top:1px solid #e5e7eb">Delete duplicate: <strong>${esc(r.bookingNo||r.booking_no)}</strong>${hasFinancialActivity(r.id)?' <span style="color:#b91c1c;font-weight:700">PROTECTED — financial activity</span>':''}</div>`).join('')}</div>`;
+    }).join('');
+    const html=`<div class="modal show" id="v282H999CleanupModal"><div class="modal-box" style="max-width:850px"><div class="modal-header"><h3>H999 Safe Duplicate Cleanup</h3><button class="close-btn" onclick="document.getElementById('v282H999CleanupModal').remove()">×</button></div><div style="padding:12px 0"><div style="padding:10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;margin-bottom:12px"><strong>H999 only.</strong> The tool keeps the first reservation in each exact duplicate group and deletes only the later duplicates with no financial activity. H001/H002 are not touched.</div>${groups.length?body:'<div class="empty">No duplicate groups found in H999.</div>'}</div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><strong>${totalDup}</strong> duplicate candidate(s) · <strong>${protectedRows}</strong> protected by financial activity</div><div style="display:flex;gap:8px"><button class="btn btn-secondary" onclick="document.getElementById('v282H999CleanupModal').remove()">Cancel</button>${groups.length?'<button class="btn btn-danger" id="v282H999DeleteBtn">Delete Safe Duplicates</button>':''}</div></div></div></div>`;
+    document.body.insertAdjacentHTML('beforeend',html);
+    const btn=document.getElementById('v282H999DeleteBtn');
+    if(btn)btn.onclick=runCleanup;
+  }
+  async function runCleanup(){
+    if(String(currentPropertyId)!=='H999'){alert('Cleanup stopped: current property is not H999.');return;}
+    const groups=getGroups();
+    const candidates=groups.flatMap(g=>g.slice(1)).filter(r=>!hasFinancialActivity(r.id));
+    if(!candidates.length){alert('No safe duplicate reservations found to delete.');return;}
+    const keepCount=groups.length;
+    if(!confirm('Delete '+candidates.length+' duplicate H999 reservations and keep the first reservation in each of '+keepCount+' duplicate group(s)?\n\nOnly H999 records with no payments, POS sales or folio financial activity will be deleted.'))return;
+    const btn=document.getElementById('v282H999DeleteBtn'); if(btn){btn.disabled=true;btn.textContent='Deleting…';}
+    let localDeleted=0, cloudDeleted=0, failed=0;
+    const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+    const authUser=client&&typeof getSupabaseSessionUser==='function'?await getSupabaseSessionUser():null;
+    for(const r of candidates){
+      try{
+        reservations=reservations.filter(x=>String(x.id)!==String(r.id));
+        folios=folios.filter(x=>String(x.reservationId||'')!==String(r.id));
+        localDeleted++;
+        if(client&&authUser){
+          const {error}=await client.from('reservations').delete().eq('id',String(r.id));
+          if(error)throw error;
+          cloudDeleted++;
+        }
+      }catch(e){
+        failed++;
+        console.warn('v2.1.282 H999 cleanup failed for '+r.id,e);
+      }
+    }
+    saveData();
+    if(typeof renderAll==='function')renderAll();
+    const m=document.getElementById('v282H999CleanupModal'); if(m)m.remove();
+    alert('H999 duplicate cleanup completed.\n\nLocal deleted: '+localDeleted+'\nCloud deleted: '+cloudDeleted+'\nFailed: '+failed+'\n\nThe first reservation in each duplicate group was kept.');
+  }
+  const oldRenderAll=window.renderAll;
+  if(typeof oldRenderAll==='function')window.renderAll=function(){const r=oldRenderAll.apply(this,arguments);setTimeout(ensureButton,0);return r;};
+  const oldShowPage=window.showPage;
+  if(typeof oldShowPage==='function')window.showPage=function(){const r=oldShowPage.apply(this,arguments);setTimeout(ensureButton,50);return r;};
+  setTimeout(ensureButton,500);
+  window.signatureH999Cleanup={openCleanup,runCleanup,getGroups};
+})();
+</script>
+<script id="v2-1-287-h999-migration-reset-final">
+/* v2.1.287 — H999 Migration Reset Final
+   Safe standalone override: does not touch authentication, login, settings,
+   reservations migration logic, or application render functions.
+   It resolves H999 by property CODE, then clears only H999 test data/history. */
+(function(){
+  if(window.__signatureV287H999MigrationResetFinal)return;
+  window.__signatureV287H999MigrationResetFinal=true;
+
+  async function getH999Ids(){
+    const ids=new Set(['H999']);
+    try{
+      const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+      if(client){
+        const q=await client.from('properties').select('id,code').eq('code','H999').maybeSingle();
+        if(q.error)throw q.error;
+        if(q.data?.id)ids.add(String(q.data.id));
+      }
+    }catch(e){console.warn('H999 property lookup skipped:',e);}
+    try{
+      (Array.isArray(properties)?properties:[]).filter(p=>String(p?.code||'').toUpperCase()==='H999').forEach(p=>{if(p?.id)ids.add(String(p.id));});
+    }catch(e){}
+    return ids;
+  }
+
+  async function resetH999MigrationFinal(){
+    if(!confirm('Reset H999 migration test completely? This removes ONLY H999 reservations and H999 migration history. H001/H002 and H999 rooms/settings/guests are kept.'))return;
+    try{
+      const ids=await getH999Ids();
+      const localH999ReservationIds=new Set();
+      (Array.isArray(reservations)?reservations:[]).forEach(r=>{
+        if(ids.has(String(r?.propertyId||''))) localH999ReservationIds.add(String(r.id));
+      });
+
+      let cloudDeleted=0;
+      try{
+        const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+        if(client){
+          let cloudId=null;
+          const p=await client.from('properties').select('id').eq('code','H999').maybeSingle();
+          if(p.error)throw p.error;
+          cloudId=p.data?.id?String(p.data.id):null;
+          if(cloudId){
+            const q=await client.from('reservations').select('id').eq('property_id',cloudId);
+            if(q.error)throw q.error;
+            (q.data||[]).forEach(x=>{if(x?.id)localH999ReservationIds.add(String(x.id));});
+            const d=await client.from('reservations').delete().eq('property_id',cloudId);
+            if(d.error)throw d.error;
+            cloudDeleted=(q.data||[]).length;
+          }
+        }
+      }catch(e){
+        console.warn('H999 cloud reservation cleanup skipped:',e);
+      }
+
+      if(Array.isArray(reservations)) reservations=reservations.filter(r=>!ids.has(String(r?.propertyId||'')));
+      if(Array.isArray(folios)) folios=folios.filter(x=>!ids.has(String(x?.propertyId||''))&&!localH999ReservationIds.has(String(x?.reservationId||'')));
+      if(Array.isArray(payments)) payments=payments.filter(x=>!ids.has(String(x?.propertyId||''))&&!localH999ReservationIds.has(String(x?.reservationId||'')));
+      if(Array.isArray(sales)) sales=sales.filter(x=>!ids.has(String(x?.propertyId||''))&&!localH999ReservationIds.has(String(x?.reservationId||'')));
+
+      const key=(typeof STORAGE!=='undefined'&&STORAGE?.migrationBatches)?STORAGE.migrationBatches:'signature_pms_migration_batches';
+      try{
+        const batches=JSON.parse(localStorage.getItem(key)||'[]');
+        const kept=(Array.isArray(batches)?batches:[]).filter(b=>!ids.has(String(b?.propertyId||'')));
+        localStorage.setItem(key,JSON.stringify(kept));
+      }catch(e){console.warn('H999 migration ledger cleanup skipped:',e);}
+
+      saveData();
+      if(typeof renderAll==='function')renderAll();
+      alert('H999 migration reset complete. Import the same CSV now. Expected: Created 2 · Skipped duplicates 0 · Cloud reservations synced 2.');
+    }catch(e){
+      console.error('v2.1.287 H999 reset failed:',e);
+      alert('H999 reset failed: '+(e?.message||e));
+    }
+  }
+  window.resetH999MigrationFinal=resetH999MigrationFinal;
+
+  function addResetButton(){
+    const type=document.getElementById('migrationType');
+    const btn=document.getElementById('v287H999ResetBtn');
+    if(!type||btn)return;
+    const host=type.closest('div')||type.parentElement;
+    if(!host)return;
+    const b=document.createElement('button');
+    b.type='button'; b.id='v287H999ResetBtn'; b.className='btn btn-secondary';
+    b.textContent='Reset H999 Migration Test';
+    b.style.marginLeft='8px';
+    b.onclick=resetH999MigrationFinal;
+    host.appendChild(b);
+  }
+  const boot=()=>setTimeout(addResetButton,300);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+  setInterval(addResetButton,1500);
+})();
+</script>
+
+<script id="v288-h999-migration-reset-hard-fix">
+(function(){
+  async function hardResetH999(){
+    if(!confirm('RESET H999 migration test? This removes H999 reservations and H999 migration ledger only.')) return;
+    try{
+      const h999Ids=new Set(['H999']);
+      let cloudId='';
+      const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+      if(client){
+        const pr=await client.from('properties').select('id,code').eq('code','H999').maybeSingle();
+        if(pr.error) throw pr.error;
+        cloudId=String(pr.data?.id||'');
+        if(cloudId) h999Ids.add(cloudId);
+      }
+      try{
+        (Array.isArray(properties)?properties:[]).forEach(p=>{
+          if(String(p?.code||'').toUpperCase()==='H999' && p?.id) h999Ids.add(String(p.id));
+        });
+      }catch(e){}
+
+      // Remove H999 local reservations and related local transactions.
+      const removedReservationIds=new Set();
+      (Array.isArray(reservations)?reservations:[]).forEach(r=>{
+        if(h999Ids.has(String(r?.propertyId||''))) removedReservationIds.add(String(r?.id||''));
+      });
+      if(Array.isArray(reservations)) reservations=reservations.filter(r=>!h999Ids.has(String(r?.propertyId||'')));
+      if(Array.isArray(folios)) folios=folios.filter(x=>!h999Ids.has(String(x?.propertyId||''))&&!removedReservationIds.has(String(x?.reservationId||'')));
+      if(Array.isArray(payments)) payments=payments.filter(x=>!h999Ids.has(String(x?.propertyId||''))&&!removedReservationIds.has(String(x?.reservationId||'')));
+      if(Array.isArray(sales)) sales=sales.filter(x=>!h999Ids.has(String(x?.propertyId||''))&&!removedReservationIds.has(String(x?.reservationId||'')));
+
+      // Remove ONLY H999 migration ledger entries. Also recognize the known H999 test source numbers,
+      // because older builds could have recorded the property identifier differently.
+      const key=(typeof STORAGE!=='undefined'&&STORAGE?.migrationBatches)?STORAGE.migrationBatches:'signature_pms_migration_batches';
+      const testSources=new Set(['test-001','test-002']);
+      let before=0,after=0;
+      try{
+        const batches=JSON.parse(localStorage.getItem(key)||'[]');
+        before=Array.isArray(batches)?batches.length:0;
+        const kept=(Array.isArray(batches)?batches:[]).filter(b=>{
+          const propMatch=h999Ids.has(String(b?.propertyId||''));
+          const sourceMatch=Array.isArray(b?.bookingNos)&&b.bookingNos.some(n=>testSources.has(String(n||'').trim().toLowerCase()));
+          return !(propMatch && String(b?.type||'')==='reservations') && !sourceMatch;
+        });
+        after=kept.length;
+        localStorage.setItem(key,JSON.stringify(kept));
+      }catch(e){throw new Error('Could not clear H999 migration ledger: '+(e?.message||e));}
+
+      // Delete H999 cloud reservations and VERIFY that none remain.
+      let cloudBefore=0,cloudAfter=0;
+      if(client && cloudId){
+        const q=await client.from('reservations').select('id,booking_no,reservation_data').eq('property_id',cloudId);
+        if(q.error) throw q.error;
+        cloudBefore=(q.data||[]).length;
+        const d=await client.from('reservations').delete().eq('property_id',cloudId);
+        if(d.error) throw d.error;
+        const v=await client.from('reservations').select('id').eq('property_id',cloudId);
+        if(v.error) throw v.error;
+        cloudAfter=(v.data||[]).length;
+        if(cloudAfter>0) throw new Error('Supabase still contains '+cloudAfter+' H999 reservation(s). Delete was not completed.');
+      }
+
+      saveData();
+      if(typeof renderAll==='function') renderAll();
+      alert('H999 RESET COMPLETE.\n\nLocal migration ledger: '+before+' → '+after+'\nCloud H999 reservations: '+cloudBefore+' → '+cloudAfter+'\n\nNow import the same CSV. Expected: Created 2 · Skipped duplicates 0 · Cloud reservations synced 2.');
+    }catch(e){
+      console.error('v2.1.288 H999 reset failed:',e);
+      alert('H999 RESET FAILED — nothing further was imported.\n\n'+(e?.message||e));
+    }
+  }
+  window.resetH999MigrationHardFix=hardResetH999;
+  function bind(){
+    const old=document.getElementById('v287H999ResetBtn');
+    if(old){old.textContent='Reset H999 Migration Test (FINAL)';old.onclick=hardResetH999;}
+    else{
+      const type=document.getElementById('migrationType');
+      if(!type)return;
+      const host=type.closest('div')||type.parentElement;if(!host)return;
+      const b=document.createElement('button');b.type='button';b.id='v288H999ResetBtn';b.className='btn btn-secondary';b.textContent='Reset H999 Migration Test (FINAL)';b.style.marginLeft='8px';b.onclick=hardResetH999;host.appendChild(b);
+    }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(bind,300)); else setTimeout(bind,300);
+  setInterval(bind,1500);
+})();
+</script>
+<script id="v289-h999-migration-reset-definitive">
+(function(){
+  async function resetH999Definitive(){
+    if(!confirm('H999 FULL RESET? This removes only H999 migration test reservations/history. H001/H002 are untouched.')) return;
+    try{
+      const norm=v=>String(v??'').trim().toLowerCase();
+      const h999=new Set(['H999']);
+      const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+      let cloudId='';
+      if(client){
+        const pr=await client.from('properties').select('id,code').eq('code','H999').maybeSingle();
+        if(pr.error) throw pr.error;
+        cloudId=String(pr.data?.id||'');
+        if(cloudId) h999.add(cloudId);
+      }
+      try{(Array.isArray(properties)?properties:[]).forEach(p=>{if(norm(p?.code)==='h999'&&p?.id)h999.add(String(p.id));});}catch(e){}
+
+      const removedIds=new Set();
+      (Array.isArray(reservations)?reservations:[]).forEach(r=>{
+        if(h999.has(String(r?.propertyId||''))) removedIds.add(String(r?.id||''));
+      });
+      if(Array.isArray(reservations)) reservations=reservations.filter(r=>!h999.has(String(r?.propertyId||'')));
+      if(Array.isArray(folios)) folios=folios.filter(x=>!h999.has(String(x?.propertyId||''))&&!removedIds.has(String(x?.reservationId||'')));
+      if(Array.isArray(payments)) payments=payments.filter(x=>!h999.has(String(x?.propertyId||''))&&!removedIds.has(String(x?.reservationId||'')));
+      if(Array.isArray(sales)) sales= sales.filter(x=>!h999.has(String(x?.propertyId||''))&&!removedIds.has(String(x?.reservationId||'')));
+
+      const key=(typeof STORAGE!=='undefined'&&STORAGE?.migrationBatches)?STORAGE.migrationBatches:'signature_pms_migration_batches';
+      const batches=JSON.parse(localStorage.getItem(key)||'[]');
+      const arr=Array.isArray(batches)?batches:[];
+      const isH999Batch=b=>{
+        if(norm(b?.type)!=='reservations') return false;
+        if(h999.has(String(b?.propertyId||''))) return true;
+        const nums=Array.isArray(b?.bookingNos)?b.bookingNos:[];
+        return nums.some(n=>{
+          const x=norm(n);
+          return x.startsWith('h999-') || x==='test-001' || x==='test-002';
+        });
+      };
+      const kept=arr.filter(b=>!isH999Batch(b));
+      localStorage.setItem(key,JSON.stringify(kept));
+
+      // Remove any legacy per-booking migration keys for H999, if a previous build created them.
+      const dropKeys=[];
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i)||'';
+        if(k.startsWith('SignaturePMS:migration:') && (k.toLowerCase().includes(':h999:')||k.toLowerCase().includes('test-001')||k.toLowerCase().includes('test-002'))) dropKeys.push(k);
+      }
+      dropKeys.forEach(k=>localStorage.removeItem(k));
+
+      let cloudBefore=0,cloudAfter=0;
+      if(client&&cloudId){
+        const q=await client.from('reservations').select('id,booking_no,reservation_data').eq('property_id',cloudId);
+        if(q.error) throw q.error;
+        cloudBefore=(q.data||[]).length;
+        const d=await client.from('reservations').delete().eq('property_id',cloudId);
+        if(d.error) throw d.error;
+        const v=await client.from('reservations').select('id,booking_no').eq('property_id',cloudId);
+        if(v.error) throw v.error;
+        cloudAfter=(v.data||[]).length;
+        if(cloudAfter!==0) throw new Error('Supabase still has '+cloudAfter+' H999 reservations.');
+      }
+
+      saveData();
+      if(typeof renderAll==='function')renderAll();
+      alert('H999 FULL RESET COMPLETE.\n\nMigration ledger: '+arr.length+' → '+kept.length+'\nCloud H999 reservations: '+cloudBefore+' → '+cloudAfter+'\n\nNow import the CSV once. Expected: Created 2 · Skipped duplicates 0 · Cloud reservations synced 2.');
+    }catch(e){
+      console.error('v289 H999 reset failed:',e);
+      alert('H999 FULL RESET FAILED:\n\n'+(e?.message||e));
+    }
+  }
+  window.resetH999MigrationDefinitive=resetH999Definitive;
+  const wire=()=>{const b=document.getElementById('v287H999ResetBtn');if(b){b.textContent='H999 FULL RESET';b.onclick=resetH999Definitive;}};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(wire,400));else setTimeout(wire,400);
+  setInterval(wire,1000);
+})();
+</script>
+
+<script id="v2-1-290-h999-cloud-sync-fix">
+/* v2.1.290 — H999 migration cloud sync fix.
+   Do not send source_booking_no as a top-level column because the existing
+   Supabase reservations schema stores migration source data inside JSON.
+   Keep migrationSourceBookingNo inside reservation_data for duplicate checks. */
+window.__signatureV290H999CloudSyncFix=true;
+</script>
+
+<script id="v2-1-293-migration-fnb-purchasing-stores-hr">
+/* v2.1.293 — Migration Center: Restaurant Menu + Suppliers + Store Articles + Opening Stock + HR Employees
+   Extends the tested v2.1.290 migration flow without changing Guest/Room/Reservation logic.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV293MigrationFnbPurchasingStoresHr)return;
+  window.__signatureV291MigrationFnbPurchasingStores=true;
+
+  const TYPES={
+    restaurant_menu:'Restaurant Menu Items',
+    suppliers:'Purchasing — Suppliers',
+    articles:'Stores — Inventory Articles',
+    opening_stock:'Stores — Opening Stock',
+    employees:'HR — Employees'
+  };
+  const BASE_TYPES={guests:'Guest Profiles',rooms:'Rooms / Units',reservations:'Reservations / Opening Bookings'};
+  const TEMPLATES={
+    restaurant_menu:{headers:['outlet_name','item_code','item_name','category','selling_price_lkr','active'],sample:[['Main Restaurant','MENU-001','Chicken Fried Rice','Main Course','2500','true']]},
+    suppliers:{headers:['supplier_code','supplier_name','contact_person','phone','email','payment_terms','tax_no','active','notes'],sample:[['SUP-001','ABC Foods','Kamal Perera','0771111111','abc@example.com','30','', 'true','Imported supplier']]},
+    articles:{headers:['article_code','article_name','category','unit','default_cost_lkr','reorder_level','active'],sample:[['FOOD-001','Rice','Food','kg','450','10','true']]},
+    opening_stock:{headers:['article_code','quantity','unit_cost_lkr','stock_date','reference','notes'],sample:[['FOOD-001','100','450','2026-10-01','OPEN-001','Opening stock balance']]},
+    employees:{headers:['employee_no','employee_name','department','position','join_date','basic_salary_lkr','allowances_lkr','ot_rate_lkr','phone','email','bank_details','status','notes'],sample:[['EMP-0001','Nimal Perera','Front Office','Receptionist','2026-01-01','85000','10000','500','0771234567','nimal@example.com','Bank / Account','Active','Imported employee']]}
+  };
+
+  function esc(v){return typeof escapeHtml==='function'?escapeHtml(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function norm(v){return String(v??'').trim().toLowerCase();}
+  function num(v){const n=Number(String(v??'').replace(/,/g,''));return Number.isFinite(n)?n:0;}
+  function active(v){return norm(v)!=='false'&&norm(v)!=='0'&&norm(v)!=='no'&&norm(v)!=='inactive';}
+  function currentType(){return document.getElementById('migrationType')?.value||'guests';}
+  function setTypeOptions(){
+    const sel=document.getElementById('migrationType'); if(!sel)return;
+    if(sel.dataset.v291==='1')return;
+    Object.entries(TYPES).forEach(([v,l])=>{if(!sel.querySelector('option[value="'+v+'"]')){const o=document.createElement('option');o.value=v;o.textContent=l;sel.appendChild(o);}});
+    sel.dataset.v291='1';
+  }
+  setTypeOptions();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setTypeOptions); else setTimeout(setTypeOptions,0);
+
+  const oldTypeChanged=window.migrationTypeChanged;
+  window.migrationTypeChanged=function(){
+    if(typeof oldTypeChanged==='function')oldTypeChanged();
+    const t=currentType();
+    const src=document.getElementById('migrationSourceSystem');
+    if(src && !src.value)src.value='External PMS';
+  };
+
+  window.downloadMigrationTemplate=function(){
+    if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration'))return;
+    const t=currentType();
+    if(BASE_TYPES[t] && typeof window.__signatureV291MigrationTemplateFallback==='function')return window.__signatureV291MigrationTemplateFallback();
+    const x=TEMPLATES[t];
+    if(!x){alert('Template is not available for this import type.');return;}
+    migrationDownload('Signature_PMS_'+t+'_import_template.csv',migrationCsv([x.headers,...x.sample]));
+  };
+
+  const oldPreview=window.previewMigration;
+  window.previewMigration=function(){
+    const t=currentType();
+    if(BASE_TYPES[t])return oldPreview();
+    if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+    if(!currentPropertyId){alert('Select a property before importing data.');return;}
+    if(!migrationState.rawText){alert('Please select a CSV file first.');return;}
+    const parsed=migrationParseCSV(migrationState.rawText);
+    if(parsed.length<2){alert('The CSV needs a header row and at least one data row.');return;}
+    const headers=parsed[0].map(x=>String(x||'').trim().toLowerCase());
+    const rows=parsed.slice(1).map(r=>migrationRowObject(headers,r));
+    migrationState={...migrationState,type:t,headers,rows,validRows:[],errors:[],rawText:migrationState.rawText};
+    const required=TEMPLATES[t].headers;
+    rows.forEach((r,i)=>{
+      const line=i+2;
+      const missing=required.filter(h=>['outlet_name','item_name','supplier_name','article_name','article_code','quantity','unit_cost_lkr','employee_name'].includes(h) && !String(r[h]||'').trim());
+      if(missing.length){migrationState.errors.push('Line '+line+': '+missing.join(', ')+' is required.');return;}
+      if(t==='restaurant_menu'){
+        const outlet=getPOSOutlets().find(o=>norm(o.name)===norm(r.outlet_name));
+        if(!outlet)migrationState.errors.push('Line '+line+': restaurant/outlet "'+r.outlet_name+'" was not found in this property.');
+        else if(num(r.selling_price_lkr)<0)migrationState.errors.push('Line '+line+': selling_price_lkr must be 0 or greater.');
+        else migrationState.validRows.push({...r,__line:line});
+      }else if(t==='suppliers'){
+        migrationState.validRows.push({...r,__line:line});
+      }else if(t==='articles'){
+        if(num(r.default_cost_lkr)<0||num(r.reorder_level)<0)migrationState.errors.push('Line '+line+': cost and reorder level cannot be negative.');
+        else migrationState.validRows.push({...r,__line:line});
+      }else if(t==='opening_stock'){
+        const a=rowsByArticleCode(r.article_code);
+        if(!a)migrationState.errors.push('Line '+line+': article_code '+r.article_code+' was not found in this property. Import Stores — Inventory Articles first.');
+        else if(num(r.quantity)<=0)migrationState.errors.push('Line '+line+': quantity must be greater than 0.');
+        else if(num(r.unit_cost_lkr)<0)migrationState.errors.push('Line '+line+': unit_cost_lkr cannot be negative.');
+        else migrationState.validRows.push({...r,__line:line});
+      }
+      else if(t==='employees'){
+        if(num(r.basic_salary_lkr)<0||num(r.allowances_lkr)<0||num(r.ot_rate_lkr)<0)migrationState.errors.push('Line '+line+': salary, allowances and OT rate cannot be negative.');
+        else migrationState.validRows.push({...r,__line:line});
+      }
+    });
+    renderMigrationPreview(t);
+  };
+
+  function rowsByArticleCode(code){
+    try{return rows('signature_pms_articles').find(a=>norm(a.code)===norm(code))||null;}catch(e){return null;}
+  }
+  function getPOSOutletsSafe(){
+    try{return typeof getPOSOutlets==='function'?getPOSOutlets():[];}catch(e){return []}
+  }
+  window.getPOSOutletsSafe=getPOSOutletsSafe;
+
+  function renderExtendedPreview(type){
+    const box=document.getElementById('migrationPreview');if(!box)return;
+    const cols=type==='restaurant_menu'?['outlet_name','item_code','item_name','category','selling_price_lkr','active']:
+      type==='suppliers'?['supplier_code','supplier_name','contact_person','phone','email','payment_terms','active']:
+      type==='articles'?['article_code','article_name','category','unit','default_cost_lkr','reorder_level','active']:
+      type==='employees'?['employee_no','employee_name','department','position','join_date','basic_salary_lkr','allowances_lkr','ot_rate_lkr','status']:
+      ['article_code','quantity','unit_cost_lkr','stock_date','reference','notes'];
+    const rows=migrationState.rows.slice(0,20);
+    const valid=new Set(migrationState.validRows.map(r=>String(r.__line)));
+    box.style.display='block';
+    box.innerHTML='<div style="padding:10px;background:#eff6ff;border:1px solid #bfdbfe;margin-bottom:8px"><strong>Validation:</strong> '+migrationState.validRows.length+' valid · '+migrationState.errors.length+' errors · '+migrationState.rows.length+' total.</div>'+
+      (migrationState.errors.length?'<div style="padding:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;margin-bottom:8px"><strong>Errors</strong><br>'+migrationState.errors.slice(0,12).map(esc).join('<br>')+'</div>':'')+
+      '<table><thead><tr><th>Line</th>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'<th>Result</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.__line)+'</td>'+cols.map(c=>'<td>'+esc(r[c]||'')+'</td>').join('')+'<td>'+(valid.has(String(r.__line))?'<span class="badge badge-green">Valid</span>':'<span class="badge badge-red">Error</span>')+'</td></tr>').join('')+'</tbody></table>';
+    const b=document.getElementById('migrationImportBtn');if(b)b.disabled=migrationState.validRows.length===0;
+  }
+  const oldRender=window.renderMigrationPreview;
+  window.renderMigrationPreview=function(type){
+    if(BASE_TYPES[type])return oldRender(type);
+    renderExtendedPreview(type);
+  };
+
+  function migrationSaveProp(k,a){
+    const pid=String(currentPropertyId||'');
+    let all=[];
+    try{all=JSON.parse(localStorage.getItem(k)||'[]');}catch(e){all=[];}
+    all=Array.isArray(all)?all.filter(x=>String(x?.propertyId||'')!==pid):[];
+    const scoped=(Array.isArray(a)?a:[]).map(x=>({...x,propertyId:x?.propertyId||currentPropertyId}));
+    localStorage.setItem(k,JSON.stringify(all.concat(scoped)));
+  }
+
+  function propertySaveAfterMenu(){
+    if(typeof savePOSOutlets==='function')return savePOSOutlets();
+    if(typeof saveProperties==='function')saveProperties();
+    return Promise.resolve(true);
+  }
+
+  const oldExecute=window.executeMigrationImport;
+  window.executeMigrationImport=async function(){
+    const t=currentType();
+    if(BASE_TYPES[t])return oldExecute();
+    if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+    if(!migrationState.validRows.length){alert('There are no valid records to import.');return;}
+    if(!confirm('Import '+migrationState.validRows.length+' valid record(s) into the current property? Existing records will not be deleted.'))return;
+    const batchId='MIG-'+Date.now();migrationState.batchId=batchId;
+    let created=0,updated=0,skipped=0,cloud=0;const errors=[];
+    try{
+      if(t==='restaurant_menu'){
+        const outlets=getPOSOutletsSafe();
+        migrationState.validRows.forEach(r=>{
+          const o=outlets.find(x=>norm(x.name)===norm(r.outlet_name));
+          if(!o){errors.push('Line '+r.__line+': outlet not found during import.');return;}
+          o.posMenu=normalizePOSMenu(o.posMenu,o.id,o.name);
+          const code=norm(r.item_code),name=norm(r.item_name);
+          const dup=o.posMenu.find(x=>(code&&norm(x.code)===code)||(norm(x.name)===name));
+          if(dup){skipped++;return;}
+          const internalPrice=num(r.selling_price_lkr)/Math.max(0.000001,Number(typeof posRate==='function'?posRate():1));
+          o.posMenu.push({id:'menu_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),code:r.item_code||'',name:r.item_name,category:r.category||'General',price:internalPrice,active:active(r.active),outletId:o.id,outletName:o.name,sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',migrationBatchId:batchId});
+          created++;
+        });
+        settings.restaurants=outlets;
+        const first=outlets.find(x=>String(x.id)===String(POS_OUTLET_ID))||outlets[0];
+        if(first){POS_OUTLET_ID=first.id;POS_MENU.length=0;POS_MENU.push(...normalizePOSMenu(first.posMenu,first.id,first.name));settings.posMenu=JSON.parse(JSON.stringify(POS_MENU));}
+        if(created||skipped){try{if(await propertySaveAfterMenu())cloud=created;}catch(e){errors.push('Restaurant menu cloud save failed: '+(e?.message||e));}}
+      }else if(t==='suppliers'){
+        const Ksup='signature_pms_suppliers';const a=rows(Ksup);
+        migrationState.validRows.forEach(r=>{
+          const dup=a.find(x=>(r.supplier_code&&norm(x.code)===norm(r.supplier_code))||norm(x.name)===norm(r.supplier_name));
+          if(dup){skipped++;return;}
+          a.push({id:'sup_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,code:r.supplier_code||('SUP-'+String(a.length+1).padStart(3,'0')),name:r.supplier_name,contact:r.contact_person||'',phone:r.phone||'',email:r.email||'',terms:r.payment_terms||'',taxNo:r.tax_no||'',active:active(r.active),notes:r.notes||'',createdBy:currentUser?.username||'Migration',createdAt:new Date().toISOString(),sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',migrationBatchId:batchId});created++;
+        });
+        migrationSaveProp(Ksup,a); if(typeof renderPurchasingModule==='function')renderPurchasingModule();
+      }else if(t==='articles'){
+        const Kart='signature_pms_articles';const a=rows(Kart);
+        migrationState.validRows.forEach(r=>{
+          const dup=a.find(x=>norm(x.code)===norm(r.article_code)||norm(x.name)===norm(r.article_name));
+          if(dup){skipped++;return;}
+          a.push({id:'art_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,code:r.article_code,name:r.article_name,category:r.category||'General',unit:r.unit||'pcs',defaultCost:num(r.default_cost_lkr),reorderLevel:num(r.reorder_level),active:active(r.active),sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',migrationBatchId:batchId});created++;
+        });
+        migrationSaveProp(Kart,a); if(typeof renderPurchasingModule==='function')renderPurchasingModule();
+      }else if(t==='opening_stock'){
+        const Kmv='signature_pms_stock_movements';const all=typeof rd==='function'?rd(Kmv):[];const refs=new Set(all.filter(x=>String(x.propertyId||'')===String(currentPropertyId)).map(x=>norm(x.ref)).filter(Boolean));
+        migrationState.validRows.forEach(r=>{
+          const ref=String(r.reference||('OPEN-'+batchId+'-'+r.__line)).trim();
+          if(refs.has(norm(ref))){skipped++;return;}
+          const a=rowsByArticleCode(r.article_code);if(!a){errors.push('Line '+r.__line+': article not found during import.');return;}
+          const qty=num(r.quantity),cost=num(r.unit_cost_lkr),d=r.stock_date||today();
+          all.push({id:'mv_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,type:'opening',ref, date:d,at:d+'T00:00:00',articleId:a.id,articleCode:a.code,articleName:a.name,unit:a.unit,qty,value:qty*cost,unitCost:cost,note:r.notes||'Imported opening stock',user:currentUser?.username||'Migration',sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',migrationBatchId:batchId});refs.add(norm(ref));created++;
+        });
+        if(typeof wr==='function')wr(Kmv,all); if(typeof stRenderAll==='function')stRenderAll();
+      }else if(t==='employees'){
+        const Kemp='signature_pms_hr_employees';const a=rows(Kemp);
+        migrationState.validRows.forEach(r=>{
+          const no=String(r.employee_no||'').trim();
+          const dup=a.find(x=>(no&&norm(x.employeeNo)===norm(no))||norm(x.name)===norm(r.employee_name));
+          if(dup){skipped++;return;}
+          a.push({
+            id:'emp_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+            propertyId:currentPropertyId,
+            employeeNo:no||('EMP-'+String(a.length+1).padStart(4,'0')),
+            name:r.employee_name,
+            department:r.department||'',
+            position:r.position||'',
+            joinDate:r.join_date||today(),
+            basicSalary:num(r.basic_salary_lkr),
+            allowances:num(r.allowances_lkr),
+            otRate:num(r.ot_rate_lkr),
+            phone:r.phone||'',
+            email:r.email||'',
+            bankDetails:r.bank_details||'',
+            status:r.status||'Active',
+            notes:r.notes||'',
+            resignationDate:null,
+            sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',
+            migrationBatchId:batchId,
+            createdAt:new Date().toISOString(),
+            createdBy:currentUser?.username||'Migration'
+          });
+          created++;
+        });
+        migrationSaveProp(Kemp,a); if(typeof renderHR==='function')renderHR();
+      }
+      if(typeof saveData==='function')saveData();
+      if(typeof renderAll==='function')renderAll();
+      const batches=JSON.parse(localStorage.getItem(STORAGE.migrationBatches)||'[]');
+      batches.push({id:batchId,propertyId:currentPropertyId,type:t,mode:document.getElementById('migrationMode')?.value||'historical',source:document.getElementById('migrationSourceSystem')?.value||'External PMS',created,updated,skipped,cloud,errors,bookingNos:[],importedAt:localDateTime()});
+      localStorage.setItem(STORAGE.migrationBatches,JSON.stringify(batches.slice(-100)));
+      const out=document.getElementById('migrationResult');if(out)out.innerHTML='<div style="padding:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46"><strong>Migration completed — '+batchId+'</strong><br>Created: '+created+' · Updated: '+updated+' · Skipped duplicates: '+skipped+' · Cloud config synced: '+cloud+(errors.length?'<br><span style="color:#991b1b">'+esc(errors.slice(0,5).join(' | '))+'</span>':'')+'</div>';
+      migrationState.validRows=[];const b=document.getElementById('migrationImportBtn');if(b)b.disabled=true;
+    }catch(e){console.error('v2.1.293 migration failed',e);alert('Migration failed safely: '+(e?.message||e));}
+  };
+})();
+</script>
+
+<script id="v2-1-297-accounting-opening-balances">
+/* v2.1.297 — Accounting Opening Balances migration.
+   Built on the verified v2.1.296 base. Does not alter login or prior migration types. */
+(function(){
+ 'use strict';
+ const TYPE='accounting_opening_balances', LABEL='Accounting — Opening Balances';
+ const HEADERS=['account_code','opening_balance_lkr','opening_balance_side','balance_date','reference','description'];
+ const norm=v=>String(v??'').trim().toLowerCase();
+ function lookupMigrationAccount(code){
+   try{
+     const all=JSON.parse(localStorage.getItem('signature_pms_accounts')||'[]');
+     if(!Array.isArray(all))return null;
+     const pid=String(currentPropertyId||'');
+     return all.find(a=>String(a?.propertyId||'')===pid && String(a?.code||'').trim()===String(code).trim())||null;
+   }catch(e){return null;}
+ }
+ const num=v=>{const n=Number(String(v??'').replace(/,/g,''));return Number.isFinite(n)?n:0;};
+ const esc=v=>typeof escapeHtml==='function'?escapeHtml(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const isType=()=>String(document.getElementById('migrationType')?.value||'')===TYPE;
+ function addOption(){const s=document.getElementById('migrationType');if(s&&!s.querySelector('option[value="'+TYPE+'"]')){const o=document.createElement('option');o.value=TYPE;o.textContent=LABEL;s.appendChild(o);}}
+ function boot(){addOption();}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+ setTimeout(addOption,300);setTimeout(addOption,1000);
+ const oldDownload=window.downloadMigrationTemplate;
+ window.downloadMigrationTemplate=function(){
+   if(!isType()) return typeof oldDownload==='function'?oldDownload.apply(this,arguments):undefined;
+   if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration'))return;
+   migrationDownload('Signature_PMS_accounting_opening_balances_template.csv',migrationCsv([HEADERS,['1000','50000','Debit','2026-10-01','OPEN-ACC-001','Opening cash balance']]));
+ };
+ const oldPreview=window.previewMigration;
+ window.previewMigration=function(){
+   if(!isType()) return typeof oldPreview==='function'?oldPreview.apply(this,arguments):undefined;
+   if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+   if(!currentPropertyId){alert('Select a property before importing data.');return;}
+   if(!migrationState.rawText){alert('Please select a CSV file first.');return;}
+   const parsed=migrationParseCSV(migrationState.rawText);
+   if(parsed.length<2){alert('The CSV needs a header row and at least one data row.');return;}
+   const headers=parsed[0].map(x=>String(x||'').trim().toLowerCase());
+   const dataRows=parsed.slice(1).map(r=>migrationRowObject(headers,r));
+   const validRows=[],errors=[];
+   dataRows.forEach((r,i)=>{
+     const line=i+2;
+     const missing=['account_code','opening_balance_lkr','opening_balance_side','balance_date','reference'].filter(h=>!String(r[h]??'').trim());
+     if(missing.length){errors.push('Line '+line+': '+missing.join(', ')+' is required.');return;}
+     if(num(r.opening_balance_lkr)<=0){errors.push('Line '+line+': opening_balance_lkr must be greater than 0.');return;}
+     if(!['debit','credit'].includes(norm(r.opening_balance_side))){errors.push('Line '+line+': opening_balance_side must be Debit or Credit.');return;}
+     if(!/^\d{4}-\d{2}-\d{2}$/.test(String(r.balance_date).trim())){errors.push('Line '+line+': balance_date must be YYYY-MM-DD.');return;}
+     const acct=lookupMigrationAccount(String(r.account_code).trim());
+     if(!acct){errors.push('Line '+line+': account_code '+r.account_code+' was not found in this property. Import Chart of Accounts first.');return;}
+     validRows.push({...r,__line:line});
+   });
+   migrationState={...migrationState,type:TYPE,headers,rows:dataRows.map((r,i)=>({...r,__line:i+2})),validRows,errors,rawText:migrationState.rawText};
+   renderOpeningBalancePreview();
+ };
+ function renderOpeningBalancePreview(){
+   const box=document.getElementById('migrationPreview');if(!box)return;
+   const all=migrationState.rows||[],valid=migrationState.validRows||[],errors=migrationState.errors||[];
+   const keys=new Set(valid.map(r=>String(r.__line)));
+   box.style.display='block';
+   box.innerHTML='<div style="padding:10px;background:#eff6ff;border:1px solid #bfdbfe;margin-bottom:8px"><strong>Validation:</strong> '+valid.length+' valid · '+errors.length+' errors · '+all.length+' total.</div>'+
+    (errors.length?'<div style="padding:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;margin-bottom:8px"><strong>Errors</strong><br>'+errors.slice(0,12).map(esc).join('<br>')+'</div>':'')+
+    '<table><thead><tr><th>Line</th>'+HEADERS.map(c=>'<th>'+esc(c)+'</th>').join('')+'<th>Result</th></tr></thead><tbody>'+all.slice(0,20).map(r=>'<tr><td>'+esc(r.__line)+'</td>'+HEADERS.map(c=>'<td>'+esc(r[c]??'')+'</td>').join('')+'<td>'+(keys.has(String(r.__line))?'<span class="badge badge-green">Valid</span>':'<span class="badge badge-red">Error</span>')+'</td></tr>').join('')+'</tbody></table>';
+   const b=document.getElementById('migrationImportBtn');if(b)b.disabled=valid.length===0;
+ }
+ const oldExecute=window.executeMigrationImport;
+ window.executeMigrationImport=async function(){
+   if(!isType())return typeof oldExecute==='function'?oldExecute.apply(this,arguments):undefined;
+   if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+   const valid=migrationState.validRows||[];if(!valid.length){alert('There are no valid records to import.');return;}
+   if(!confirm('Import '+valid.length+' opening balance record(s) into the current property? Each record will post a balanced opening journal.'))return;
+   const batchId='MIG-'+Date.now();let created=0,skipped=0,errors=[];
+   try{
+     const journalsKey='signature_pms_accounting_journals';
+     let journals=[];try{journals=JSON.parse(localStorage.getItem(journalsKey)||'[]');if(!Array.isArray(journals))journals=[];}catch(e){journals=[];}
+     valid.forEach(r=>{
+       const ref=String(r.reference||'').trim();
+       const duplicate=journals.some(j=>String(j.propertyId)===String(currentPropertyId)&&String(j.reference)===ref);
+       if(duplicate){skipped++;return;}
+       const acct=lookupMigrationAccount(String(r.account_code).trim());
+       if(!acct)throw new Error('Account '+r.account_code+' was not found in this property.');
+       const amount=num(r.opening_balance_lkr), side=norm(r.opening_balance_side);
+       const lines=side==='debit'
+         ?[{account:acct.name,debit:amount,credit:0},{account:'Opening Balance Equity',debit:0,credit:amount}]
+         :[{account:'Opening Balance Equity',debit:amount,credit:0},{account:acct.name,debit:0,credit:amount}];
+       if(typeof postJournal!=='function')throw new Error('Accounting journal engine is unavailable.');
+       postJournal(String(r.balance_date).trim(),ref,String(r.description||'Opening Balance Import — '+acct.name),lines,'Accounting / Opening Balance Migration');
+       journals.push({propertyId:currentPropertyId,reference:ref});
+       created++;
+     });
+     if(typeof renderAll==='function')renderAll();
+     let batches=[];try{batches=JSON.parse(localStorage.getItem(STORAGE.migrationBatches)||'[]');if(!Array.isArray(batches))batches=[];}catch(e){batches=[];}
+     batches.push({id:batchId,propertyId:currentPropertyId,type:TYPE,mode:document.getElementById('migrationMode')?.value||'historical',source:document.getElementById('migrationSourceSystem')?.value||'External PMS',created,updated:0,skipped,cloud:0,errors,bookingNos:[],importedAt:(typeof localDateTime==='function'?localDateTime():new Date().toISOString())});
+     localStorage.setItem(STORAGE.migrationBatches,JSON.stringify(batches.slice(-100)));
+     const out=document.getElementById('migrationResult');if(out)out.innerHTML='<div style="padding:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46"><strong>Migration completed — '+batchId+'</strong><br>Created: '+created+' · Updated: 0 · Skipped duplicates: '+skipped+' · Cloud config synced: 0</div>';
+     migrationState.validRows=[];const b=document.getElementById('migrationImportBtn');if(b)b.disabled=true;
+   }catch(e){console.error('v2.1.297 accounting opening balance migration failed',e);alert('Migration failed safely: '+(e?.message||e));}
+ };
+})();
+</script>
+
+<!-- SIGNATURE PMS v2.1.311 — CENTRAL TAX SETTINGS + FOLIO DISCOUNT -->
+<script>
+(function(){
+"use strict";
+function num(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d;}
+function currentProp(){return (typeof getProperty==='function'?getProperty():null)||{};}
+function cfg(){return (typeof settings!=='undefined'&&settings)?settings:currentProp();}
+function save(){if(typeof saveData==='function')saveData();}
+function refresh(id){if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);}
+
+function taxCfg(p){p=p||cfg();return {
+  vatEnabled:p.vatEnabled===true,
+  vatRate:Math.max(0,num(p.vatRate,18)),
+  vatInclusive:p.vatInclusive===true,
+  serviceChargeEnabled:p.serviceChargeEnabled===true,
+  serviceChargeRate:Math.max(0,num(p.serviceChargeRate,10)),
+  tdlEnabled:p.tdlEnabled===true,
+  tdlRate:Math.max(0,num(p.tdlRate,1)),
+  tdlSmallRate:Math.max(0,num(p.tdlSmallRate,0.5)),
+  ssclEnabled:p.ssclEnabled===true,
+  ssclRate:Math.max(0,num(p.ssclRate,2.5))
+};}
+
+window.saveSriLankaTaxSettings=function(){
+  if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;
+  if(typeof settings==='undefined'||!settings){alert('Please select a property first.');return;}
+  const v=id=>document.getElementById(id)?.value;
+  const tax={
+    vatEnabled:v('slVatEnabled')==='yes',vatRate:Math.max(0,num(v('slVatRate'),18)),vatInclusive:v('slVatInclusive')==='yes',
+    serviceChargeEnabled:v('slServiceChargeEnabled')==='yes',serviceChargeRate:Math.max(0,num(v('slServiceChargeRate'),10)),
+    tdlEnabled:v('slTdlEnabled')==='yes',tdlRate:Math.max(0,num(v('slTdlRate'),1)),tdlSmallRate:Math.max(0,num(v('slTdlSmallRate'),0.5)),
+    ssclEnabled:v('slSsclEnabled')==='yes',ssclRate:Math.max(0,num(v('slSsclRate'),2.5))
+  };
+  Object.assign(settings,tax);
+  if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p)Object.assign(p,tax);}
+  // Keep the legacy fields aligned for existing reports/calculations.
+  settings.taxRate=tax.vatEnabled?tax.vatRate:0;
+  settings.serviceChargeRate=tax.serviceChargeEnabled?tax.serviceChargeRate:0;
+  if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p){p.taxRate=settings.taxRate;p.serviceChargeRate=settings.serviceChargeRate;}}
+  save();
+  alert('Sri Lanka tax & billing settings saved.');
+};
+
+function loadSriLankaTaxSettings(){
+  const p=cfg(),t=taxCfg(p);
+  const set=(id,val)=>{const e=document.getElementById(id);if(e)e.value=val;};
+  set('slVatEnabled',t.vatEnabled?'yes':'no');set('slVatRate',t.vatRate);set('slVatInclusive',t.vatInclusive?'yes':'no');
+  set('slServiceChargeEnabled',t.serviceChargeEnabled?'yes':'no');set('slServiceChargeRate',t.serviceChargeRate);
+  set('slTdlEnabled',t.tdlEnabled?'yes':'no');set('slTdlRate',t.tdlRate);set('slTdlSmallRate',t.tdlSmallRate);
+  set('slSsclEnabled',t.ssclEnabled?'yes':'no');set('slSsclRate',t.ssclRate);
+}
+
+window.applyFolioDiscount=function(id){
+  if(typeof requireActionPermission==='function'&&!requireActionPermission('folios.discount'))return;
+  const r=reservations.find(x=>x.id===id),f=typeof getFolio==='function'?getFolio(id):null;
+  if(!r||!f){alert('Guest folio not found.');return;}
+  const mode=prompt('Discount type: enter P for Percentage or F for Fixed LKR amount.','P');
+  if(mode===null)return;
+  const m=String(mode).trim().toUpperCase();
+  if(m!=='P'&&m!=='F'){alert('Please enter P or F.');return;}
+  const raw=prompt(m==='P'?'Discount percentage (0-100):':'Discount amount in LKR:','');
+  if(raw===null)return;
+  const value=num(String(raw).replace(/,/g,''),-1);
+  if(value<0||(m==='P'&&value>100)){alert('Invalid discount value.');return;}
+  const reason=prompt('Discount reason:','');
+  if(reason===null||!String(reason).trim()){alert('Discount reason is required.');return;}
+  const before=Math.max(0,num(r.total)+num(f.restaurant)+num(f.extras));
+  const discount=m==='P'?Number((before*value/100).toFixed(2)):Number(value.toFixed(2));
+  if(discount<=0||discount>before){alert('Discount must be greater than zero and cannot exceed the current folio charges.');return;}
+  f.discounts=Number((num(f.discounts)+discount).toFixed(2));
+  f.discountItems=Array.isArray(f.discountItems)?f.discountItems:[];
+  f.discountItems.push({id:'fd_'+Date.now(),type:m==='P'?'Percentage':'Fixed',value,amount:discount,reason:String(reason).trim(),addedAt:typeof localDateTime==='function'?localDateTime():new Date().toISOString(),addedBy:currentUser?.username||'Staff'});
+  if(typeof recalculateFolioTaxesAndService==='function')recalculateFolioTaxesAndService(id);
+  else f.total=Math.max(0,num(r.total)+num(f.restaurant)+num(f.extras)+num(f.serviceCharges)+num(f.taxes)-num(f.discounts));
+  save();refresh(id);
+};
+
+window.removeFolioDiscount=function(id,itemId){
+  if(typeof requireActionPermission==='function'&&!requireActionPermission('folios.discount'))return;
+  const f=typeof getFolio==='function'?getFolio(id):null;if(!f||!Array.isArray(f.discountItems))return;
+  const item=f.discountItems.find(x=>x.id===itemId);if(!item)return;
+  if(!confirm('Remove this discount of LKR '+num(item.amount).toFixed(2)+'?'))return;
+  f.discountItems=f.discountItems.filter(x=>x.id!==itemId);
+  f.discounts=Number(f.discountItems.reduce((a,x)=>a+num(x.amount),0).toFixed(2));
+  if(typeof recalculateFolioTaxesAndService==='function')recalculateFolioTaxesAndService(id);
+  save();refresh(id);
+};
+
+function extendFolioUI(){
+  const host=document.getElementById('folioModalContent');if(!host)return;
+  let rid='';
+  host.querySelectorAll('[onclick]').forEach(b=>{const x=String(b.getAttribute('onclick')||'');const m=x.match(/(?:viewFolio|openPaymentModal|addManualFolioCharge|checkInReservation|checkOutReservation)\(['"]([^'"]+)['"]\)/);if(m&&!rid)rid=m[1];});
+  if(!rid)return;
+  let box=document.getElementById('folioDiscountAndTaxExtension');
+  const f=typeof getFolio==='function'?getFolio(rid):null;if(!f)return;
+  if(!box){box=document.createElement('div');box.id='folioDiscountAndTaxExtension';box.style.cssText='padding:12px;margin-top:14px;border:1px solid #d1d5db;border-radius:10px;background:#f8fafc';host.appendChild(box);}
+  const items=Array.isArray(f.discountItems)?f.discountItems:[];
+  box.innerHTML='<div style="font-weight:700;margin-bottom:8px">Discount History</div>'+
+    '<div style="font-size:12px;color:#64748b;margin-bottom:8px">Tax and service charge rates are controlled centrally in Settings → Tax &amp; Billing. This folio only records the discount applied to this stay.</div>'+
+    (items.length?'<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Type</th><th>Reason</th><th>Amount</th><th>By</th><th></th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(x.type||'')+'</td><td>'+escapeHtml(x.reason||'')+'</td><td>LKR '+num(x.amount).toFixed(2)+'</td><td>'+escapeHtml(x.addedBy||'')+'</td><td><button class="btn btn-danger btn-small" onclick="removeFolioDiscount(\''+rid+'\',\''+x.id+'\')">Remove</button></td></tr>').join('')+'</tbody></table></div>':'<div style="font-size:12px;color:#64748b">No folio discounts applied.</div>');
+}
+
+const observer=new MutationObserver(()=>{try{extendFolioUI();}catch(e){console.warn('Folio extension:',e);}});
+function boot(){loadSriLankaTaxSettings();const h=document.getElementById('folioModalContent');if(h)observer.observe(h,{childList:true,subtree:true});setTimeout(extendFolioUI,200);}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+function calculateSriLankaTaxPreview(){
+  const p=taxCfg(currentProp());
+  return p;
+}
+window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
+})();
+</script>
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -20468,7 +21628,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   function saveFX(){
-    if(typeof requireRole==='function' && !requireRole('Admin','Manager')) return;
+    if(typeof hasActionPermission==='function' && !hasActionPermission("settings.currency")) return;
     if(typeof settings==='undefined' || !settings){ alert('Please select a property first.'); return; }
     const rate=Number(document.getElementById('dynamicFxRate')?.value||0);
     if(!Number.isFinite(rate) || rate<=0){ alert('Please enter a valid USD → LKR exchange rate.'); return; }
@@ -21155,5 +22315,159 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   setTimeout(fixLabelsAndFields,0);
   setTimeout(fixLabelsAndFields,500);
   setTimeout(fixLabelsAndFields,1200);
+})();
+</script>
+
+<script id="v2-1-276-migration-validation-single-source">
+/* v2.1.277 — MIGRATION DUPLICATE PROTECTION + VALIDATION SINGLE SOURCE OF TRUTH
+   Fixes migration preview rows showing Error/undefined even when validation
+   summary says valid. The table now derives status directly from one
+   per-row validation result map, and line numbers are always explicit.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV276MigrationValidation)return;
+  window.__signatureV276MigrationValidation=true;
+
+  window.renderMigrationPreview=function(type){
+    const box=document.getElementById('migrationPreview');
+    if(!box)return;
+    const state=window.migrationState || migrationState;
+    const cols=type==='guests'
+      ? ['guest_name','phone','email','passport_or_national_id']
+      : type==='rooms'
+        ? ['room_number','room_name','room_type','base_rate_lkr','active']
+        : ['booking_no','guest_name','room_number','check_in','check_out','total','currency','status'];
+
+    const rows=Array.isArray(state.rows)?state.rows.slice(0,20):[];
+    const validLines=new Set((Array.isArray(state.validRows)?state.validRows:[]).map(r=>String(r.__line)));
+    const errorLines=new Set();
+    (Array.isArray(state.errors)?state.errors:[]).forEach(msg=>{
+      const m=String(msg).match(/^Line\s+(\d+):/i);
+      if(m)errorLines.add(String(m[1]));
+    });
+
+    const esc=(v)=>typeof escapeHtml==='function'
+      ? escapeHtml(v==null?'':String(v))
+      : String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    const validCount=validLines.size;
+    const errorCount=errorLines.size;
+    const totalCount=rows.length;
+
+    box.style.display='block';
+    box.innerHTML=`
+      <div style="padding:10px;background:#eff6ff;border:1px solid #bfdbfe;margin-bottom:8px">
+        <strong>Validation:</strong> ${validCount} valid · ${errorCount} errors · ${totalCount} total.
+      </div>
+      ${errorCount?`<div style="padding:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;margin-bottom:8px"><strong>Errors</strong><br>${(state.errors||[]).slice(0,12).map(esc).join('<br>')}</div>`:''}
+      <table>
+        <thead><tr><th>Line</th>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}<th>Result</th></tr></thead>
+        <tbody>
+          ${rows.map((r,index)=>{
+            const line=String(r.__line||index+2);
+            let badge='';
+            if(validLines.has(line)) badge='<span class="badge badge-green">Valid</span>';
+            else if(errorLines.has(line)) badge='<span class="badge badge-red">Error</span>';
+            else badge='<span class="badge badge-yellow">Review</span>';
+            return `<tr><td>${esc(line)}</td>${cols.map(c=>`<td>${esc(r[c]||'')}</td>`).join('')}<td>${badge}</td></tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+
+    const b=document.getElementById('migrationImportBtn');
+    if(b)b.disabled=validCount===0;
+  };
+})();
+</script>
+<script id="v2-1-296-accounting-migration-validation-fix">
+/* v2.1.296 — Accounting migration validation/render fix.
+   Built directly from v2.1.293 working HR migration base. */
+(function(){
+ 'use strict';
+ const TYPE='accounting_accounts', LABEL='Accounting — Chart of Accounts';
+ const HEADERS=['account_code','account_name','account_type','opening_balance_lkr','opening_balance_side','active','notes'];
+ const norm=v=>String(v??'').trim().toLowerCase();
+ function lookupMigrationAccount(code){
+   try{
+     const all=JSON.parse(localStorage.getItem('signature_pms_accounts')||'[]');
+     if(!Array.isArray(all))return null;
+     const pid=String(currentPropertyId||'');
+     return all.find(a=>String(a?.propertyId||'')===pid && String(a?.code||'').trim()===String(code).trim())||null;
+   }catch(e){return null;}
+ }
+ const num=v=>{const n=Number(String(v??'').replace(/,/g,''));return Number.isFinite(n)?n:0;};
+ const active=v=>!['false','0','no','inactive'].includes(norm(v));
+ const esc=v=>typeof escapeHtml==='function'?escapeHtml(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const isType=()=>String(document.getElementById('migrationType')?.value||'')===TYPE;
+ function addOption(){const s=document.getElementById('migrationType');if(s&&!s.querySelector('option[value="'+TYPE+'"]')){const o=document.createElement('option');o.value=TYPE;o.textContent=LABEL;s.appendChild(o);}}
+ function boot(){addOption();}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+ setTimeout(addOption,300);setTimeout(addOption,1000);
+ const oldDownload=window.downloadMigrationTemplate;
+ window.downloadMigrationTemplate=function(){
+   if(!isType()) return typeof oldDownload==='function'?oldDownload.apply(this,arguments):undefined;
+   if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration'))return;
+   migrationDownload('Signature_PMS_accounting_accounts_import_template.csv',migrationCsv([HEADERS,['6000','Laundry & Dry Cleaning','Expense','10000','Debit','true','Imported chart account']]));
+ };
+ const oldPreview=window.previewMigration;
+ window.previewMigration=function(){
+   if(!isType()) return typeof oldPreview==='function'?oldPreview.apply(this,arguments):undefined;
+   if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+   if(!currentPropertyId){alert('Select a property before importing data.');return;}
+   if(!migrationState.rawText){alert('Please select a CSV file first.');return;}
+   const parsed=migrationParseCSV(migrationState.rawText);
+   if(parsed.length<2){alert('The CSV needs a header row and at least one data row.');return;}
+   const headers=parsed[0].map(x=>String(x||'').trim().toLowerCase());
+   const dataRows=parsed.slice(1).map(r=>migrationRowObject(headers,r));
+   const validRows=[], errors=[];
+   dataRows.forEach((r,i)=>{
+     const line=i+2;
+     const missing=['account_code','account_name','account_type'].filter(h=>!String(r[h]??'').trim());
+     if(missing.length){errors.push('Line '+line+': '+missing.join(', ')+' is required.');return;}
+     if(!['asset','liability','equity','revenue','expense'].includes(norm(r.account_type))){errors.push('Line '+line+': account_type must be Asset, Liability, Equity, Revenue or Expense.');return;}
+     if(num(r.opening_balance_lkr)<0){errors.push('Line '+line+': opening_balance_lkr cannot be negative.');return;}
+     if(num(r.opening_balance_lkr)>0&&!['debit','credit'].includes(norm(r.opening_balance_side))){errors.push('Line '+line+': opening_balance_side must be Debit or Credit when opening balance is entered.');return;}
+     validRows.push({...r,__line:line});
+   });
+   migrationState={...migrationState,type:TYPE,headers,rows:dataRows.map((r,i)=>({...r,__line:i+2})),validRows,errors,rawText:migrationState.rawText};
+   renderAccountingPreviewFixed();
+ };
+ function renderAccountingPreviewFixed(){
+   const box=document.getElementById('migrationPreview');if(!box)return;
+   const all=migrationState.rows||[], valid=migrationState.validRows||[], errors=migrationState.errors||[];
+   const validKeys=new Set(valid.map(r=>String(r.__line)));
+   box.style.display='block';
+   box.innerHTML='<div style="padding:10px;background:#eff6ff;border:1px solid #bfdbfe;margin-bottom:8px"><strong>Validation:</strong> '+valid.length+' valid · '+errors.length+' errors · '+all.length+' total.</div>'+
+    (errors.length?'<div style="padding:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;margin-bottom:8px"><strong>Errors</strong><br>'+errors.slice(0,12).map(esc).join('<br>')+'</div>':'')+
+    '<table><thead><tr><th>Line</th>'+HEADERS.map(c=>'<th>'+esc(c)+'</th>').join('')+'<th>Result</th></tr></thead><tbody>'+all.slice(0,20).map(r=>{
+      const ok=validKeys.has(String(r.__line));
+      return '<tr><td>'+esc(r.__line)+'</td>'+HEADERS.map(c=>'<td>'+esc(r[c]??'')+'</td>').join('')+'<td>'+(ok?'<span class="badge badge-green">Valid</span>':'<span class="badge badge-red">Error</span>')+'</td></tr>';
+    }).join('')+'</tbody></table>';
+   const b=document.getElementById('migrationImportBtn');if(b)b.disabled=valid.length===0;
+ }
+ const oldExecute=window.executeMigrationImport;
+ window.executeMigrationImport=async function(){
+   if(!isType())return typeof oldExecute==='function'?oldExecute.apply(this,arguments):undefined;
+   if(!hasActionPermission('settings.migration')&&!hasActionPermission('system.migration')){alert('Access denied. Data Migration has not been assigned to your user account.');return;}
+   const valid=migrationState.validRows||[];if(!valid.length){alert('There are no valid records to import.');return;}
+   if(!confirm('Import '+valid.length+' chart account record(s) into the current property? Existing accounts will not be deleted.'))return;
+   const batchId='MIG-'+Date.now();let created=0,updated=0,skipped=0;
+   try{
+     const key='signature_pms_accounts';let all=[];try{all=JSON.parse(localStorage.getItem(key)||'[]')}catch(e){all=[]}if(!Array.isArray(all))all=[];
+     valid.forEach(r=>{
+       const code=String(r.account_code||'').trim(),name=String(r.account_name||'').trim();
+       const dup=all.find(x=>String(x?.propertyId||'')===String(currentPropertyId)&&((code&&norm(x.code)===norm(code))||norm(x.name)===norm(name)));
+       if(dup){skipped++;return;}
+       all.push({id:'coa_mig_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,code,name,type:String(r.account_type).trim().replace(/^./,c=>c.toUpperCase()),active:active(r.active),openingBalance:num(r.opening_balance_lkr),openingBalanceSide:String(r.opening_balance_side||''),notes:String(r.notes||''),sourceSystem:document.getElementById('migrationSourceSystem')?.value||'External PMS',migrationBatchId:batchId,createdAt:new Date().toISOString(),createdBy:(typeof currentUser!=='undefined'&&currentUser?.username)||'Migration'});created++;
+     });
+     localStorage.setItem(key,JSON.stringify(all));if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();
+     let batches=[];try{batches=JSON.parse(localStorage.getItem(STORAGE.migrationBatches)||'[]')}catch(e){batches=[]}if(!Array.isArray(batches))batches=[];
+     batches.push({id:batchId,propertyId:currentPropertyId,type:TYPE,mode:document.getElementById('migrationMode')?.value||'historical',source:document.getElementById('migrationSourceSystem')?.value||'External PMS',created,updated,skipped,cloud:0,errors:[],bookingNos:[],importedAt:(typeof localDateTime==='function'?localDateTime():new Date().toISOString())});
+     localStorage.setItem(STORAGE.migrationBatches,JSON.stringify(batches.slice(-100)));
+     const out=document.getElementById('migrationResult');if(out)out.innerHTML='<div style="padding:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46"><strong>Migration completed — '+batchId+'</strong><br>Created: '+created+' · Updated: '+updated+' · Skipped duplicates: '+skipped+' · Cloud config synced: 0</div>';
+     migrationState.validRows=[];const b=document.getElementById('migrationImportBtn');if(b)b.disabled=true;
+   }catch(e){console.error('v2.1.296 accounting migration failed',e);alert('Migration failed safely: '+(e?.message||e));}
+ };
 })();
 </script>
