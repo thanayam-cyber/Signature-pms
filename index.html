@@ -1542,7 +1542,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div>
 <h3>Property Management</h3>
 <div style="font-size:12px;color:#6b7280;margin-top:4px">
-                    Commercial Hotel Edition · Version 2.1.236
+                    Commercial Hotel Edition · Version 2.1.265
                 </div>
 </div>
 <div class="toolbar">
@@ -2733,9 +2733,10 @@ function formatDate(value){
 }
 
 /* =========================================================
-   SYSTEM CURRENCY POLICY — LKR ONLY
-   All guest-facing financial values are displayed/settled in LKR.
-   Foreign guest rates are converted at the booking/posting rate.
+   SYSTEM CURRENCY POLICY — GUEST CURRENCY + LKR ACCOUNTING
+   Local reservations remain in LKR. Foreign reservations are stored
+   in the configured guest currency (USD by default), while accounting
+   values are converted to LKR using the rate captured at booking.
 ========================================================= */
 function money(value){
     return "LKR "+Number(value||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2743,13 +2744,8 @@ function money(value){
 
 function reservationMoney(r,value){
     const n=Number(value||0);
-    const cur=String(r?.currency||r?.guestCurrency||"").toUpperCase();
-    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
-    if(cur && cur!=="LKR" && cur!==base){
-        const rate=Number(r?.postingRateAtBooking||r?.postingRateAtCalculation||r?.accountingRate||settings?.settlementRate||settings?.postingRate||320)||320;
-        return "LKR "+(n*rate).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-    }
-    return "LKR "+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const cur=String(r?.currency||r?.guestCurrency||"LKR").toUpperCase();
+    return cur+" "+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 /* POS is operationally LKR. Existing menu/sale records may retain their original
@@ -5647,12 +5643,15 @@ function renderPropertyManager(){
     const container=document.getElementById("propertyManagerList");
     if(!container) return;
 
-    if(currentUser?.role!=="Admin"){
-        container.innerHTML=`<div class="empty">Property management is available to Admin only.</div>`;
+    const isPropertyManager=currentUser?.role==="Manager";
+    if(currentUser?.role!=="Admin" && !isPropertyManager){
+        container.innerHTML=`<div class="empty">Property management is available to Admin and Property Managers.</div>`;
         return;
     }
 
-    if(!properties.length){
+    const visibleProperties=isPropertyManager ? getAccessibleProperties() : properties;
+
+    if(!visibleProperties.length){
         container.innerHTML=`<div class="empty">No properties configured. Click <strong>+ Add Property</strong> or import a property package.</div>`;
         return;
     }
@@ -5670,12 +5669,24 @@ function renderPropertyManager(){
                     </tr>
                 </thead>
                 <tbody>
-                    ${properties.map(p=>`
+                    ${visibleProperties.map(p=>{
+                        /* v2.1.252: display-only fallback. Do not alter stored data. */
+                        const activeRooms=Array.isArray(p.rooms)?p.rooms.filter(r=>r.active!==false):[];
+                        const storedRate=Number(p.roomRate||0);
+                        const roomRateFallback=activeRooms.map(r=>Number(r?.rate||0)).find(v=>v>0)||0;
+                        const displayRate=storedRate>0?storedRate:roomRateFallback;
+                        const displayLocation=String(p.location||'')
+                          .replace(/\s*,\s*,+/g, ', ')
+                          .replace(/(,\s*)+/g, ', ')
+                          .replace(/\s{2,}/g, ' ')
+                          .replace(/^\s*,|,\s*$/g,'')
+                          .trim();
+                        return `
                         <tr>
                             <td><strong>${escapeHtml(p.property)}</strong></td>
-                            <td>${escapeHtml(p.location||"")}</td>
-                            <td>${(p.rooms||[]).filter(r=>r.active!==false).length}</td>
-                            <td>${money(p.roomRate)}</td>
+                            <td>${escapeHtml(displayLocation)}</td>
+                            <td>${activeRooms.length}</td>
+                            <td>${money(displayRate)}</td>
                             <td>
                                 <div class="toolbar">
                                     <button class="btn btn-secondary btn-small" onclick="editProperty('${escapeHtml(p.id)}')">Edit</button>
@@ -5685,7 +5696,7 @@ function renderPropertyManager(){
                                 </div>
                             </td>
                         </tr>
-                    `).join("")}
+                    `}).join("")}
                 </tbody>
             </table>
         </div>`;
@@ -5800,7 +5811,9 @@ function renderRoomTypesConfiguration(){
 }
 
 function addRoomType(){
-    if(!requireRole("Admin"))return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager"))return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p)return;
     p.roomTypes=Array.isArray(p.roomTypes)?p.roomTypes:[];
@@ -5810,7 +5823,9 @@ function addRoomType(){
 }
 
 function deleteRoomType(id){
-    if(!requireRole("Admin"))return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager"))return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);if(!p)return;
     const t=(p.roomTypes||[]).find(x=>String(x.id)===String(id));if(!t)return;
     const inUse=(p.rooms||[]).some(r=>String(r.type||"")===String(t.name));
@@ -5821,7 +5836,9 @@ function deleteRoomType(id){
 }
 
 function saveRoomTypesConfiguration(){
-    if(!requireRole("Admin"))return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager"))return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);if(!p)return;
     const rows=Array.isArray(p.roomTypes)?p.roomTypes:[];
     const codes=new Set(),names=new Set();
@@ -5883,7 +5900,9 @@ function renderRoomConfiguration(){
 }
 
 function configurePropertyRooms(id){
-    if(!requireRole("Admin"))return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager"))return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(id))) return;
     const p=properties.find(x=>x.id===id);
     if(!p)return;
     currentPropertyId=id;
@@ -5895,7 +5914,9 @@ function configurePropertyRooms(id){
 }
 
 function addRoomToCurrentProperty(){
-    if(!requireRole("Admin"))return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager"))return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p){alert("Please select a property first.");return;}
     if(!Array.isArray(p.rooms))p.rooms=[];
@@ -5931,7 +5952,9 @@ function addRoomToCurrentProperty(){
 }
 
 async function saveRoomConfiguration(){
-    if(!requireRole("Admin"))return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager"))return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(currentPropertyId))) return;
     const p=properties.find(x=>x.id===currentPropertyId);
     if(!p)return;
     const rooms=Array.isArray(p.rooms)?p.rooms:[];
@@ -6009,7 +6032,9 @@ async function saveRoomConfiguration(){
 }
 
 async function editProperty(id){
-    if(!requireRole("Admin")) return;
+    const isManager=currentUser?.role==="Manager";
+    if(!requireRole("Admin","Manager")) return;
+    if(isManager && !getAccessibleProperties().some(p=>String(p.id)===String(id))) return;
 
     const p=properties.find(x=>x.id===id);
     if(!p) return;
@@ -6371,7 +6396,7 @@ function openPOSMenuItemModal(id=null){
         }
     }
 }
-function savePOSMenuItemModal(id){
+async function savePOSMenuItemModal(id){
     if(!requireRole("Admin","Manager"))return;
     const name=document.getElementById('pmName')?.value.trim();
     const category=document.getElementById('pmCategory')?.value.trim()||'General';
@@ -6422,6 +6447,86 @@ function savePOSMenuItemModal(id){
     };
     saveProperties();
     saveData();
+
+    /* v2.1.255 — Restaurant menu direct cloud source-of-truth.
+       Save the edited restaurants/posMenu directly into properties.settings_data.
+       This intentionally does NOT run the full Property Settings verification
+       path, so a menu edit cannot be rejected by an unrelated configuration
+       field such as rateMatrix. */
+    if(!window.__signatureCloudHydrating){
+        try{
+            const client=initSupabaseClient();
+            const authUser=await getSupabaseSessionUser();
+            if(!client || !authUser) throw new Error('Supabase session is not available.');
+            const cloudId=await resolveSupabasePropertyId(String(currentPropertyId));
+            if(!cloudId) throw new Error('Cloud property could not be resolved.');
+
+            const {data:cloudRow,error:readError}=await client.from('properties')
+              .select('id,settings_data').eq('id',String(cloudId)).maybeSingle();
+            if(readError) throw readError;
+            if(!cloudRow) throw new Error('Cloud property was not found.');
+
+            const cloudSettings=(cloudRow.settings_data && typeof cloudRow.settings_data==='object')
+              ? cloudRow.settings_data : {};
+            const cloudMerged={...cloudSettings,
+              restaurants:JSON.parse(JSON.stringify(outlets)),
+              posMenu:JSON.parse(JSON.stringify(settings.posMenu)),
+              selectedPOSOutletId:String(POS_OUTLET_ID||'')
+            };
+
+            /* v2.1.257 — write + return verification.  A Supabase UPDATE can
+               return no error when RLS prevents the row from being updated.
+               The previous code ignored the UPDATE response and then compared
+               the old cloud menu with the edited menu, producing a misleading
+               "did not match" message.  Verify the actual UPDATE response and
+               then verify the edited item semantically. */
+            const {data:updateRows,error:updateError}=await client.from('properties')
+              .update({settings_data:cloudMerged})
+              .eq('id',String(cloudId))
+              .select('id,settings_data');
+            if(updateError) throw updateError;
+            if(!Array.isArray(updateRows) || !updateRows.length){
+                throw new Error('Supabase did not update this property. Check the properties UPDATE policy for the current user role.');
+            }
+
+            const verified=updateRows[0]?.settings_data||{};
+            const expectedMenu=Array.isArray(settings.posMenu)?settings.posMenu:[];
+            const savedMenu=Array.isArray(verified.posMenu)?verified.posMenu:[];
+            const expectedItem=id ? expectedMenu.find(x=>String(x.id)===String(id)) : null;
+            const savedItem=id ? savedMenu.find(x=>String(x.id)===String(id)) : null;
+
+            if(id){
+                if(!savedItem){
+                    throw new Error('Restaurant menu cloud verification failed: the edited menu item was not returned by Supabase after the update.');
+                }
+                const sameText=(a,b)=>String(a??'')===String(b??'');
+                const sameNumber=(a,b)=>Math.abs(Number(a||0)-Number(b||0))<0.000001;
+                if(!sameText(savedItem.name,expectedItem?.name) ||
+                   !sameText(savedItem.category,expectedItem?.category) ||
+                   Boolean(savedItem.active!==false)!==Boolean(expectedItem?.active!==false) ||
+                   !sameNumber(savedItem.price,expectedItem?.price) ||
+                   !sameText(savedItem.outletId,expectedItem?.outletId)){
+                    throw new Error('Restaurant menu cloud verification failed: the edited item returned by Supabase does not match the saved item.');
+                }
+            }else{
+                const savedIds=savedMenu.map(x=>String(x.id)).sort();
+                const expectedIds=expectedMenu.map(x=>String(x.id)).sort();
+                if(JSON.stringify(savedIds)!==JSON.stringify(expectedIds)){
+                    throw new Error('Restaurant menu cloud verification failed: the new menu item was not returned by Supabase after the update.');
+                }
+            }
+            if(typeof setSupabaseCloudMessage==='function'){
+                setSupabaseCloudMessage('Restaurant menu saved and synchronized to cloud.','success');
+            }
+        }catch(e){
+            console.error('Restaurant menu direct cloud save failed:',e);
+            if(typeof setSupabaseCloudMessage==='function'){
+                setSupabaseCloudMessage('Restaurant menu was saved locally, but cloud save failed: '+(e?.message||e),'error');
+            }
+            alert('Restaurant menu was saved locally, but the cloud update failed.\n\n'+(e?.message||e));
+            return;
+        }
+    }
     stClose('posMenuItemModal');
     loadCurrentPropertyData();
     renderRestaurantMenuManager();
@@ -14172,7 +14277,11 @@ window.setFolioServiceCharge=function(id,rate){if(typeof requireRole==='function
 window.setFolioTax=function(id,rate){if(typeof requireRole==='function'&&!requireRole('Admin','Manager','Front Office','Cashier'))return;recalculateFolioTaxesAndService(id,{taxRate:Math.max(0,n(rate))});if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
 window.removeFolioServiceCharge=function(id){setFolioServiceCharge(id,0);};window.removeFolioTax=function(id){setFolioTax(id,0);};
 
-function addSettings(){const page=document.getElementById('settings');if(!page||document.getElementById('currencyAccountingSettings'))return;const anchor=page.querySelector('#ratePlanSection')||null;const sec=document.createElement('div');sec.className='section';sec.id='currencyAccountingSettings';sec.innerHTML='<div class="section-header"><div><h3>Currency &amp; Hotel Accounting</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Guest rates may be foreign currency. Purchasing, expenses and financial statements use LKR.</div></div><span class="badge badge-success">LKR ACCOUNTING</span></div><div class="form-grid"><div class="form-group"><label>Accounting / Base Currency</label><input id="sigBaseCurrency" maxlength="3" value="LKR"></div><div class="form-group"><label>Guest / Selling Currency</label><input id="sigGuestCurrency" maxlength="3" value="USD"></div><div class="form-group"><label>Posting Rate — 1 Foreign Currency</label><input id="sigPostingRate" type="number" min="0" step="0.0001" value="320"></div><div class="form-group"><label>Settlement Rate — 1 Foreign Currency</label><input id="sigSettlementRate" type="number" min="0" step="0.0001" value="320"></div><div class="form-group"><label>Cash Rate — 1 Foreign Currency</label><input id="sigCashRate" type="number" min="0" step="0.0001" value="320"></div><div class="form-group"><label>Default Service Charge %</label><input id="sigServiceChargeRate" type="number" min="0" step="0.01" value="0"></div><div class="form-group"><label>Default Tax %</label><input id="sigTaxRate" type="number" min="0" step="0.01" value="0"></div><div class="form-group full"><div style="font-size:12px;color:#475569;background:#f8faf9;border:1px solid #d1d5db;border-radius:8px;padding:10px"><strong>Rule:</strong> Guest folios keep the guest currency and rate used. GRNs, expenses, supplier AP, cash/bank, P&amp;L and Balance Sheet are LKR.</div></div></div><button class="btn btn-primary" onclick="saveSignatureCurrencySettings()" style="margin-top:12px">Save Currency &amp; Charge Settings</button>';page.insertBefore(sec,anchor);loadSettingsPanel();}
+function addSettings(){
+  /* Currency & Hotel Accounting UI was intentionally removed.
+     Currency handling now belongs to Reservation/Rate Plan flow. */
+  return;
+}
 function loadSettingsPanel(){const s=cfg(),v={sigBaseCurrency:s.baseCurrency||'LKR',sigGuestCurrency:s.guestCurrency||s.currency||'USD',sigPostingRate:s.postingRate||320,sigSettlementRate:s.settlementRate||s.postingRate||320,sigCashRate:s.cashRate||s.settlementRate||320,sigServiceChargeRate:s.serviceChargeRate||0,sigTaxRate:s.taxRate||0};Object.entries(v).forEach(([id,x])=>{const e=document.getElementById(id);if(e)e.value=x;});}
 window.saveSignatureCurrencySettings=function(){if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;if(typeof settings==='undefined'||!settings){alert('Please select a property first.');return;}const v=id=>document.getElementById(id)?.value;const b=String(v('sigBaseCurrency')||'LKR').trim().toUpperCase()||'LKR',g=String(v('sigGuestCurrency')||'USD').trim().toUpperCase()||'USD',pr=Math.max(0,n(v('sigPostingRate'),320)),sr=Math.max(0,n(v('sigSettlementRate'),pr)),cr=Math.max(0,n(v('sigCashRate'),sr)),sc=Math.max(0,n(v('sigServiceChargeRate'),0)),tx=Math.max(0,n(v('sigTaxRate'),0));Object.assign(settings,{baseCurrency:b,guestCurrency:g,currency:g,postingRate:pr,settlementRate:sr,cashRate:cr,serviceChargeRate:sc,taxRate:tx});if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p)Object.assign(p,{baseCurrency:b,guestCurrency:g,currency:g,postingRate:pr,settlementRate:sr,cashRate:cr,serviceChargeRate:sc,taxRate:tx});}if(typeof saveData==='function')saveData();loadSettingsPanel();if(typeof renderAll==='function')renderAll();alert('Currency and charge settings saved. Historical transaction rates are not changed.');};
 
@@ -14934,8 +15043,8 @@ window.renderPurchasingModule=function(){const r=oldRenderPurchasingModule?.appl
 const oldRenderHR=window.renderHR;
 window.renderHR=function(){const r=oldRenderHR?.apply(this,arguments);setTimeout(applyHRGranularVisibility,0);return r;};
 
-const oldShowPage=window.showPage;window.showPage=function(page,button){if(page==='hr')addHRPage();const r=oldShowPage?.apply(this,arguments);if(page==='purchasing')setTimeout(renderPurchasingModule,0);if(page==='hr')setTimeout(renderHR,0);if(page==='settings')setTimeout(addCurrencyTable,0);return r;};
-const oldRenderAll=window.renderAll;window.renderAll=function(){const r=oldRenderAll?.apply(this,arguments);setTimeout(()=>{addHRPage();renderPurchasingModule();renderHR();addCurrencyTable();},0);return r;};
+const oldShowPage=window.showPage;window.showPage=function(page,button){if(page==='hr')addHRPage();const r=oldShowPage?.apply(this,arguments);if(page==='purchasing')setTimeout(renderPurchasingModule,0);if(page==='hr')setTimeout(renderHR,0);return r;};
+const oldRenderAll=window.renderAll;window.renderAll=function(){const r=oldRenderAll?.apply(this,arguments);setTimeout(()=>{addHRPage();renderPurchasingModule();renderHR();},0);return r;};
 window.SignaturePMS_v168={version:'1.6.9',stores:K,refreshPurchasingModule,renderHR};
 })();
 </script>
@@ -17233,6 +17342,27 @@ async function supabaseSignInPrompt(){
 }
 
 function normalizeCloudPropertyText(value){return String(value||"").trim().toLowerCase().replace(/\s+/g," ");}
+function normalizePropertyLocationPart(value){
+  const tokens=String(value??"")
+    .replace(/\s*,\s*/g,",")
+    .split(",")
+    .map(v=>v.trim())
+    .filter(Boolean);
+  const out=[];
+  tokens.forEach(token=>{
+    if(!out.some(existing=>normalizeCloudPropertyText(existing)===normalizeCloudPropertyText(token))) out.push(token);
+  });
+  return out.join(", ");
+}
+function normalizePropertyLocation(row, fallback=""){
+  const parts=[];
+  [row?.address,row?.city,row?.country].forEach(value=>{
+    const clean=normalizePropertyLocationPart(value);
+    if(clean && !parts.some(existing=>normalizeCloudPropertyText(existing)===normalizeCloudPropertyText(clean))) parts.push(clean);
+  });
+  if(parts.length) return parts.join(", ");
+  return normalizePropertyLocationPart(fallback);
+}
 function rekeyLocalPropertyData(oldId,newId){
  const oldKey=String(oldId||""),newKey=String(newId||"");if(!oldKey||!newKey||oldKey===newKey)return;
  for(let i=0;i<localStorage.length;i++){
@@ -17258,7 +17388,7 @@ function cloudPropertyToLocal(row,existing){
     const out=existing?{...existing}:{id:id||crypto.randomUUID(),property:row.name||"Cloud Property",location:row.city||""};
     out.id=id||out.id;
     out.property=row.name||out.property||"Cloud Property";
-    out.location=[row.address,row.city,row.country].filter(Boolean).join(", ")||out.location||"";
+    out.location=normalizePropertyLocation(row,out.location)||"";
     out.code=row.code||out.code||"";
     out.phone=row.phone||out.phone||"";
     out.email=row.email||out.email||"";
@@ -19080,6 +19210,58 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   window.__signatureV247CloudWriteVerify=true;
 })();
 </script>
+
+<script id="v2-1-261-auto-cloud-property-refresh">
+/* v2.1.261 — AUTO CLOUD PROPERTY HYDRATION AFTER LOGIN
+   Keep the v2.1.260 location normalization and Manager access fixes unchanged.
+   On login, retry the existing authoritative property cloud refresh until the
+   Supabase session is ready, so Property Management opens with cloud values
+   instead of stale browser-local room/rate data.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV261AutoCloudPropertyRefresh)return;
+  window.__signatureV261AutoCloudPropertyRefresh=true;
+
+  const originalShowPMS=window.showPMS;
+  if(typeof originalShowPMS!=='function')return;
+
+  window.showPMS=function(){
+    const result=originalShowPMS.apply(this,arguments);
+
+    let attempt=0;
+    const maxAttempts=10;
+    const run=async()=>{
+      attempt++;
+      try{
+        const client=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+        const sessionResult=client&&client.auth?await client.auth.getSession():null;
+        const session=sessionResult?.data?.session;
+        if(!session?.user){
+          if(attempt<maxAttempts)setTimeout(run,500);
+          return;
+        }
+
+        if(typeof window.syncSupabaseProperties==='function'){
+          await window.syncSupabaseProperties();
+          if(typeof renderPropertySwitcher==='function')renderPropertySwitcher();
+          if(typeof renderPropertyManager==='function')renderPropertyManager();
+          if(typeof renderAll==='function')renderAll();
+          if(typeof setSupabaseCloudMessage==='function'){
+            setSupabaseCloudMessage('Cloud property settings loaded.','success');
+          }
+        }
+      }catch(e){
+        console.warn('v2.1.261 automatic cloud property refresh attempt '+attempt+' failed:',e);
+        if(attempt<maxAttempts)setTimeout(run,500);
+      }
+    };
+
+    setTimeout(run,100);
+    return result;
+  };
+})();
+</script>
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
@@ -19343,19 +19525,39 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     });
     return {local:settings.roomRateMatrixLocal,foreign:settings.roomRateMatrixForeign};
   }
-  function currencyForGuest(type){return 'LKR';}
+  function fxRate(){
+    return Math.max(0.000001,Number(settings?.postingRate||settings?.settlementRate||320)||320);
+  }
+  function guestCurrencyForType(type){
+    return String(type||'foreign').toLowerCase()==='local' ? 'LKR' : String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
+  }
+  function currencyForGuest(type){return guestCurrencyForType(type);}
   function applyReservationCurrencyMetadata(r, guestType){
     if(!r) return r;
     const type=String(guestType||r.guestType||'foreign').toLowerCase();
+    const base='LKR';
+    const cur=guestCurrencyForType(type);
+    const rate=type==='local' ? 1 : fxRate();
     r.guestType=type;
-    r.currency='LKR';
-    r.baseCurrency='LKR';
-    r.postingRateAtBooking=1;
-    r.baseAmount=Number(r.total||0);
-    r.foreignAmount=0;
+    r.baseCurrency=base;
+    r.currency=cur;
+    if(type==='local'){
+      r.postingRateAtBooking=1;
+      r.baseAmount=Number(r.total||0);
+      r.foreignAmount=0;
+    }else{
+      r.postingRateAtBooking=rate;
+      r.foreignAmount=Number(r.total||0);
+      r.baseAmount=Number(r.total||0)*rate;
+    }
     return r;
   }
-  function rateText(v,c){return 'LKR '+Number(v||0).toFixed(2);}
+  function rateText(v,c){
+    const type=String(c||'foreign').toLowerCase();
+    const cur=guestCurrencyForType(type);
+    const display=type==='local' ? Number(v||0) : Number(v||0)/fxRate();
+    return cur+' '+display.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  }
   function baseRateForGuest(guestType,roomId){
     const local=Number(settings?.roomBaseLocal||0), foreign=Number(settings?.roomBaseForeign||settings?.roomRate||0);
     const r=(settings?.rooms||[]).find(x=>String(x.id)===String(roomId));
@@ -19379,13 +19581,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(!types.length){box.innerHTML='<div class="empty">Create at least one active Room Type before setting rates.</div>';return;}
     box.innerHTML=types.map(t=>{
       const id=String(t.id), lm=normal(settings.roomRateMatrixLocal[id]), fm=normal(settings.roomRateMatrixForeign[id]);
-      return `<div class="card" style="margin-bottom:14px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'')}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Local 2A<br><small>LKR</small></th><th>Foreign 2A<br><small>LKR</small></th><th>Local 3A<br><small>LKR</small></th><th>Foreign 3A<br><small>LKR</small></th><th>Local 2A+1C<br><small>LKR</small></th><th>Foreign 2A+1C<br><small>LKR</small></th><th>Local 2A+2C<br><small>LKR</small></th><th>Foreign 2A+2C<br><small>LKR</small></th></tr></thead><tbody>${PLANS.map(plan=>`<tr><td><strong>${plan}</strong> — ${labels[plan]}</td>${KEYS.map(k=>`<td><input id="rr_local_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(lm[plan][k]||0)}"></td><td><input id="rr_foreign_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(fm[plan][k]||0)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+      return `<div class="card" style="margin-bottom:14px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'')}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Local 2A<br><small>LKR</small></th><th>Foreign 2A<br><small>USD</small></th><th>Local 3A<br><small>LKR</small></th><th>Foreign 3A<br><small>USD</small></th><th>Local 2A+1C<br><small>LKR</small></th><th>Foreign 2A+1C<br><small>USD</small></th><th>Local 2A+2C<br><small>LKR</small></th><th>Foreign 2A+2C<br><small>USD</small></th></tr></thead><tbody>${PLANS.map(plan=>`<tr><td><strong>${plan}</strong> — ${labels[plan]}</td>${KEYS.map(k=>`<td><input id="rr_local_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(lm[plan][k]||0)}"></td><td><input id="rr_foreign_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${(Number(fm[plan][k]||0)/fxRate()).toFixed(2)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
     }).join('');
   };
   window.saveRatePlans=function(){
     if(!requireRole('Admin','Manager'))return;if(!settings||!currentPropertyId){alert('Please select a property first.');return;}
     const local={},foreign={};
-    (settings.roomTypes||[]).forEach(t=>{const id=String(t.id);local[id]=emptyMatrix();foreign[id]=emptyMatrix();PLANS.forEach(plan=>KEYS.forEach(k=>{local[id][plan][k]=Math.max(0,Number(document.getElementById(`rr_local_${id}_${plan}_${k}`)?.value||0));foreign[id][plan][k]=Math.max(0,Number(document.getElementById(`rr_foreign_${id}_${plan}_${k}`)?.value||0));}));});
+    (settings.roomTypes||[]).forEach(t=>{const id=String(t.id);local[id]=emptyMatrix();foreign[id]=emptyMatrix();PLANS.forEach(plan=>KEYS.forEach(k=>{local[id][plan][k]=Math.max(0,Number(document.getElementById(`rr_local_${id}_${plan}_${k}`)?.value||0));foreign[id][plan][k]=Math.max(0,Number(document.getElementById(`rr_foreign_${id}_${plan}_${k}`)?.value||0))*fxRate();}));});
     settings.roomRateMatrixLocal=local;settings.roomRateMatrixForeign=foreign;
     /* Keep the old matrix as the foreign matrix for compatibility with older reports. */
     settings.roomRateMatrix=foreign;
@@ -19410,13 +19612,36 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const edited=(typeof editingReservationId!=='undefined'&&editingReservationId)?reservations.find(r=>r.id===editingReservationId):null;
     const r=changed[0]||edited;
     if(r){
-      r.guestType=String(guestType||'foreign').toLowerCase();
-      r.currency='LKR';
+      const type=String(guestType||r.guestType||'foreign').toLowerCase();
+      const rate=type==='local'?1:fxRate();
+      const cur=guestCurrencyForType(type);
+      /* oldSave calculates from the stored rate matrix in LKR. Convert only the
+         guest-facing reservation amount for foreign guests; retain the captured
+         LKR accounting value so existing accounting/report logic remains intact. */
+      if(type==='foreign'){
+        r.rate=Number(r.rate||0)/rate;
+        r.total=Number(r.total||0)/rate;
+      }
+      r.guestType=type;
+      r.currency=cur;
       r.baseCurrency='LKR';
-      r.postingRateAtBooking=1;
-      r.baseAmount=Number(r.total||0);
-      r.foreignAmount=0;
-      const f=getFolio(r.id);if(f){f.currency='LKR';f.baseCurrency='LKR';f.postingRateAtBooking=1;}
+      r.postingRateAtBooking=rate;
+      r.foreignAmount=type==='foreign'?Number(r.total||0):0;
+      r.baseAmount=type==='foreign'?Number(r.total||0)*rate:Number(r.total||0);
+      const f=getFolio(r.id);
+      if(f){
+        if(type==='foreign'){
+          f.accommodation=Number(f.accommodation||r.total||0)/rate;
+          f.total=getFolioTotal(r.id);
+        }
+        f.currency=cur;f.baseCurrency='LKR';f.postingRateAtBooking=rate;
+        f.foreignAmount=type==='foreign'?Number(f.total||0):0;
+        f.baseAmount=type==='foreign'?Number(f.total||0)*rate:Number(f.total||0);
+      }
+      payments.filter(p=>p.reservationId===r.id).forEach(p=>{
+        p.currency=cur;p.baseCurrency='LKR';p.postingRateAtBooking=rate;
+        p.settlementAmountLKR=Number(p.amount||0)*rate;
+      });
       saveData();
       /* Sync only after the complete save chain has finalized the reservation.
          This prevents the background cloud refresh from restoring a stale USD snapshot. */
@@ -19428,15 +19653,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   window.openReservationModal=function(){const r=arguments[2]&&reservations.find(x=>x.id===arguments[2]);const out=oldOpen.apply(this,arguments);setTimeout(()=>{if(r&&document.getElementById('guestType')){document.getElementById('guestType').value=r.guestType||'foreign';window.calculateReservation();}},0);return out;};
   function injectRateBaseFields(){
     const room=document.getElementById('settingRoomRate');if(!room||document.getElementById('settingRoomBaseLocal'))return;
-    const wrap=document.createElement('div');wrap.className='form-grid';wrap.style.marginTop='8px';wrap.innerHTML=`<div class="form-group"><label>Individual Room — Local Base Rate / Night (LKR)</label><input id="settingRoomBaseLocal" type="number" min="0" step="0.01"></div><div class="form-group"><label>Individual Room — Foreign Base Rate / Night (LKR)</label><input id="settingRoomBaseForeign" type="number" min="0" step="0.01"></div>`;
+    const wrap=document.createElement('div');wrap.className='form-grid';wrap.style.marginTop='8px';wrap.innerHTML=`<div class="form-group"><label>Individual Room — Local Base Rate / Night (LKR)</label><input id="settingRoomBaseLocal" type="number" min="0" step="0.01"></div><div class="form-group"><label>Individual Room — Foreign Base Rate / Night (USD)</label><input id="settingRoomBaseForeign" type="number" min="0" step="0.01"></div>`;
     room.closest('.form-group')?.parentElement?.insertBefore(wrap,room.closest('.form-group').nextSibling);
-    document.getElementById('settingRoomBaseLocal').value=Number(settings?.roomBaseLocal||0);document.getElementById('settingRoomBaseForeign').value=Number(settings?.roomBaseForeign||settings?.roomRate||0);
+    document.getElementById('settingRoomBaseLocal').value=Number(settings?.roomBaseLocal||0);document.getElementById('settingRoomBaseForeign').value=(Number(settings?.roomBaseForeign||settings?.roomRate||0)/fxRate()).toFixed(2);
   }
   const oldSaveSettings=window.saveSettings;
   window.saveSettings=function(){
     injectRateBaseFields();
     const result=oldSaveSettings.apply(this,arguments);
-    if(settings){settings.roomBaseLocal=Math.max(0,Number(document.getElementById('settingRoomBaseLocal')?.value||settings.roomBaseLocal||0));settings.roomBaseForeign=Math.max(0,Number(document.getElementById('settingRoomBaseForeign')?.value||settings.roomBaseForeign||settings.roomRate||0));saveData();}
+    if(settings){settings.roomBaseLocal=Math.max(0,Number(document.getElementById('settingRoomBaseLocal')?.value||settings.roomBaseLocal||0));settings.roomBaseForeign=Math.max(0,Number(document.getElementById('settingRoomBaseForeign')?.value||0))*fxRate();saveData();}
     return result;
   };
   const oldRenderAll=window.renderAll;
@@ -19585,7 +19810,24 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       ids=(allRows||[]).map(x=>x.id).filter(Boolean);
       const state=window.signaturePMSState;
       if(!state) throw new Error('PMS state bridge unavailable.');
-      state.properties=cloudOnlyProperties(allRows||[]);
+      /* v2.1.265 — preserve legacy local H001/H002 property records when a
+         delayed cloud refresh does not return them. This is recovery-only:
+         cloud rows remain authoritative when present, and no transactional
+         data is deleted or merged. */
+      const localBeforeCloud=Array.isArray(state.properties)?state.properties.slice():[];
+      const cloudList=cloudOnlyProperties(allRows||[]);
+      const legacyNeeded=localBeforeCloud.filter(lp=>{
+        const code=String(lp?.code||'').trim().toUpperCase();
+        const name=String(lp?.property||lp?.name||'').trim().toLowerCase();
+        const isLegacy=(code==='H001'||code==='H002'||name==='signature pms demo hotel'||name==='signature test hotel');
+        if(!isLegacy) return false;
+        return !cloudList.some(cp=>{
+          const cc=String(cp?.code||'').trim().toUpperCase();
+          const cn=String(cp?.property||cp?.name||'').trim().toLowerCase();
+          return (code && cc===code)||(name && cn===name);
+        });
+      });
+      state.properties=cloudList.concat(legacyNeeded);
       state.saveProperties();
       const primary=(ups||[]).find(x=>x.is_primary)?.property_id || ids[0] || null;
       if(primary){ const p=state.properties.find(x=>String(x.id)===String(primary)); if(p){ state.currentPropertyId=p.id; state.loadCurrentPropertyData(); } }
@@ -19828,6 +20070,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return out;
   }
 
+  /* v2.1.253 Restaurant Menu Cloud Source-of-Truth Fix */
   async function savePropertyConfigToCloud(){
     const client=initSupabaseClient();
     if(!client || !currentPropertyId || !settings)return false;
@@ -19861,8 +20104,31 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(updateError)throw updateError;
     if(!verifiedRow) throw new Error('Supabase did not return the property after the cloud update. The update may be blocked by RLS or the property ID is not writable.');
     const saved=(verifiedRow.settings_data&&typeof verifiedRow.settings_data==='object')?verifiedRow.settings_data:{};
+
+    /* v2.1.248 — JSONB verification hardening. PostgreSQL JSONB can return
+       object keys in a different order from the browser object. A direct
+       JSON.stringify() comparison therefore reports a false mismatch for
+       nested configuration such as rateMatrix. Compare canonical JSON with
+       object keys sorted recursively while preserving array order. */
+    function canonicalConfigValue(value){
+      if(Array.isArray(value)) return value.map(canonicalConfigValue);
+      if(value && typeof value==='object'){
+        const out={};
+        Object.keys(value).sort().forEach(key=>{
+          const v=value[key];
+          if(v!==undefined) out[key]=canonicalConfigValue(v);
+        });
+        return out;
+      }
+      return value;
+    }
+    function sameConfigValue(a,b){
+      try{return JSON.stringify(canonicalConfigValue(a))===JSON.stringify(canonicalConfigValue(b));}
+      catch(e){return a===b;}
+    }
+
     for(const k of CONFIG_KEYS){
-      if(Object.prototype.hasOwnProperty.call(merged,k) && JSON.stringify(saved[k])!==JSON.stringify(merged[k])){
+      if(Object.prototype.hasOwnProperty.call(merged,k) && !sameConfigValue(saved[k],merged[k])){
         throw new Error('Cloud verification failed for configuration field: '+k);
       }
     }
@@ -19874,7 +20140,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const out=existing?{...existing}:{id:String(row?.id||'')};
     out.id=String(row?.id||out.id||'');
     out.property=String(row?.name||out.property||'Cloud Property');
-    out.location=[row?.address,row?.city,row?.country].filter(Boolean).join(', ')||out.location||'';
+    // Normalize cloud location fields without re-appending an already-combined value.
+  out.location=normalizePropertyLocation(row,out.location)||'';
     out.code=row?.code||out.code||'';
     out.phone=row?.phone||out.phone||'';
     out.email=row?.email||out.email||'';
@@ -19890,9 +20157,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     /* Preserve the browser's known room set. property_rooms remains the
        authoritative room configuration and is hydrated separately. */
     if(existing && Array.isArray(existing.rooms))out.rooms=JSON.parse(JSON.stringify(existing.rooms));
-    if(existing && existing.restaurants)out.restaurants=JSON.parse(JSON.stringify(existing.restaurants));
-    if(existing && existing.posMenu)out.posMenu=JSON.parse(JSON.stringify(existing.posMenu));
-    if(existing && existing.selectedPOSOutletId)out.selectedPOSOutletId=existing.selectedPOSOutletId;
+
+    /* v2.1.253 — Restaurant configuration is now cloud source-of-truth.
+       The previous refresh code copied the local restaurants/posMenu back over
+       the values just loaded from settings_data, so Manager could see an old
+       menu (or the 18/22/4/3/5/2 default menu converted at 320). Only fall
+       back to the existing local menu when the cloud property truly has no
+       restaurant configuration yet. */
+    if(existing && !Object.prototype.hasOwnProperty.call(cloud,'restaurants') && existing.restaurants){
+      out.restaurants=JSON.parse(JSON.stringify(existing.restaurants));
+    }
+    if(existing && !Object.prototype.hasOwnProperty.call(cloud,'posMenu') && existing.posMenu){
+      out.posMenu=JSON.parse(JSON.stringify(existing.posMenu));
+    }
+    if(existing && !Object.prototype.hasOwnProperty.call(cloud,'selectedPOSOutletId') && existing.selectedPOSOutletId){
+      out.selectedPOSOutletId=existing.selectedPOSOutletId;
+    }
     return out;
   }
 
@@ -19962,10 +20242,27 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
 
     window.__signatureCloudHydrating=true;
-    properties=rows.map(row=>{
-      const existing=oldProperties.find(p=>String(p?.id)===String(row?.id));
-      return applyCloudConfig(row,existing);
+    /* v2.1.252: Cloud Refresh must not delete an existing local property just
+       because that property was not included in this particular Supabase
+       result. Merge returned cloud rows into the existing list instead. */
+    const refreshed=[];
+    const seen=new Set();
+    rows.forEach(row=>{
+      const cloudId=String(row?.id||'');
+      let existingIndex=oldProperties.findIndex(p=>cloudId&&String(p?.id)===cloudId);
+      if(existingIndex<0 && typeof findCloudPropertyLocalIndex==='function'){
+        existingIndex=findCloudPropertyLocalIndex(row);
+      }
+      const existing=existingIndex>=0?oldProperties[existingIndex]:null;
+      const merged=applyCloudConfig(row,existing);
+      refreshed.push(merged);
+      seen.add(String(merged.id||cloudId));
     });
+    oldProperties.forEach(p=>{
+      const pid=String(p?.id||'');
+      if(pid && !seen.has(pid)) refreshed.push(p);
+    });
+    properties=refreshed;
     saveProperties();
 
     const primary=(ups||[]).find(x=>x.is_primary)?.property_id || rows[0]?.id || null;
@@ -20090,3 +20387,751 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 
+
+
+<script>
+/* v2.1.263 — DYNAMIC FX RATE ONLY
+   This patch is intentionally isolated from login/auth/Supabase initialization.
+   It adds one editable USD/LKR rate and leaves the existing login/cloud code untouched.
+*/
+(function(){
+  'use strict';
+  const DEFAULT_FX=320;
+
+  function getFX(){
+    const n=Number(settings?.postingRate||settings?.settlementRate||0);
+    return n>0?n:DEFAULT_FX;
+  }
+
+  function installFXPanel(){
+    const page=document.getElementById('settings');
+    if(!page || typeof settings==='undefined' || document.getElementById('dynamicFxRatePanel')) return;
+    const box=document.createElement('div');
+    box.id='dynamicFxRatePanel';
+    box.className='section';
+    box.style.cssText='border:1px solid #cbd5e1;background:#fff;margin-bottom:18px;';
+    box.innerHTML=`
+      <div class="section-header">
+        <div>
+          <h3 style="margin:0">Currency &amp; Exchange Rate</h3>
+          <div style="font-size:12px;color:#64748b;margin-top:4px">Current rate used for new foreign-guest reservations. Existing reservations keep their booking rate.</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Base Currency</label>
+          <input value="LKR" readonly>
+        </div>
+        <div class="form-group">
+          <label>Guest Currency</label>
+          <input value="USD" readonly>
+        </div>
+        <div class="form-group">
+          <label>1 USD = LKR</label>
+          <input id="dynamicFxRate" type="number" min="0.01" step="0.01">
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <button type="button" class="btn btn-primary" id="dynamicFxSave">Save Exchange Rate</button>
+        <span id="dynamicFxStatus" style="font-size:12px;color:#64748b;margin-left:10px"></span>
+      </div>`;
+    page.insertBefore(box,page.firstElementChild||null);
+    refreshFXPanel();
+    document.getElementById('dynamicFxSave').onclick=saveFX;
+  }
+
+  function refreshFXPanel(){
+    const el=document.getElementById('dynamicFxRate');
+    if(el) el.value=getFX().toFixed(2);
+  }
+
+  function saveFX(){
+    if(typeof requireRole==='function' && !requireRole('Admin','Manager')) return;
+    if(typeof settings==='undefined' || !settings){ alert('Please select a property first.'); return; }
+    const rate=Number(document.getElementById('dynamicFxRate')?.value||0);
+    if(!Number.isFinite(rate) || rate<=0){ alert('Please enter a valid USD → LKR exchange rate.'); return; }
+    settings.baseCurrency='LKR';
+    settings.guestCurrency='USD';
+    settings.currency='USD';
+    settings.postingRate=rate;
+    settings.settlementRate=rate;
+    if(typeof saveData==='function') saveData();
+    refreshFXPanel();
+    const s=document.getElementById('dynamicFxStatus');
+    if(s) s.textContent='Saved. New reservations will use LKR '+rate.toFixed(2)+' per USD.';
+  }
+
+  /* Keep the existing global function name used by the reservation engine. */
+  window.fxRate=getFX;
+
+  const oldRenderAll=window.renderAll;
+  if(typeof oldRenderAll==='function' && !window.__dynamicFxRenderHook){
+    window.__dynamicFxRenderHook=true;
+    window.renderAll=function(){
+      const result=oldRenderAll.apply(this,arguments);
+      setTimeout(installFXPanel,0);
+      setTimeout(refreshFXPanel,0);
+      return result;
+    };
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',installFXPanel);
+  else installFXPanel();
+})();
+</script>
+
+<script id="v2-1-264-rateplan-fx-live">
+/* v2.1.264 — RATE PLAN FX LIVE SYNC ONLY
+   Keeps the foreign Rate Plan price in USD while recalculating its LKR
+   accounting value whenever the configured USD/LKR rate changes.
+   Login, Supabase auth, reservations and other modules are untouched.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV264RatePlanFX)return;
+  window.__signatureV264RatePlanFX=true;
+
+  const PLANS=['BB','HB','FB','AI'];
+  const KEYS=['2A','3A','2A1C','2A2C'];
+  const num=v=>Math.max(0,Number(v)||0);
+
+  function fx(){
+    return Math.max(0.000001,Number(settings?.postingRate||settings?.settlementRate||320)||320);
+  }
+  function empty(){
+    const m={}; PLANS.forEach(p=>{m[p]={'2A':0,'3A':0,'2A1C':0,'2A2C':0};}); return m;
+  }
+  function normal(x){
+    const m=empty();
+    if(x&&typeof x==='object') PLANS.forEach(p=>KEYS.forEach(k=>m[p][k]=num(x[p]?.[k])));
+    return m;
+  }
+
+  /* Store the USD selling price separately inside the existing property
+     settings object. It is copied to cloud automatically with settings_data. */
+  function ensureUSDSource(){
+    if(!settings) return {};
+    if(!settings.roomRateMatrixForeignUSD) settings.roomRateMatrixForeignUSD={};
+    const foreign=settings.roomRateMatrixForeign||{};
+    const src=settings.roomRateMatrixForeignUSD;
+    (settings.roomTypes||[]).forEach(t=>{
+      const id=String(t.id);
+      if(!src[id]){
+        const old=normal(foreign[id]||settings.roomRateMatrix?.[id]);
+        src[id]=empty();
+        PLANS.forEach(p=>KEYS.forEach(k=>{
+          src[id][p][k]=Number((num(old[p][k])/fx()).toFixed(2));
+        }));
+      }else{
+        src[id]=normal(src[id]);
+      }
+    });
+    return src;
+  }
+
+  function syncForeignLKR(){
+    if(!settings) return;
+    const src=ensureUSDSource();
+    settings.roomRateMatrixForeign=settings.roomRateMatrixForeign||{};
+    settings.roomRateMatrix=settings.roomRateMatrix||{};
+    settings.roomRateMatrixLocal=settings.roomRateMatrixLocal||{};
+    (settings.roomTypes||[]).forEach(t=>{
+      const id=String(t.id);
+      const usd=normal(src[id]);
+      const lkr=empty();
+      PLANS.forEach(p=>KEYS.forEach(k=>lkr[p][k]=Number((num(usd[p][k])*fx()).toFixed(2))));
+      settings.roomRateMatrixForeign[id]=lkr;
+      settings.roomRateMatrix[id]=JSON.parse(JSON.stringify(lkr));
+    });
+  }
+
+  const oldRender=window.renderRoomRatePlans;
+  if(typeof oldRender==='function'){
+    window.renderRoomRatePlans=function(){
+      if(!settings) return oldRender.apply(this,arguments);
+      const src=ensureUSDSource();
+      const box=document.getElementById('dynamicRoomRatePlans');
+      if(!box){ return oldRender.apply(this,arguments); }
+      const types=(settings.roomTypes||[]).filter(t=>t.active!==false);
+      if(!types.length){box.innerHTML='<div class="empty">Create at least one active Room Type before setting rates.</div>';return;}
+      box.innerHTML=types.map(t=>{
+        const id=String(t.id), lm=normal(settings.roomRateMatrixLocal?.[id]), fm=normal(src[id]);
+        return `<div class="card" style="margin-bottom:14px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'')}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Local 2A<br><small>LKR</small></th><th>Foreign 2A<br><small>USD</small></th><th>Local 3A<br><small>LKR</small></th><th>Foreign 3A<br><small>USD</small></th><th>Local 2A+1C<br><small>LKR</small></th><th>Foreign 2A+1C<br><small>USD</small></th><th>Local 2A+2C<br><small>LKR</small></th><th>Foreign 2A+2C<br><small>USD</small></th></tr></thead><tbody>${PLANS.map(plan=>`<tr><td><strong>${plan}</strong> — ${({BB:'Bed & Breakfast',HB:'Half Board',FB:'Full Board',AI:'All Inclusive'})[plan]}</td>${KEYS.map(k=>`<td><input id="rr_local_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${num(lm[plan][k])}"></td><td><input id="rr_foreign_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${num(fm[plan][k]).toFixed(2)}"><div id="rr_fx_${id}_${plan}_${k}" style="font-size:10px;color:#64748b;margin-top:3px">LKR ${Math.round(num(fm[plan][k])*fx()).toLocaleString()}</div></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+      }).join('');
+    };
+  }
+
+  const oldSave=window.saveRatePlans;
+  if(typeof oldSave==='function'){
+    window.saveRatePlans=async function(){
+      if(!settings){return oldSave.apply(this,arguments);}
+      /* Capture the USD selling prices before the original save re-renders. */
+      const captured={};
+      (settings.roomTypes||[]).forEach(t=>{
+        const id=String(t.id); captured[id]=empty();
+        PLANS.forEach(p=>KEYS.forEach(k=>{
+          captured[id][p][k]=num(document.getElementById(`rr_foreign_${id}_${p}_${k}`)?.value);
+        }));
+      });
+      const result=oldSave.apply(this,arguments);
+      await Promise.resolve(result);
+      settings.roomRateMatrixForeignUSD=captured;
+      syncForeignLKR();
+      if(typeof saveData==='function')saveData();
+      if(typeof window.__signatureSavePropertyConfigToCloud==='function'){
+        try{await window.__signatureSavePropertyConfigToCloud();}catch(e){console.warn('Rate Plan FX cloud save failed:',e);}
+      }
+      setTimeout(()=>window.renderRoomRatePlans&&window.renderRoomRatePlans(),0);
+      return result;
+    };
+  }
+
+  /* When the exchange rate is changed, immediately recalculate the LKR values
+     from the unchanged USD selling prices, then refresh the Rate Plan screen. */
+  const oldFxSave=window.__signatureDynamicFxSaveHook;
+  window.__signatureRefreshRatePlansForFX=function(){
+    if(!settings)return;
+    ensureUSDSource();
+    syncForeignLKR();
+    if(typeof saveData==='function')saveData();
+    if(typeof window.renderRoomRatePlans==='function')window.renderRoomRatePlans();
+    if(typeof window.renderRateRevenueAllocation==='function')window.renderRateRevenueAllocation();
+  };
+
+  const saveFxButton=document.getElementById('dynamicFxSave');
+  if(saveFxButton && !saveFxButton.__v264bound){
+    saveFxButton.__v264bound=true;
+    const prior=saveFxButton.onclick;
+    saveFxButton.onclick=async function(e){
+      if(typeof prior==='function')await prior.call(this,e);
+      window.__signatureRefreshRatePlansForFX();
+      if(typeof window.__signatureSavePropertyConfigToCloud==='function'){
+        try{await window.__signatureSavePropertyConfigToCloud();}catch(err){console.warn('FX cloud save failed:',err);}
+      }
+    };
+  }
+
+  function boot(){
+    if(!settings)return;
+    ensureUSDSource();
+    syncForeignLKR();
+    if(typeof window.renderRoomRatePlans==='function')window.renderRoomRatePlans();
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,0));
+  else setTimeout(boot,0);
+})();
+</script>
+
+<script id="v2-1-264-rateplan-fx-cloud-source">
+(function(){
+  'use strict';
+  async function cloudFXSource(mode){
+    try{
+      if(typeof initSupabaseClient!=='function'||!currentPropertyId||!settings)return null;
+      const client=initSupabaseClient(); if(!client)return null;
+      if(typeof getSupabaseSessionUser==='function' && !(await getSupabaseSessionUser()))return null;
+      const cloudId=await resolveSupabasePropertyId(String(currentPropertyId)); if(!cloudId)return null;
+      if(mode==='read'){
+        const {data,rowError}=await client.from('properties').select('settings_data').eq('id',String(cloudId)).maybeSingle();
+        if(rowError)throw rowError;
+        const src=data?.settings_data?.roomRateMatrixForeignUSD;
+        if(src&&typeof src==='object'){
+          settings.roomRateMatrixForeignUSD=src;
+          if(typeof window.__signatureRefreshRatePlansForFX==='function')window.__signatureRefreshRatePlansForFX();
+        }
+        return true;
+      }
+      const {data,error}=await client.from('properties').select('settings_data').eq('id',String(cloudId)).maybeSingle();
+      if(error)throw error;
+      const existing=data?.settings_data&&typeof data.settings_data==='object'?data.settings_data:{};
+      const merged={...existing,roomRateMatrixForeignUSD:settings.roomRateMatrixForeignUSD||{}};
+      const {error:updateError}=await client.from('properties').update({settings_data:merged}).eq('id',String(cloudId));
+      if(updateError)throw updateError;
+      return true;
+    }catch(e){console.warn('Rate Plan FX source cloud sync skipped:',e);return false;}
+  }
+  window.__signaturePersistRatePlanFXSource=()=>cloudFXSource('write');
+  const oldBoot=window.__signatureRefreshRatePlansForFX;
+  if(typeof oldBoot==='function'){
+    window.__signatureRefreshRatePlansForFX=async function(){
+      const r=oldBoot.apply(this,arguments);
+      await Promise.resolve(r);
+      await cloudFXSource('write');
+      return r;
+    };
+  }
+  setTimeout(()=>cloudFXSource('read'),1800);
+})();
+</script>
+
+
+<script id="v2-1-265-property-recovery-final">
+/* =========================================================
+   v2.1.265 — PROPERTY RECOVERY SAFETY NET
+   Purpose: keep legacy H001/H002 visible if an authenticated cloud refresh
+   temporarily omits those cloud rows. Does not delete, merge, or overwrite
+   Wild Hasthi / Shani Manor / other property data.
+========================================================= */
+(function(){
+  'use strict';
+  if(window.__signaturePropertyRecovery265) return;
+  window.__signaturePropertyRecovery265=true;
+
+  function isLegacy(p){
+    const code=String(p?.code||'').trim().toUpperCase();
+    const name=String(p?.property||p?.name||'').trim().toLowerCase();
+    return code==='H001'||code==='H002'||name==='signature pms demo hotel'||name==='signature test hotel';
+  }
+
+  function ensureLegacyVisible(){
+    try{
+      const state=window.signaturePMSState;
+      if(!state || !Array.isArray(state.properties)) return false;
+      const saved=JSON.parse(localStorage.getItem('signaturePMS_properties')||'[]');
+      if(!Array.isArray(saved)||!saved.length) return false;
+      let changed=false;
+      for(const lp of saved.filter(isLegacy)){
+        const code=String(lp?.code||'').trim().toUpperCase();
+        const name=String(lp?.property||lp?.name||'').trim().toLowerCase();
+        const exists=state.properties.some(p=>{
+          const pc=String(p?.code||'').trim().toUpperCase();
+          const pn=String(p?.property||p?.name||'').trim().toLowerCase();
+          return (code&&pc===code)||(name&&pn===name);
+        });
+        if(!exists){
+          state.properties.push(lp);
+          changed=true;
+        }
+      }
+      if(changed){
+        state.saveProperties();
+        if(typeof state.renderPropertySwitcher==='function') state.renderPropertySwitcher();
+        if(typeof state.renderPropertyManager==='function') state.renderPropertyManager();
+      }
+      return changed;
+    }catch(e){
+      console.warn('v2.1.265 property recovery skipped:',e);
+      return false;
+    }
+  }
+
+  window.signatureRecoverLegacyProperties265=ensureLegacyVisible;
+
+  const oldSync=window.syncSupabaseProperties;
+  if(typeof oldSync==='function'){
+    window.syncSupabaseProperties=async function(){
+      const result=await oldSync.apply(this,arguments);
+      ensureLegacyVisible();
+      return result;
+    };
+  }
+
+  setTimeout(ensureLegacyVisible,1200);
+  setTimeout(ensureLegacyVisible,3500);
+})();
+</script>
+
+<script id="v2-1-267-final-lkr-rate-architecture">
+/* =========================================================
+   v2.1.267 — FINAL LKR RATE ARCHITECTURE
+   One consistent pricing rule:
+   - Local rates are stored in LKR.
+   - Foreign rates are ALSO stored in LKR.
+   - FX is used only when a foreign guest-facing amount is displayed.
+   - New reservations capture the current FX rate.
+   - Existing reservations keep postingRateAtBooking.
+   - No business rate is converted or multiplied when saving Property Settings
+     or Rate Plans.
+========================================================= */
+(function(){
+  'use strict';
+  if(window.__signatureV267FinalLKRArchitecture) return;
+  window.__signatureV267FinalLKRArchitecture=true;
+
+  const PLANS=['BB','HB','FB','AI'];
+  const KEYS=['2A','3A','2A1C','2A2C'];
+  const labels={BB:'Bed & Breakfast',HB:'Half Board',FB:'Full Board',AI:'All Inclusive'};
+
+  function fx(){
+    return Math.max(0.000001,Number(settings?.postingRate||settings?.settlementRate||320)||320);
+  }
+  function emptyMatrix(){
+    const m={};
+    PLANS.forEach(p=>{m[p]={'2A':0,'3A':0,'2A1C':0,'2A2C':0};});
+    return m;
+  }
+  function normalMatrix(x){
+    const m=emptyMatrix();
+    if(x&&typeof x==='object') PLANS.forEach(p=>KEYS.forEach(k=>m[p][k]=Math.max(0,Number(x?.[p]?.[k]||0))));
+    return m;
+  }
+  function guestType(){return String(document.getElementById('guestType')?.value||'foreign').toLowerCase();}
+
+  /* ---------- Property Settings: all business rates are LKR ---------- */
+  function forcePropertySettingLabels(){
+    const bb=document.getElementById('roomRateLabel');
+    if(bb) bb.textContent='Individual Room — BB Rate / Night (LKR)';
+
+    const local=document.getElementById('settingRoomBaseLocal');
+    if(local?.closest('.form-group')?.querySelector('label')){
+      local.closest('.form-group').querySelector('label').textContent='Individual Room — Local Base Rate / Night (LKR)';
+    }
+    const foreign=document.getElementById('settingRoomBaseForeign');
+    if(foreign?.closest('.form-group')?.querySelector('label')){
+      foreign.closest('.form-group').querySelector('label').textContent='Individual Room — Foreign Base Rate / Night (LKR)';
+    }
+
+    /* The legacy field may still be present in the original form. */
+    document.querySelectorAll('label').forEach(l=>{
+      const t=String(l.textContent||'').trim();
+      if(/Individual Room.*BB Rate \/ Night$/i.test(t)) l.textContent='Individual Room — BB Rate / Night (LKR)';
+      if(/Individual Room.*Foreign Base Rate.*\(USD\)/i.test(t)) l.textContent='Individual Room — Foreign Base Rate / Night (LKR)';
+    });
+  }
+
+  function ensureBaseInputs(){
+    const room=document.getElementById('settingRoomRate');
+    if(!room) return;
+
+    let local=document.getElementById('settingRoomBaseLocal');
+    let foreign=document.getElementById('settingRoomBaseForeign');
+    if(!local || !foreign){
+      const oldGroup=room.closest('.form-group');
+      if(!oldGroup) return;
+      const wrap=document.createElement('div');
+      wrap.className='form-grid';
+      wrap.style.marginTop='8px';
+      wrap.innerHTML='<div class="form-group"><label>Individual Room — Local Base Rate / Night (LKR)</label><input id="settingRoomBaseLocal" type="number" min="0" step="0.01"></div><div class="form-group"><label>Individual Room — Foreign Base Rate / Night (LKR)</label><input id="settingRoomBaseForeign" type="number" min="0" step="0.01"></div>';
+      oldGroup.parentElement?.insertBefore(wrap,oldGroup.nextSibling);
+      local=document.getElementById('settingRoomBaseLocal');
+      foreign=document.getElementById('settingRoomBaseForeign');
+    }
+    if(local) local.value=Number(settings?.roomBaseLocal||0);
+    if(foreign) foreign.value=Number(settings?.roomBaseForeign||0);
+    forcePropertySettingLabels();
+  }
+
+  function captureBaseInputsToSettings(){
+    if(!settings) return;
+    const local=document.getElementById('settingRoomBaseLocal');
+    const foreign=document.getElementById('settingRoomBaseForeign');
+    if(local) settings.roomBaseLocal=Math.max(0,Number(local.value||0));
+    if(foreign) settings.roomBaseForeign=Math.max(0,Number(foreign.value||0));
+    /* Keep the legacy roomRate field in LKR as the BB/base compatibility field. */
+    const bb=document.getElementById('settingRoomRate');
+    if(bb) settings.roomRate=Math.max(0,Number(bb.value||settings.roomRate||0));
+  }
+
+  const previousSaveSettings=window.saveSettings;
+  window.saveSettings=async function(){
+    ensureBaseInputs();
+    captureBaseInputsToSettings();
+    const result=typeof previousSaveSettings==='function' ? previousSaveSettings.apply(this,arguments) : undefined;
+    /* The legacy saver may have applied the old USD multiplication. Re-assert
+       the entered LKR values and persist them after that function completes. */
+    captureBaseInputsToSettings();
+    if(typeof saveData==='function') saveData();
+    if(typeof window.__signatureSavePropertyConfigToCloud==='function'){
+      try{ await window.__signatureSavePropertyConfigToCloud(); }
+      catch(e){ console.warn('v2.1.267 Property Settings cloud save skipped:',e); }
+    }
+    forcePropertySettingLabels();
+    return result;
+  };
+
+  /* ---------- Rate Plans: Local + Foreign are both entered/stored in LKR ---------- */
+  window.renderRoomRatePlans=function(){
+    const box=document.getElementById('dynamicRoomRatePlans');
+    if(!box || !settings) return;
+    const types=(settings.roomTypes||[]).filter(t=>t.active!==false);
+    if(!types.length){box.innerHTML='<div class="empty">Create at least one active Room Type before setting rates.</div>';return;}
+
+    box.innerHTML=types.map(t=>{
+      const id=String(t.id);
+      const lm=normalMatrix(settings.roomRateMatrixLocal?.[id]);
+      const fm=normalMatrix(settings.roomRateMatrixForeign?.[id]);
+      return `<div class="card" style="margin-bottom:14px;padding:10px"><div style="font-weight:700;margin-bottom:8px">${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'')}</div><div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Local 2A<br><small>LKR</small></th><th>Foreign 2A<br><small>LKR</small></th><th>Local 3A<br><small>LKR</small></th><th>Foreign 3A<br><small>LKR</small></th><th>Local 2A+1C<br><small>LKR</small></th><th>Foreign 2A+1C<br><small>LKR</small></th><th>Local 2A+2C<br><small>LKR</small></th><th>Foreign 2A+2C<br><small>LKR</small></th></tr></thead><tbody>${PLANS.map(plan=>`<tr><td><strong>${plan}</strong> — ${labels[plan]}</td>${KEYS.map(k=>`<td><input id="rr_local_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(lm[plan][k]||0)}"></td><td><input id="rr_foreign_${id}_${plan}_${k}" type="number" min="0" step="0.01" value="${Number(fm[plan][k]||0)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+    }).join('');
+  };
+
+  window.saveRatePlans=async function(){
+    if(!requireRole('Admin','Manager')) return;
+    if(!settings || !currentPropertyId){alert('Please select a property first.');return;}
+    const local={},foreign={};
+    (settings.roomTypes||[]).forEach(t=>{
+      const id=String(t.id); local[id]=emptyMatrix(); foreign[id]=emptyMatrix();
+      PLANS.forEach(plan=>KEYS.forEach(k=>{
+        local[id][plan][k]=Math.max(0,Number(document.getElementById(`rr_local_${id}_${plan}_${k}`)?.value||0));
+        foreign[id][plan][k]=Math.max(0,Number(document.getElementById(`rr_foreign_${id}_${plan}_${k}`)?.value||0));
+      }));
+    });
+    settings.roomRateMatrixLocal=local;
+    settings.roomRateMatrixForeign=foreign;
+    /* Legacy compatibility matrix remains LKR too. */
+    settings.roomRateMatrix=JSON.parse(JSON.stringify(foreign));
+    /* Do not use the old USD source-of-truth. */
+    delete settings.roomRateMatrixForeignUSD;
+
+    if(typeof saveData==='function') saveData();
+    if(typeof window.__signatureSavePropertyConfigToCloud==='function'){
+      try{ await window.__signatureSavePropertyConfigToCloud(); }
+      catch(e){
+        console.error('v2.1.267 Rate Plans cloud save failed:',e);
+        setSupabaseCloudMessage('Rate Plans saved locally, but cloud verification failed: '+(e?.message||e),'error');
+        alert('Rate Plans were saved locally, but the cloud update was not verified.\n\n'+(e?.message||e));
+        return;
+      }
+    }
+    renderRoomRatePlans();
+    if(typeof renderRateRevenueAllocation==='function') renderRateRevenueAllocation();
+    alert('Local and Foreign Room Type Rate Plans saved in LKR and synchronized to the cloud.');
+  };
+
+  /* ---------- FX: never rewrite stored foreign LKR rates ---------- */
+  window.__signatureRefreshRatePlansForFX=function(){
+    if(!settings) return;
+    /* FX affects guest-facing USD display only. Stored rate plans stay LKR. */
+    renderRoomRatePlans();
+    if(typeof renderRateRevenueAllocation==='function') renderRateRevenueAllocation();
+  };
+
+  /* Neutralize the old USD-source persistence hook if it exists. */
+  window.__signaturePersistRatePlanFXSource=async function(){return true;};
+
+  /* ---------- Reservation display: LKR storage, USD only for foreign display ---------- */
+  window.getConfiguredRate=function(mealPlan,adults,children,roomId=null,guestType=null){
+    guestType=String(guestType||document.getElementById('guestType')?.value||'foreign').toLowerCase();
+    const m=String(mealPlan||'').toUpperCase(), a=Number(adults||0), c=Number(children||0);
+    const rt=roomId!=null && typeof getRoomTypeForRoom==='function' ? getRoomTypeForRoom(roomId) : null;
+    const id=rt?String(rt.id):null;
+    const matrix=guestType==='local' ? settings?.roomRateMatrixLocal?.[id] : settings?.roomRateMatrixForeign?.[id];
+    if(!matrix) return null;
+    const row=matrix[m]; if(!row) return null;
+    const key=(a===2&&c===2)?'2A2C':(a===2&&c===1)?'2A1C':(a===3&&c===0)?'3A':((a>=1&&a<=2&&c===0)?'2A':null);
+    if(!key) return null;
+    const value=Number(row[key]||0);
+    return value>0?value:null;
+  };
+
+  function baseRateLKR(type,roomId){
+    const r=(settings?.rooms||[]).find(x=>String(x.id)===String(roomId));
+    return type==='local'
+      ? Number(r?.localRate||settings?.roomBaseLocal||settings?.roomRate||0)
+      : Number(r?.foreignRate||settings?.roomBaseForeign||settings?.roomRate||0);
+  }
+
+  window.calculateReservation=function(){
+    const type=document.getElementById('bookingType')?.value||'room';
+    const gt=guestType();
+    const roomId=Number(document.getElementById('roomSelect')?.value||0);
+    const adults=Number(document.getElementById('adults')?.value||1);
+    const children=Number(document.getElementById('children')?.value||0);
+    const plan=document.getElementById('mealPlan')?.value||'BB';
+    let rate=baseRateLKR(gt,roomId);
+    if(type==='villa') rate=gt==='foreign'?Number(settings?.villaForeign||0):Number(settings?.villaLocal||0);
+    else { const configured=window.getConfiguredRate(plan,adults,children,roomId,gt); if(configured!==null) rate=configured; }
+    const ci=document.getElementById('checkIn')?.value, co=document.getElementById('checkOut')?.value;
+    const nights=ci&&co?Math.max(0,Math.round((new Date(co)-new Date(ci))/86400000)):0;
+    const totalLKR=rate*nights;
+    const displayRate=gt==='foreign'?rate/fx():rate;
+    const displayTotal=gt==='foreign'?totalLKR/fx():totalLKR;
+    const cur=gt==='foreign'?String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase():'LKR';
+    const re=document.getElementById('reservationRate'),te=document.getElementById('reservationTotal'),ne=document.getElementById('reservationNights');
+    if(re) re.textContent=cur+' '+displayRate.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if(te) te.textContent=cur+' '+displayTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if(ne) ne.textContent=nights;
+    return totalLKR;
+  };
+
+  /* ---------- Revenue Allocation: foreign side is also LKR ---------- */
+  const originalRenderAllocation=window.renderRateRevenueAllocation;
+  if(typeof originalRenderAllocation==='function'){
+    window.renderRateRevenueAllocation=function(){
+      const r=originalRenderAllocation.apply(this,arguments);
+      const box=document.getElementById('rateRevenueAllocation');
+      if(box){
+        box.querySelectorAll('.ra-rate-badge').forEach(b=>{
+          if(String(b.textContent||'').trim().toUpperCase()==='USD') b.textContent='LKR';
+        });
+        box.querySelectorAll('th').forEach(th=>{
+          if(String(th.textContent||'').includes('Foreign Revenue Allocation (USD)')) th.textContent='Foreign Revenue Allocation (LKR)';
+        });
+      }
+      return r;
+    };
+  }
+
+  /* ---------- Keep cloud config keys aligned to the new LKR source ---------- */
+  async function saveLKRConfig(){
+    if(typeof window.__signatureSavePropertyConfigToCloud!=='function') return;
+    try{ await window.__signatureSavePropertyConfigToCloud(); }
+    catch(e){ console.warn('v2.1.267 LKR config cloud save skipped:',e); }
+  }
+
+  /* Re-assert LKR values after any legacy render/cloud hydration. */
+  const originalRenderAll=window.renderAll;
+  if(typeof originalRenderAll==='function'){
+    window.renderAll=function(){
+      const r=originalRenderAll.apply(this,arguments);
+      setTimeout(()=>{ensureBaseInputs();forcePropertySettingLabels();renderRoomRatePlans();if(typeof renderRateRevenueAllocation==='function')renderRateRevenueAllocation();},0);
+      return r;
+    };
+  }
+
+  const originalLoad=window.loadCurrentPropertyData;
+  if(typeof originalLoad==='function'){
+    window.loadCurrentPropertyData=function(){
+      const r=originalLoad.apply(this,arguments);
+      setTimeout(()=>{ensureBaseInputs();forcePropertySettingLabels();renderRoomRatePlans();},0);
+      return r;
+    };
+  }
+
+  function boot(){
+    try{
+      ensureBaseInputs();
+      forcePropertySettingLabels();
+      renderRoomRatePlans();
+      if(typeof renderRateRevenueAllocation==='function')renderRateRevenueAllocation();
+    }catch(e){console.warn('v2.1.267 LKR architecture boot skipped:',e);}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,0));
+  else setTimeout(boot,0);
+})();
+</script>
+
+<script id="v2-1-268-property-base-rate-save-fix">
+/* v2.1.268 — Property Settings Base Rate Save Fix
+   Final source of truth:
+   settingRoomBaseLocal  -> settings.roomBaseLocal   (LKR)
+   settingRoomBaseForeign -> settings.roomBaseForeign (LKR)
+   Never convert these two fields through FX.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV268PropertyBaseRateSaveFix)return;
+  window.__signatureV268PropertyBaseRateSaveFix=true;
+
+  function num(v){
+    const n=Number(v);
+    return Number.isFinite(n)&&n>=0?n:0;
+  }
+
+  function readEntered(){
+    return {
+      local:num(document.getElementById('settingRoomBaseLocal')?.value),
+      foreign:num(document.getElementById('settingRoomBaseForeign')?.value),
+      bb:num(document.getElementById('settingRoomRate')?.value)
+    };
+  }
+
+  function restoreEntered(v){
+    if(!settings||!v)return;
+    settings.roomBaseLocal=v.local;
+    settings.roomBaseForeign=v.foreign;
+    if(document.getElementById('settingRoomRate')) settings.roomRate=v.bb;
+    const local=document.getElementById('settingRoomBaseLocal');
+    const foreign=document.getElementById('settingRoomBaseForeign');
+    if(local) local.value=v.local;
+    if(foreign) foreign.value=v.foreign;
+  }
+
+  function saveLocal(v){
+    restoreEntered(v);
+    if(typeof saveData==='function') saveData();
+  }
+
+  /* Capture BEFORE the legacy save function runs. The old function can
+     render/reload the settings fields and otherwise replace the user's
+     newly-entered value with the previous stored value. */
+  const oldSave=window.saveSettings;
+  window.saveSettings=async function(){
+    const entered=readEntered();
+    let result;
+    try{
+      result=typeof oldSave==='function' ? await oldSave.apply(this,arguments) : undefined;
+    }catch(e){
+      /* The legacy save may report its own error; keep the user's entered
+         values in memory so they are not lost. */
+      restoreEntered(entered);
+      throw e;
+    }
+
+    /* Re-assert exactly what the user entered. No FX multiplication. */
+    saveLocal(entered);
+
+    if(typeof window.__signatureSavePropertyConfigToCloud==='function'){
+      try{
+        await window.__signatureSavePropertyConfigToCloud();
+      }catch(e){
+        console.warn('v2.1.268 Property Settings cloud save failed:',e);
+        if(typeof setSupabaseCloudMessage==='function'){
+          setSupabaseCloudMessage('Property base rates saved locally, but cloud verification failed: '+(e?.message||e),'error');
+        }
+      }
+    }
+
+    if(typeof forcePropertySettingLabels==='function') forcePropertySettingLabels();
+    const local=document.getElementById('settingRoomBaseLocal');
+    const foreign=document.getElementById('settingRoomBaseForeign');
+    if(local) local.value=entered.local;
+    if(foreign) foreign.value=entered.foreign;
+    return result;
+  };
+
+  /* Prevent any old UI sync from changing the fields while the user is
+     actively editing them. */
+  ['settingRoomBaseLocal','settingRoomBaseForeign'].forEach(id=>{
+    const bind=()=>{
+      const el=document.getElementById(id);
+      if(!el||el.__v268Bound)return;
+      el.__v268Bound=true;
+      el.addEventListener('input',()=>{
+        if(settings){
+          if(id==='settingRoomBaseLocal') settings.roomBaseLocal=num(el.value);
+          if(id==='settingRoomBaseForeign') settings.roomBaseForeign=num(el.value);
+        }
+      });
+    };
+    bind();
+    setTimeout(bind,250);
+    setTimeout(bind,750);
+    setTimeout(bind,1500);
+  });
+
+  /* Final UI guard: values are always read/written as LKR. */
+  function fixLabelsAndFields(){
+    const local=document.getElementById('settingRoomBaseLocal');
+    const foreign=document.getElementById('settingRoomBaseForeign');
+    if(local){
+      const g=local.closest('.form-group');
+      const l=g?.querySelector('label');
+      if(l) l.textContent='Individual Room — Local Base Rate / Night (LKR)';
+    }
+    if(foreign){
+      const g=foreign.closest('.form-group');
+      const l=g?.querySelector('label');
+      if(l) l.textContent='Individual Room — Foreign Base Rate / Night (LKR)';
+    }
+  }
+
+  const oldRenderAll=window.renderAll;
+  if(typeof oldRenderAll==='function'){
+    window.renderAll=function(){
+      const active=document.activeElement;
+      const editing=active && (active.id==='settingRoomBaseLocal'||active.id==='settingRoomBaseForeign');
+      const keep=editing?readEntered():null;
+      const r=oldRenderAll.apply(this,arguments);
+      setTimeout(()=>{
+        fixLabelsAndFields();
+        if(keep) restoreEntered(keep);
+      },0);
+      return r;
+    };
+  }
+
+  setTimeout(fixLabelsAndFields,0);
+  setTimeout(fixLabelsAndFields,500);
+  setTimeout(fixLabelsAndFields,1200);
+})();
+</script>
