@@ -7216,29 +7216,46 @@ function updateReservationForm(){
     }
 }
 
+function normalizeStayDate(v){
+    const s=String(v||"").trim();
+    if(!s) return "";
+    const m=s.match(/^(\d{4}-\d{2}-\d{2})/);
+    if(m) return m[1];
+    const d=new Date(s);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0,10);
+}
+
 function datesOverlap(a,b,c,d){
-    return a<d && c<b;
+    const A=normalizeStayDate(a), B=normalizeStayDate(b), C=normalizeStayDate(c), D=normalizeStayDate(d);
+    if(!A||!B||!C||!D||A>=B||C>=D) return false;
+    // Hotel stay dates are half-open: [check-in, check-out).
+    // 03→04 and 04→05 are consecutive stays and do not overlap.
+    return A<D && C<B;
 }
 
 function isBookingAvailable(type,roomId,checkIn,checkOut,excludeId=null){
+    const ci=normalizeStayDate(checkIn), co=normalizeStayDate(checkOut);
+    if(!ci||!co||ci>=co) return false;
+    const propertyId=String(currentPropertyId||"");
 
     return !reservations.some(r=>{
-        if(r.id===excludeId) return false;
+        if(excludeId!=null && String(r.id)===String(excludeId)) return false;
 
-        // Accept both the current canonical status and any older saved variant.
+        // Reservations from another property must never block this property.
+        const rp=String(r.propertyId||r.property_id||"");
+        if(propertyId && rp && rp!==propertyId) return false;
+
         const status=String(r.status||"").toLowerCase().replace(/_/g,"-");
         if(!["reserved","confirmed","checked-in"].includes(status)) return false;
 
-        // Hotel stay dates are half-open: [check-in, check-out).
-        // A guest checking out on 15th releases the room for a new guest
-        // checking in on 15th. Any true overlap must be rejected.
-        if(!datesOverlap(checkIn,checkOut,r.checkIn,r.checkOut)) return false;
+        const rci=normalizeStayDate(r.checkIn||r.check_in);
+        const rco=normalizeStayDate(r.checkOut||r.check_out);
+        if(!datesOverlap(ci,co,rci,rco)) return false;
 
-        // A villa booking occupies the entire accommodation inventory.
-        if(type==="villa") return true;
-        if(r.bookingType==="villa") return true;
+        if(String(type||"").toLowerCase()==="villa") return true;
+        if(String(r.bookingType||r.booking_type||"").toLowerCase()==="villa") return true;
 
-        return Number(r.roomId)===Number(roomId);
+        return String(r.roomId??r.room_id??"")===String(roomId??"");
     });
 }
 
@@ -12786,10 +12803,10 @@ function getRoomById(roomId){ return getProperty()?.rooms?.find(x=>String(x.id)=
 function roomAvailableForDates(roomId,checkIn,checkOut,excludeId=""){
     const room=getRoomById(roomId);
     if(!room || room.active===false || room.housekeepingStatus==="out_of_order") return false;
-    return !reservations.some(r=>String(r.id)!==String(excludeId) && String(r.roomId)===String(roomId) && activeReservation(r) && dateRangesOverlap(r.checkIn,r.checkOut,checkIn,checkOut));
+    return isBookingAvailable("room",String(roomId),checkIn,checkOut,excludeId);
 }
 function availableRoomsForDates(checkIn,checkOut,excludeId=""){
-    return (getProperty()?.rooms||[]).filter(room=>room.active!==false && roomAvailableForDates(room.id,checkIn,checkOut,excludeId));
+    return (settings?.rooms||[]).filter(room=>room.active!==false && roomAvailableForDates(room.id,checkIn,checkOut,excludeId));
 }
 function reservationBookingSourceValue(r){ return r?.bookingSource || r?.source || "Direct"; }
 function reservationRate(r){
@@ -12802,15 +12819,19 @@ function reservationStatusClass(status){
 
 function applyReservations20Form(){
     const room=document.getElementById("roomSelect");
-    const ci=document.getElementById("checkIn")?.value;
-    const co=document.getElementById("checkOut")?.value;
+    const ci=normalizeStayDate(document.getElementById("checkIn")?.value);
+    const co=normalizeStayDate(document.getElementById("checkOut")?.value);
     const exclude=editingReservationId||"";
-    if(room && ci && co){
-        const current=room.value;
-        const rooms=availableRoomsForDates(ci,co,exclude);
-        room.innerHTML=rooms.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join("") || '<option value="">No rooms available</option>';
-        if(rooms.some(x=>String(x.id)===String(current))) room.value=current;
-    }
+    const type=document.getElementById("bookingType")?.value||"room";
+    if(!room || !ci || !co) return;
+
+    // Use the same availability rule as saveReservation().
+    // Checkout on 04/10 releases the room for check-in on 04/10.
+    const current=String(room.value||"");
+    const rooms=(settings?.rooms||[]).filter(r=>r && r.active!==false && isBookingAvailable(type,String(r.id),ci,co,exclude));
+    room.innerHTML=rooms.map(x=>`<option value="${escapeHtml(String(x.id))}">${escapeHtml(x.name||("Room "+String(x.id).padStart(2,"0")))}</option>`).join("") || '<option value="">No rooms available</option>';
+    if(rooms.some(x=>String(x.id)===current)) room.value=current;
+    else if(rooms.length) room.value=String(rooms[0].id);
 }
 
 function reservation2SaveNormalize(r){
@@ -19262,6 +19283,7 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   };
 })();
 </script>
+<!-- v2.1.271: safe New Reservation date-availability fix based on v2.1.268. -->
 </body></html>
 
 <style id="menu-management-button-hardening-v18">
