@@ -233,7 +233,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
  .main{margin-left:0 !important;width:100% !important;}
 }
 </style><style id="operations-budget-style">#operationsBudgetPanel .input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:7px;background:#fff;font-size:12px}#operationsBudgetPanel table input,#operationsBudgetPanel table select{width:72px;padding:5px;border:1px solid #d1d5db;border-radius:5px;font-size:11px}#operationsBudgetPanel table select{width:105px}#operationsBudgetPanel .ob-total{font-weight:700;white-space:nowrap}</style><!-- CLEAN REBUILD: v14 confirmed working base; centralized Supabase Master Admin normalization only. -->
-
 <style id="signature-pms-mobile-responsive-v239">
 /* v2.1.239 — Mobile responsive UI only. Business logic/auth/Supabase untouched. */
 @media (max-width:700px){
@@ -467,57 +466,51 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 @media(max-width:900px){.gm-kpis{grid-template-columns:1fr 1fr}.gm-kpi:nth-child(3n){border-right:1px solid #e2e8f0}.gm-strip,.gm-ops{grid-template-columns:repeat(2,1fr)}.gm-two{grid-template-columns:1fr}.gm-kpi:nth-last-child(-n+3){border-bottom:1px solid #e2e8f0}.gm-kpi:last-child{border-bottom:0}.gm-kpi:nth-child(even){border-right:0}}
 </style>
 <div class="gm-dash">
-  <div class="gm-head">
-    <div class="gm-title"><h2>At a Glance</h2><p>Hotel performance, forward outlook, operational readiness and management attention.</p></div>
-    <div class="gm-toggle"><button id="gmTodayBtn" class="active" onclick="window.gmSetPeriod('today')">Today</button><button id="gmMtdBtn" onclick="window.gmSetPeriod('mtd')">MTD</button><button id="gmYtdBtn" onclick="window.gmSetPeriod('ytd')">YTD</button></div>
-  </div>
-
-  <div class="gm-kpis">
-    <div class="gm-kpi"><div class="gm-label">Occupancy</div><div class="gm-value" id="dashOccupancy">0%</div><div class="gm-sub" id="gmOccSub">0 / 0 rooms</div></div>
-    <div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average Daily Rate</div></div>
-    <div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Revenue per available room</div></div>
-    <div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">LKR 0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Actual occupied-room revenue basis</div></div>
-    <div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">LKR 0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
-    <div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
-  </div>
-
-  <div class="gm-section"><h3>Commercial Outlook — Next 7 Days</h3>
-    <div class="gm-strip" style="margin-bottom:10px">
-      <div class="gm-cell"><span>Next 7 Days Avg. Occ.</span><strong id="gm7AvgOcc">0%</strong></div>
-      <div class="gm-cell"><span>Next 30 Days Occ.</span><strong id="gm30Occ">—</strong></div>
-      <div class="gm-cell"><span>7-Day Forecast Rooms Revenue</span><strong id="gm7Revenue">LKR 0.00</strong></div>
-      <div class="gm-cell"><span>Pickup — Last 7 Days</span><strong id="gmPickup">—</strong></div>
-    </div>
-    <div id="dashboard7Day"></div>
-    <div class="gm-note">Forecast revenue is based on booked room nights and their configured reservation value. It is an outlook, not a posted accounting figure.</div>
-  </div>
-
-  <div class="gm-section"><h3>Today's Hotel — Operational Snapshot</h3>
-    <div class="gm-ops">
-      <div class="gm-op"><strong id="gmOccupied">0 / 0</strong><span>Occupied</span></div>
-      <div class="gm-op"><strong id="dashArrivals">0</strong><span>Arrivals</span></div>
-      <div class="gm-op"><strong id="dashDepartures">0</strong><span>Departures</span></div>
-      <div class="gm-op"><strong id="gmStayovers">0</strong><span>Stayovers</span></div>
-      <div class="gm-op"><strong id="dashOOS">0</strong><span>OOS</span></div>
-    </div>
-  </div>
-
-  <div class="gm-two gm-section">
-    <div><h3>Housekeeping / Room Readiness</h3><div id="dashboardHousekeeping"></div><div class="gm-actions" style="margin-top:10px"><button class="btn btn-secondary btn-small" onclick="showPage('rooms')">Open Rooms</button></div><div class="gm-note" id="gmReadinessNote"></div></div>
-    <div><h3>Management Attention</h3><div class="gm-alerts" id="gmAlerts"></div></div>
-  </div>
-
-  <div class="gm-section"><h3>Guest Movement</h3>
-    <div class="gm-movement">
-      <div class="gm-move"><strong id="gmMoveArrivals">0</strong><div>Arrivals</div><small>Guests arriving today</small><button class="btn btn-secondary btn-small" style="margin-top:8px" onclick="showPage('reports');setTimeout(()=>{const e=document.getElementById('printReportType');if(e)e.value='arrivals';renderPrintableReport&&renderPrintableReport();},50)">View Arrivals</button></div>
-      <div class="gm-move"><strong id="gmMoveDepartures">0</strong><div>Departures</div><small>Guests departing today</small><button class="btn btn-secondary btn-small" style="margin-top:8px" onclick="showPage('reports');setTimeout(()=>{const e=document.getElementById('printReportType');if(e)e.value='departures';renderPrintableReport&&renderPrintableReport();},50)">View Departures</button></div>
-      <div class="gm-move"><strong id="gmMoveStayovers">0</strong><div>Stayovers</div><small>Guests staying in-house</small><button class="btn btn-secondary btn-small" style="margin-top:8px" onclick="showPage('reports');setTimeout(()=>{const e=document.getElementById('printReportType');if(e)e.value='inhouse';renderPrintableReport&&renderPrintableReport();},50)">View In-House</button></div>
-    </div>
-  </div>
-
-  <div class="gm-section"><h3>Management Controls</h3><div class="gm-actions">
-    <button class="btn btn-primary" onclick="openReservationModal()">New Reservation</button><button class="btn btn-success" onclick="showPage('checkin')">Guest Check-In</button><button class="btn btn-warning" onclick="showPage('checkout')">Guest Check-Out</button><button class="btn btn-blue" onclick="showPage('pos')">Restaurant POS</button><button class="btn btn-secondary" onclick="showPage('reports')">Reports</button>
-  </div></div>
+<div class="gm-head">
+<div class="gm-title"><h2>At a Glance</h2><p>Hotel performance, forward outlook, operational readiness and management attention.</p></div>
+<div class="gm-toggle"><button class="active" id="gmTodayBtn" onclick="window.gmSetPeriod('today')">Today</button><button id="gmMtdBtn" onclick="window.gmSetPeriod('mtd')">MTD</button><button id="gmYtdBtn" onclick="window.gmSetPeriod('ytd')">YTD</button></div>
+</div>
+<div class="gm-kpis">
+<div class="gm-kpi"><div class="gm-label">Occupancy</div><div class="gm-value" id="dashOccupancy">0%</div><div class="gm-sub" id="gmOccSub">0 / 0 rooms</div></div>
+<div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average Daily Rate</div></div>
+<div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Revenue per available room</div></div>
+<div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">LKR 0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Actual occupied-room revenue basis</div></div>
+<div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">LKR 0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
+<div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
+</div>
+<div class="gm-section"><h3>Commercial Outlook — Next 7 Days</h3>
+<div class="gm-strip" style="margin-bottom:10px">
+<div class="gm-cell"><span>Next 7 Days Avg. Occ.</span><strong id="gm7AvgOcc">0%</strong></div>
+<div class="gm-cell"><span>Next 30 Days Occ.</span><strong id="gm30Occ">—</strong></div>
+<div class="gm-cell"><span>7-Day Forecast Rooms Revenue</span><strong id="gm7Revenue">LKR 0.00</strong></div>
+<div class="gm-cell"><span>Pickup — Last 7 Days</span><strong id="gmPickup">—</strong></div>
+</div>
+<div id="dashboard7Day"></div>
+<div class="gm-note">Forecast revenue is based on booked room nights and their configured reservation value. It is an outlook, not a posted accounting figure.</div>
+</div>
+<div class="gm-section"><h3>Today's Hotel — Operational Snapshot</h3>
+<div class="gm-ops">
+<div class="gm-op"><strong id="gmOccupied">0 / 0</strong><span>Occupied</span></div>
+<div class="gm-op"><strong id="dashArrivals">0</strong><span>Arrivals</span></div>
+<div class="gm-op"><strong id="dashDepartures">0</strong><span>Departures</span></div>
+<div class="gm-op"><strong id="gmStayovers">0</strong><span>Stayovers</span></div>
+<div class="gm-op"><strong id="dashOOS">0</strong><span>OOS</span></div>
+</div>
+</div>
+<div class="gm-two gm-section">
+<div><h3>Housekeeping / Room Readiness</h3><div id="dashboardHousekeeping"></div><div class="gm-actions" style="margin-top:10px"><button class="btn btn-secondary btn-small" onclick="showPage('rooms')">Open Rooms</button></div><div class="gm-note" id="gmReadinessNote"></div></div>
+<div><h3>Management Attention</h3><div class="gm-alerts" id="gmAlerts"></div></div>
+</div>
+<div class="gm-section"><h3>Guest Movement</h3>
+<div class="gm-movement">
+<div class="gm-move"><strong id="gmMoveArrivals">0</strong><div>Arrivals</div><small>Guests arriving today</small><button class="btn btn-secondary btn-small" onclick="showPage('reports');setTimeout(()=&gt;{const e=document.getElementById('printReportType');if(e)e.value='arrivals';renderPrintableReport&amp;&amp;renderPrintableReport();},50)" style="margin-top:8px">View Arrivals</button></div>
+<div class="gm-move"><strong id="gmMoveDepartures">0</strong><div>Departures</div><small>Guests departing today</small><button class="btn btn-secondary btn-small" onclick="showPage('reports');setTimeout(()=&gt;{const e=document.getElementById('printReportType');if(e)e.value='departures';renderPrintableReport&amp;&amp;renderPrintableReport();},50)" style="margin-top:8px">View Departures</button></div>
+<div class="gm-move"><strong id="gmMoveStayovers">0</strong><div>Stayovers</div><small>Guests staying in-house</small><button class="btn btn-secondary btn-small" onclick="showPage('reports');setTimeout(()=&gt;{const e=document.getElementById('printReportType');if(e)e.value='inhouse';renderPrintableReport&amp;&amp;renderPrintableReport();},50)" style="margin-top:8px">View In-House</button></div>
+</div>
+</div>
+<div class="gm-section"><h3>Management Controls</h3><div class="gm-actions">
+<button class="btn btn-primary" onclick="openReservationModal()">New Reservation</button><button class="btn btn-success" onclick="showPage('checkin')">Guest Check-In</button><button class="btn btn-warning" onclick="showPage('checkout')">Guest Check-Out</button><button class="btn btn-blue" onclick="showPage('pos')">Restaurant POS</button><button class="btn btn-secondary" onclick="showPage('reports')">Reports</button>
+</div></div>
 </div>
 </section>
 <!-- =========================================================
@@ -884,8 +877,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
             </button>
 </div>
 </div>
-<div class="section" style="margin-top:18px" id="fnbTableServiceSection"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close & settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTableService()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
-<div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Invoices</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Latest 25 restaurant bills. Every POS order (cash, card, room charge) gets an invoice number.</div></div></div><div class="table-wrap"><table><thead><tr><th>Invoice No</th><th>Date / Time</th><th>Outlet</th><th>Customer</th><th>Method</th><th style="text-align:right">Total</th><th>Action</th></tr></thead><tbody id="posInvoiceTable"><tr><td colspan="7" class="empty">No restaurant invoices yet.</td></tr></tbody></table></div></div>
+<div class="section" id="fnbTableServiceSection" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close &amp; settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTableService()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
+<div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Invoices</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Latest 25 restaurant bills. Every POS order (cash, card, room charge) gets an invoice number.</div></div></div><div class="table-wrap"><table><thead><tr><th>Invoice No</th><th>Date / Time</th><th>Outlet</th><th>Customer</th><th>Method</th><th style="text-align:right">Total</th><th>Action</th></tr></thead><tbody id="posInvoiceTable"><tr><td class="empty" colspan="7">No restaurant invoices yet.</td></tr></tbody></table></div></div>
 </section>
 <!-- PAYMENTS -->
 <section class="page" id="payments">
@@ -958,13 +951,13 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section-header" style="margin-bottom:8px"><h3>3. Cash Count &amp; Reconciliation</h3></div>
 <div class="form-grid">
 <div class="form-group"><label>Expected Cash (LKR)</label><input id="csExpectedCash" readonly="" type="text"/></div>
-<div class="form-group"><label>Actual Cash Counted (LKR)</label><input id="csActualCash" min="0" onchange="window.calculateCashierVariance(true)" onblur="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
+<div class="form-group"><label>Actual Cash Counted (LKR)</label><input id="csActualCash" min="0" onblur="window.calculateCashierVariance(true)" onchange="window.calculateCashierVariance(true)" placeholder="Enter counted cash" step="0.01" type="number"/></div>
 <div class="form-group"><label>Variance</label><input id="csVariance" readonly="" type="text"/></div>
 </div>
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-secondary" onclick="window.calculateCashierVariance()">Calculate Variance</button><button class="btn btn-success" onclick="window.closeCashierDay()">Close Cashier Day</button></div>
 </div>
 <div class="section" style="padding:14px;background:#f8faf9;margin-top:14px">
-<div class="section-header" style="margin-bottom:8px"><h3>4. Closing Record</h3><div id="csReopenWrap" style="display:none"><button class="btn btn-warning" type="button" onclick="window.reopenCashierDay()">Reopen Cashier Day</button></div></div>
+<div class="section-header" style="margin-bottom:8px"><h3>4. Closing Record</h3><div id="csReopenWrap" style="display:none"><button class="btn btn-warning" onclick="window.reopenCashierDay()" type="button">Reopen Cashier Day</button></div></div>
 <div class="empty" id="csClosingRecord">No cashier closing recorded for this business date.</div>
 </div>
 </div>
@@ -1065,7 +1058,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Open an outlet-specific cashier shift, track that cashier's F&amp;B sales and collections, then close the shift with a physical cash count and variance.</div>
 <div class="toolbar" style="margin-bottom:10px;display:flex;gap:8px;align-items:end;flex-wrap:wrap">
 <div class="form-group" style="min-width:220px"><label>Outlet</label><select id="fnbCashierOutletSelect"></select></div>
-<div class="form-group" style="min-width:170px"><label>Opening Float</label><input id="fnbCashierOpeningFloat" type="number" min="0" step="0.01" value="0"></div>
+<div class="form-group" style="min-width:170px"><label>Opening Float</label><input id="fnbCashierOpeningFloat" min="0" step="0.01" type="number" value="0"/></div>
 <button class="btn btn-primary" onclick="fnbOpenCashierShift()">Open Shift</button>
 <button class="btn btn-secondary" onclick="fnbRefreshCashierShift()">Refresh</button>
 </div>
@@ -1127,7 +1120,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div id="experiencesList"><div class="empty">No experiences configured for this property.</div></div>
 </section>
-
 <!-- EVENT / FUNCTION BOOKING -->
 <section class="page" id="eventbookings">
 <div class="section-header">
@@ -1160,7 +1152,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="toolbar">
 <button class="btn btn-primary" onclick="openPurchaseOrderModal()">+ Purchase Order</button>
-<button type="button" id="supplierPaymentTopBtn" class="btn btn-success" data-supplier-payment="">+ Supplier Payment</button>
+<button class="btn btn-success" data-supplier-payment="" id="supplierPaymentTopBtn" type="button">+ Supplier Payment</button>
 <button class="btn btn-secondary" onclick="openGRNModal()">+ GRN</button> <button class="btn btn-secondary" onclick="openSupplierManager()">Suppliers</button> <button class="btn btn-secondary" onclick="openArticleManager()">Articles</button> <button class="btn btn-secondary top-pr-control" onclick="openPurchaseRequestModal()">+ Purchase Request</button> <button class="btn btn-secondary top-pr-control" onclick="refreshPurchasingModule()">Refresh</button>
 </div>
 </div>
@@ -1172,7 +1164,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div class="section" id="purchasingRegisterSection">
-<div class="section-header"><h3>Purchase Register</h3><div class="toolbar"><input id="purchaseSearch" oninput="renderPurchaseRegister()" placeholder="Search supplier, invoice or reference..."/><button class="btn btn-secondary" onclick="renderPurchaseRegister()">Refresh</button></div></div>
+<div class="section-header"><h3>Purchase Register</h3><div class="toolbar"><input id="purchaseSearch" oninput="renderPurchaseRegister()" placeholder="Search supplier, invoice or reference..."><button class="btn btn-secondary" onclick="renderPurchaseRegister()">Refresh</button></input></div></div>
 <div class="table-wrap"><table>
 <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Supplier</th><th>PO Reference</th><th>Invoice</th><th>Payment</th><th>Amount</th><th>Status</th></tr></thead>
 <tbody id="purchaseRegisterTable"><tr><td class="empty" colspan="9">No purchase records.</td></tr></tbody>
@@ -1314,10 +1306,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-primary" onclick="printAccountingReport('balance')">Balance Sheet</button>
 <button class="btn btn-secondary accounting-control-btn" id="acctReportCashBankBtn" type="button">Cash &amp; Bank Flow</button>
 <button class="btn btn-secondary accounting-control-btn" id="acctReportInventoryBtn" type="button">Inventory Valuation</button>
-<button class="btn btn-secondary accounting-control-btn" id="acctReportLedgerBtn" type="button">General Ledger</button><button class="btn btn-secondary accounting-control-btn" id="acctReportCityLedgerBtn" type="button">City Ledger</button><button class="btn btn-secondary accounting-control-btn" id="acctReportARAgingBtn" type="button">AR Aging</button><button class="btn btn-secondary accounting-control-btn" id="acctReportARSummaryBtn" type="button">AR Summary</button><button class="btn btn-secondary accounting-control-btn" id="acctReportAPSupplierBtn" type="button">AP / Supplier Ledger</button><button class="btn btn-secondary accounting-control-btn" id="acctReportAPAgingBtn" type="button">AP Aging</button><button class="btn btn-primary" id="budgetAccountSetupBtn" type="button" onclick="openBudgetAccountSetup();return false;">Budget Account Setup</button><button class="btn btn-primary" id="operationsBudgetBtn" type="button" onclick="showOperationsBudget();return false;">Operations Budget</button>
+<button class="btn btn-secondary accounting-control-btn" id="acctReportLedgerBtn" type="button">General Ledger</button><button class="btn btn-secondary accounting-control-btn" id="acctReportCityLedgerBtn" type="button">City Ledger</button><button class="btn btn-secondary accounting-control-btn" id="acctReportARAgingBtn" type="button">AR Aging</button><button class="btn btn-secondary accounting-control-btn" id="acctReportARSummaryBtn" type="button">AR Summary</button><button class="btn btn-secondary accounting-control-btn" id="acctReportAPSupplierBtn" type="button">AP / Supplier Ledger</button><button class="btn btn-secondary accounting-control-btn" id="acctReportAPAgingBtn" type="button">AP Aging</button><button class="btn btn-primary" id="budgetAccountSetupBtn" onclick="openBudgetAccountSetup();return false;" type="button">Budget Account Setup</button><button class="btn btn-primary" id="operationsBudgetBtn" onclick="showOperationsBudget();return false;" type="button">Operations Budget</button>
 </div>
 <div class="section" id="accountingReportViewer" style="margin-top:14px;display:block">
-  <div class="card"><div class="empty">Select an Accounting Report above to view it here.</div></div>
+<div class="card"><div class="empty">Select an Accounting Report above to view it here.</div></div>
 </div>
 <div class="section" id="generalLedgerSection" style="margin-top:14px">
 <div class="section-header"><div><h3>General Ledger</h3><div style="font-size:12px;color:#6b7280">Account-level transactions with debit, credit and running balance.</div></div>
@@ -1328,7 +1320,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="section" id="journalReviewSection" style="margin-top:14px"><div class="section-header"><div><h3>Journal Review</h3><div style="font-size:12px;color:#6b7280">End-to-end review of posted journals. Every journal must have equal total debits and credits.</div></div><div class="toolbar"><button class="btn btn-secondary accounting-control-btn" id="journalReviewRefreshBtn" type="button">Refresh</button><button class="btn btn-primary accounting-control-btn" id="journalReviewPrintBtn" type="button">Print Journal Review</button></div></div><div class="grid-4" style="margin-bottom:12px"><div class="kpi"><span>Journals</span><strong id="jrJournalCount">0</strong></div><div class="kpi"><span>Balanced</span><strong id="jrBalancedCount">0</strong></div><div class="kpi"><span>Unbalanced</span><strong id="jrUnbalancedCount">0</strong></div><div class="kpi"><span>Total Difference</span><strong id="jrDifference">LKR0.00</strong></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>Source</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Difference</th><th>Status</th></tr></thead><tbody id="journalReviewTable"><tr><td class="empty" colspan="8">No journals for the selected period.</td></tr></tbody></table></div></div>
 <div class="section">
-<div class="section-header"><h3>Chart of Accounts</h3><button class="btn btn-secondary" onclick="openExpenseModal()">Post Journal</button><button class="btn btn-secondary" type="button" onclick="openBudgetAccountSetup();return false;">Budget Account Setup</button></div>
+<div class="section-header"><h3>Chart of Accounts</h3><button class="btn btn-secondary" onclick="openExpenseModal()">Post Journal</button><button class="btn btn-secondary" onclick="openBudgetAccountSetup();return false;" type="button">Budget Account Setup</button></div>
 <div class="table-wrap"><table>
 <thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
 <tbody id="chartOfAccountsTable"><tr><td class="empty" colspan="6">No accounts.</td></tr></tbody>
@@ -1357,9 +1349,9 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="grid-4" style="margin-top:14px"><div class="card"><div class="card-label">Budget Expense</div><div class="card-value" id="obExpenseTotal">0.00</div></div><div class="card"><div class="card-label">Actual Revenue</div><div class="card-value" id="obActualRevenue">0.00</div></div><div class="card"><div class="card-label">Actual Expense</div><div class="card-value" id="obActualExpense">0.00</div></div><div class="card"><div class="card-label">Budget GOP</div><div class="card-value" id="obGop">0.00</div></div></div>
 </div>
 <div class="section" id="budgetAccountSetupPanel" style="display:none;margin-top:14px">
-<div class="section-header"><div><h3>Budget Account Setup</h3><div style="font-size:12px;color:#6b7280">Create hotel budget accounts and load a standard hotel account structure. Accounts are linked to the existing Chart of Accounts / General Ledger.</div></div><div class="toolbar"><button class="btn btn-primary" type="button" onclick="loadStandardHotelBudgetAccounts();return false;">Load Standard Hotel Accounts</button><button class="btn btn-secondary" type="button" onclick="addCustomBudgetAccount();return false;">+ Create Budget Account</button><button class="btn btn-secondary" type="button" onclick="refreshBudgetAccountSetup();return false;">Refresh</button></div></div>
+<div class="section-header"><div><h3>Budget Account Setup</h3><div style="font-size:12px;color:#6b7280">Create hotel budget accounts and load a standard hotel account structure. Accounts are linked to the existing Chart of Accounts / General Ledger.</div></div><div class="toolbar"><button class="btn btn-primary" onclick="loadStandardHotelBudgetAccounts();return false;" type="button">Load Standard Hotel Accounts</button><button class="btn btn-secondary" onclick="addCustomBudgetAccount();return false;" type="button">+ Create Budget Account</button><button class="btn btn-secondary" onclick="refreshBudgetAccountSetup();return false;" type="button">Refresh</button></div></div>
 <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Standard structure covers Rooms, Housekeeping, F&amp;B, Engineering, Sales &amp; Marketing, Administration, HR, IT, Security, Utilities and other hotel operations.</div>
-<div class="table-wrap"><table><thead><tr><th>Code</th><th>Budget / GL Account</th><th>Type</th><th>Department</th><th>Status</th></tr></thead><tbody id="budgetAccountSetupTable"><tr><td colspan="5" class="empty">No budget accounts loaded.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Code</th><th>Budget / GL Account</th><th>Type</th><th>Department</th><th>Status</th></tr></thead><tbody id="budgetAccountSetupTable"><tr><td class="empty" colspan="5">No budget accounts loaded.</td></tr></tbody></table></div>
 </div>
 </section>
 <section class="page" id="engineering">
@@ -1413,18 +1405,18 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="section" id="dataMigrationSection" style="border:2px solid #dbeafe;background:#f8fbff">
 <div class="section-header"><div><h3>Data Migration / Import Center</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Import a hotel's existing data into the selected property with preview, validation, duplicate protection and a backup step.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
-<div class="summary-box" style="margin-bottom:12px"><strong>Migration flow</strong><br>Download template → prepare CSV → Preview &amp; Validate → Download backup → Import valid records → review migration result.</div>
+<div class="summary-box" style="margin-bottom:12px"><strong>Migration flow</strong><br/>Download template → prepare CSV → Preview &amp; Validate → Download backup → Import valid records → review migration result.</div>
 <div class="form-grid">
 <div class="form-group"><label>Import Type</label><select id="migrationType" onchange="migrationTypeChanged()"><option value="guests">Guest Profiles</option><option value="rooms">Rooms / Units</option><option value="reservations">Reservations / Opening Bookings</option></select></div>
 <div class="form-group"><label>Data Mode</label><select id="migrationMode"><option value="historical">Historical records</option><option value="opening">Opening / active bookings</option></select></div>
-<div class="form-group"><label>Source System</label><input id="migrationSourceSystem" placeholder="e.g. Opera, Cloudbeds, Excel, Manual"></div>
+<div class="form-group"><label>Source System</label><input id="migrationSourceSystem" placeholder="e.g. Opera, Cloudbeds, Excel, Manual"/></div>
 <div class="form-group"><label>Source Currency</label><select id="migrationCurrency"><option value="LKR">LKR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="Other">Other</option></select></div>
-<div class="form-group"><label>Conversion Rate to LKR</label><input id="migrationFxRate" type="number" min="0.000001" step="0.000001" value="1"></div>
-<div class="form-group full"><label>CSV File</label><input id="migrationFile" type="file" accept=".csv,text/csv,.txt" onchange="handleMigrationFile(event)"><div style="font-size:11px;color:#6b7280;margin-top:5px">For Excel, save the sheet as CSV UTF-8 first. Existing PMS data is never deleted by this importer.</div></div>
+<div class="form-group"><label>Conversion Rate to LKR</label><input id="migrationFxRate" min="0.000001" step="0.000001" type="number" value="1"/></div>
+<div class="form-group full"><label>CSV File</label><input accept=".csv,text/csv,.txt" id="migrationFile" onchange="handleMigrationFile(event)" type="file"/><div style="font-size:11px;color:#6b7280;margin-top:5px">For Excel, save the sheet as CSV UTF-8 first. Existing PMS data is never deleted by this importer.</div></div>
 </div>
-<div style="margin-top:12px;padding:12px;border:1px dashed #93c5fd;border-radius:10px;background:#ffffff"><div style="font-weight:700">Safe Test Property</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">Create/select a completely separate H999 property for migration testing. Existing H001/H002 data is not modified.</div><button class="btn btn-secondary" type="button" onclick="createMigrationTestProperty()">Create / Open H999 Migration Test Hotel</button><div id="migrationTestPropertyStatus" style="font-size:12px;color:#475569;margin-top:8px"></div></div>
-<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-secondary" type="button" onclick="downloadMigrationTemplate()">Download Template</button><button class="btn btn-secondary" type="button" onclick="downloadCurrentDataBackup()">Download Current Data Backup</button><button class="btn btn-primary" type="button" onclick="previewMigration()">Preview &amp; Validate</button><button class="btn btn-success" type="button" onclick="executeMigrationImport()" id="migrationImportBtn" disabled>Import Valid Records</button></div>
-<div id="migrationFileStatus" style="font-size:12px;color:#475569;margin-top:10px">No file selected.</div><div id="migrationPreview" class="table-wrap" style="margin-top:12px;display:none"></div><div id="migrationResult" style="margin-top:12px"></div>
+<div style="margin-top:12px;padding:12px;border:1px dashed #93c5fd;border-radius:10px;background:#ffffff"><div style="font-weight:700">Safe Test Property</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">Create/select a completely separate H999 property for migration testing. Existing H001/H002 data is not modified.</div><button class="btn btn-secondary" onclick="createMigrationTestProperty()" type="button">Create / Open H999 Migration Test Hotel</button><div id="migrationTestPropertyStatus" style="font-size:12px;color:#475569;margin-top:8px"></div></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-secondary" onclick="downloadMigrationTemplate()" type="button">Download Template</button><button class="btn btn-secondary" onclick="downloadCurrentDataBackup()" type="button">Download Current Data Backup</button><button class="btn btn-primary" onclick="previewMigration()" type="button">Preview &amp; Validate</button><button class="btn btn-success" disabled="" id="migrationImportBtn" onclick="executeMigrationImport()" type="button">Import Valid Records</button></div>
+<div id="migrationFileStatus" style="font-size:12px;color:#475569;margin-top:10px">No file selected.</div><div class="table-wrap" id="migrationPreview" style="margin-top:12px;display:none"></div><div id="migrationResult" style="margin-top:12px"></div>
 </div>
 <div class="section">
 <div class="section-header"><h3>Property Settings</h3>
@@ -1432,16 +1424,16 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="form-grid">
 <div class="form-group">
 <label>Property</label>
-<input id="settingProperty"/>
-</div>
+<input id="settingProperty">
+</input></div>
 <div class="form-group">
 <label>Location</label>
-<input id="settingLocation"/>
-</div>
+<input id="settingLocation">
+</input></div>
 <div class="form-group">
 <label>Maximum Guests</label>
-<input id="settingMaxGuests" min="1" placeholder="e.g. 9" type="number"/>
-</div>
+<input id="settingMaxGuests" min="1" placeholder="e.g. 9" type="number">
+</input></div>
 <div class="form-group">
 <label>Restaurant Food Cost Markup %</label>
 <input id="settingFoodCostMarkup" min="0" placeholder="20" step="0.01" type="number"/>
@@ -1470,18 +1462,18 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section-header"><div><h3>Sri Lanka Tax &amp; Billing Configuration</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Configure customer-facing VAT/service charge separately from statutory turnover levies. Rates are property-specific.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
 <div class="form-grid">
 <div class="form-group"><label>VAT Registration</label><select id="slVatEnabled"><option value="no">Not Registered / Do Not Charge VAT</option><option value="yes">VAT Registered / Charge VAT</option></select></div>
-<div class="form-group"><label>VAT Rate %</label><input id="slVatRate" type="number" min="0" step="0.01" value="18"></div>
+<div class="form-group"><label>VAT Rate %</label><input id="slVatRate" min="0" step="0.01" type="number" value="18"/></div>
 <div class="form-group"><label>VAT Pricing</label><select id="slVatInclusive"><option value="no">VAT Exclusive — Add VAT</option><option value="yes">VAT Inclusive — Extract VAT</option></select></div>
 <div class="form-group"><label>Service Charge</label><select id="slServiceChargeEnabled"><option value="no">Disabled</option><option value="yes">Enabled</option></select></div>
-<div class="form-group"><label>Service Charge Rate %</label><input id="slServiceChargeRate" type="number" min="0" step="0.01" value="10"></div>
+<div class="form-group"><label>Service Charge Rate %</label><input id="slServiceChargeRate" min="0" step="0.01" type="number" value="10"/></div>
 <div class="form-group"><label>TDL</label><select id="slTdlEnabled"><option value="no">Reporting Only / Not on Guest Bill</option><option value="yes">Track TDL Liability</option></select></div>
-<div class="form-group"><label>TDL Standard Rate %</label><input id="slTdlRate" type="number" min="0" step="0.01" value="1"></div>
-<div class="form-group"><label>TDL Small Turnover Rate %</label><input id="slTdlSmallRate" type="number" min="0" step="0.01" value="0.5"></div>
+<div class="form-group"><label>TDL Standard Rate %</label><input id="slTdlRate" min="0" step="0.01" type="number" value="1"/></div>
+<div class="form-group"><label>TDL Small Turnover Rate %</label><input id="slTdlSmallRate" min="0" step="0.01" type="number" value="0.5"/></div>
 <div class="form-group"><label>SSCL</label><select id="slSsclEnabled"><option value="no">Reporting Only / Not on Guest Bill</option><option value="yes">Track SSCL Liability</option></select></div>
-<div class="form-group"><label>SSCL Rate %</label><input id="slSsclRate" type="number" min="0" step="0.01" value="2.5"></div>
+<div class="form-group"><label>SSCL Rate %</label><input id="slSsclRate" min="0" step="0.01" type="number" value="2.5"/></div>
 </div>
 <div class="summary-box" style="margin-top:12px"><strong>Important:</strong> VAT is a customer-facing tax when the property is VAT-registered. Service charge is separate from VAT. TDL and SSCL are statutory business levies and are tracked separately; they are not automatically added to the guest bill by this configuration.</div>
-<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-primary" type="button" onclick="saveSriLankaTaxSettings()">Save Tax &amp; Billing Settings</button></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-primary" onclick="saveSriLankaTaxSettings()" type="button">Save Tax &amp; Billing Settings</button></div>
 </div>
 <div class="section" id="roomTypesConfigurationSection">
 <div class="section-header"><div><h3>Room Type Management</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Create unlimited room types for this property. Room types are used by individual rooms and availability.</div></div><div class="toolbar"><button class="btn btn-secondary" onclick="addRoomType()">+ Add Room Type</button><button class="btn btn-primary" onclick="saveRoomTypesConfiguration()">Save Room Types</button></div></div>
@@ -1497,7 +1489,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="table-wrap">
 <table>
 <thead><tr><th>#</th><th>Room / Unit No.</th><th>Room Name</th><th>Room Type</th><th>Base Rate</th><th>Active</th></tr></thead>
-<tbody id="roomConfigurationTable"><tr><td colspan="6" class="empty">No rooms configured.</td></tr></tbody>
+<tbody id="roomConfigurationTable"><tr><td class="empty" colspan="6">No rooms configured.</td></tr></tbody>
 </table>
 </div>
 <div style="font-size:11px;color:#6b7280;margin-top:8px">Example: Room 01 → 101 / Deluxe 101 / Deluxe. Existing room records are preserved. Increasing Room Count from Property Management → Edit adds only the missing new rooms; reducing it never deletes existing rooms.</div>
@@ -1514,7 +1506,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" id="mealPlanRevenueAllocationSection" style="margin-top:12px">
 <div class="section-header">
 <div><h3>Meal Plan Revenue Allocation</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Allocate a percentage of each package to Restaurant Revenue. The guest/package total remains unchanged. Room and Restaurant revenue are posted separately in accounting.</div></div>
-<button class="btn btn-secondary" type="button" onclick="saveMealPlanRevenuePercentages()">Save Meal Plan Percentages</button>
+<button class="btn btn-secondary" onclick="saveMealPlanRevenuePercentages()" type="button">Save Meal Plan Percentages</button>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Meal Plan</th><th>Food / Restaurant %</th><th>Room Revenue %</th><th>Example at $170</th></tr></thead><tbody id="mealPlanRevenueAllocationBody"></tbody></table></div>
 <div style="font-size:11px;color:#6b7280;margin-top:8px">Default: RO 0%, BB 15%, HB 30%, FB 45%, AI 55%. Change the percentages to suit the property's accounting policy.</div>
@@ -1524,12 +1516,12 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" id="salesDistributionSection">
 <div class="section-header"><div><h3>Sales &amp; Distribution</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Configure OTA channels, travel agents and the property-specific channel manager. Settings are stored separately for each property.</div></div><span class="badge badge-blue" id="salesDistributionPropertyBadge">Current Property</span></div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
-<div class="section-header"><div><h4>OTA / Booking Channels</h4><div style="font-size:12px;color:#6b7280">Set commission and calculate the OTA selling rate from the direct/base rate.</div></div><button class="btn btn-secondary" type="button" onclick="addOTAChannel()">+ Add OTA</button></div>
-<div class="table-wrap"><table><thead><tr><th>Channel</th><th>Commission %</th><th>Calculation</th><th>Active</th><th>Action</th></tr></thead><tbody id="otaChannelsTable"><tr><td colspan="5" class="empty">No OTA channels configured.</td></tr></tbody></table></div>
+<div class="section-header"><div><h4>OTA / Booking Channels</h4><div style="font-size:12px;color:#6b7280">Set commission and calculate the OTA selling rate from the direct/base rate.</div></div><button class="btn btn-secondary" onclick="addOTAChannel()" type="button">+ Add OTA</button></div>
+<div class="table-wrap"><table><thead><tr><th>Channel</th><th>Commission %</th><th>Calculation</th><th>Active</th><th>Action</th></tr></thead><tbody id="otaChannelsTable"><tr><td class="empty" colspan="5">No OTA channels configured.</td></tr></tbody></table></div>
 </div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
-<div class="section-header"><div><h4>Travel Agents</h4><div style="font-size:12px;color:#6b7280">Manage property-specific travel agents and their commission terms.</div></div><button class="btn btn-secondary" type="button" onclick="addTravelAgent()">+ Add Travel Agent</button></div>
-<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Credit Terms</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td colspan="7" class="empty">No travel agents configured.</td></tr></tbody></table></div>
+<div class="section-header"><div><h4>Travel Agents</h4><div style="font-size:12px;color:#6b7280">Manage property-specific travel agents and their commission terms.</div></div><button class="btn btn-secondary" onclick="addTravelAgent()" type="button">+ Add Travel Agent</button></div>
+<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Credit Terms</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td class="empty" colspan="7">No travel agents configured.</td></tr></tbody></table></div>
 </div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
 <div class="section-header"><div><h4>Channel Manager</h4><div style="font-size:12px;color:#6b7280">The channel-manager subscription belongs to this property. Enter the provider and connection status here; API credentials can be connected later.</div></div></div>
@@ -1540,7 +1532,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="form-group"><label>Room / Rate Mapping Notes</label><input id="channelManagerMapping" placeholder="e.g. Deluxe → Deluxe / BB"/></div>
 </div>
 </div>
-<div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-primary" type="button" onclick="saveSalesDistribution()">Save Sales &amp; Distribution</button></div>
+<div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-primary" onclick="saveSalesDistribution()" type="button">Save Sales &amp; Distribution</button></div>
 </div>
 <div class="section" id="restaurantOutletSection"><div class="section-header"><div><h3>Restaurant / Outlet Management</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Create multiple restaurants or outlets under the same property. Each outlet has its own menu and revenue reporting.</div></div><button class="btn btn-primary" onclick="addRestaurantOutlet()">+ New Restaurant / Outlet</button></div><div id="restaurantOutletEditor"><div class="empty">No restaurant outlets configured.</div></div></div><div class="section" id="restaurantMenuSection">
 <div class="section-header">
@@ -1550,7 +1542,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
                     Each restaurant / outlet has its own menu, categories and prices. Changes apply to new POS orders only.
                 </div>
 </div>
-<button id="addPOSMenuItemBtn" type="button" class="btn btn-primary" onclick="addPOSMenuItem()">+ Add Menu Item</button>
+<button class="btn btn-primary" id="addPOSMenuItemBtn" onclick="addPOSMenuItem()" type="button">+ Add Menu Item</button>
 </div>
 <div id="restaurantMenuEditor"><div class="empty">No restaurant menu items configured for this property. Click + Add Menu Item.</div></div>
 </div>
@@ -1561,7 +1553,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div style="font-size:12px;color:#6b7280;margin-top:4px">Step 2 — Users, Properties &amp; Permissions cloud foundation.</div>
 </div>
 <div class="toolbar">
-<span id="supabaseCloudStatus" class="badge badge-gray">Not connected</span>
+<span class="badge badge-gray" id="supabaseCloudStatus">Not connected</span>
 <button class="btn btn-secondary" onclick="supabaseSignInPrompt()">Sign in to Supabase</button>
 <button class="btn btn-secondary" onclick="checkSupabaseCloudStatus()">Check Connection</button>
 <button class="btn btn-primary" onclick="syncSupabaseStep2()">Sync Cloud Data</button>
@@ -1581,8 +1573,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-primary" onclick="addProperty()">+ Add Property</button>
 <button class="btn btn-secondary" onclick="openPropertyImport()">Import Property</button>
 <button class="btn btn-secondary" onclick="syncSupabaseProperties()">Cloud Refresh</button>
-<input accept="application/json,.json" id="propertyImportFile" onchange="importPropertyFile(event)" style="display:none" type="file"/>
-</div>
+<input accept="application/json,.json" id="propertyImportFile" onchange="importPropertyFile(event)" style="display:none" type="file">
+</input></div>
 </div>
 <div id="propertyManagerList">
 <div class="table-wrap">
@@ -1597,7 +1589,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </tr>
 </thead>
 <tbody>
-
 </tbody>
 </table>
 </div></div>
@@ -1622,8 +1613,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="form-grid">
 <div class="form-group">
 <label>Licensed Hotel / Company</label>
-<input id="settingLicenseHolder" placeholder="Hotel or company name"/>
-</div>
+<input id="settingLicenseHolder" placeholder="Hotel or company name">
+</input></div>
 <div class="form-group">
 <label>License Key</label>
 <input id="settingLicenseKey" placeholder="Enter license key"/>
@@ -1638,10 +1629,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div style="margin-top:12px;padding:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;font-size:12px;color:#4b5563">
-<strong>Signature PMS Hotel Edition v2.1.0</strong><br/>
+<strong>Signature PMS Hotel Edition v2.1.0</strong><br>
         Licensed for operational use by the configured property. Keep your license key and regular backups secure.
         Support and future software updates are provided according to your commercial agreement with Signature Hospitality.
-    </div>
+    </br></div>
 <button class="btn btn-primary" onclick="saveCommercialLicense()" style="margin-top:15px">
         Save License &amp; Support Details
     </button>
@@ -1789,18 +1780,18 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="modal-box" style="max-width:900px">
 <div class="modal-header"><h3 id="eventBookingModalTitle">New Event Booking</h3><button class="close-btn" onclick="closeEventBookingModal()">×</button></div>
 <div class="form-grid">
-<div class="form-group"><label>Event / Function Name *</label><input id="eventName" placeholder="e.g. Wedding Dinner, Corporate Meeting"></div>
-<div class="form-group"><label>Customer / Company *</label><input id="eventCustomer" placeholder="Customer or company name"></div>
-<div class="form-group"><label>Contact Number</label><input id="eventContact" placeholder="Phone / WhatsApp"></div>
-<div class="form-group"><label>Email</label><input id="eventEmail" type="email" placeholder="customer@example.com"></div>
-<div class="form-group"><label>Event Date *</label><input id="eventDate" type="date"></div>
-<div class="form-group"><label>Start Time *</label><input id="eventStartTime" type="time"></div>
-<div class="form-group"><label>End Time</label><input id="eventEndTime" type="time"></div>
-<div class="form-group"><label>Venue / Function Space *</label><input id="eventVenue" placeholder="Restaurant, Garden, Conference Room"></div>
-<div class="form-group"><label>Expected Guests *</label><input id="eventGuests" type="number" min="1" step="1" value="1"></div>
-<div class="form-group"><label>Package / Service *</label><input id="eventPackage" placeholder="Wedding package / meeting package / dinner"></div>
-<div class="form-group"><label>Amount (LKR)</label><input id="eventAmount" type="number" min="0" step="0.01" value="0"></div>
-<div class="form-group"><label>Status</label><select id="eventStatus"><option>Inquiry</option><option>Tentative</option><option selected>Confirmed</option><option>Completed</option><option>Cancelled</option></select></div>
+<div class="form-group"><label>Event / Function Name *</label><input id="eventName" placeholder="e.g. Wedding Dinner, Corporate Meeting"/></div>
+<div class="form-group"><label>Customer / Company *</label><input id="eventCustomer" placeholder="Customer or company name"/></div>
+<div class="form-group"><label>Contact Number</label><input id="eventContact" placeholder="Phone / WhatsApp"/></div>
+<div class="form-group"><label>Email</label><input id="eventEmail" placeholder="customer@example.com" type="email"/></div>
+<div class="form-group"><label>Event Date *</label><input id="eventDate" type="date"/></div>
+<div class="form-group"><label>Start Time *</label><input id="eventStartTime" type="time"/></div>
+<div class="form-group"><label>End Time</label><input id="eventEndTime" type="time"/></div>
+<div class="form-group"><label>Venue / Function Space *</label><input id="eventVenue" placeholder="Restaurant, Garden, Conference Room"/></div>
+<div class="form-group"><label>Expected Guests *</label><input id="eventGuests" min="1" step="1" type="number" value="1"/></div>
+<div class="form-group"><label>Package / Service *</label><input id="eventPackage" placeholder="Wedding package / meeting package / dinner"/></div>
+<div class="form-group"><label>Amount (LKR)</label><input id="eventAmount" min="0" step="0.01" type="number" value="0"/></div>
+<div class="form-group"><label>Status</label><select id="eventStatus"><option>Inquiry</option><option>Tentative</option><option selected="">Confirmed</option><option>Completed</option><option>Cancelled</option></select></div>
 <div class="form-group full"><label>Notes</label><textarea id="eventNotes" placeholder="Menu, setup, special requirements, deposit notes, etc."></textarea></div>
 </div>
 <div id="eventBookingError" style="color:#b91c1c;font-size:13px;margin-top:10px"></div>
@@ -1846,39 +1837,39 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="form-group">
 <label>Guest Name *</label>
-<input id="guestName"/>
-</div>
+<input id="guestName">
+</input></div>
 <div class="form-group">
 <label>WhatsApp / Phone</label>
-<input id="guestPhone"/>
-</div>
+<input id="guestPhone">
+</input></div>
 <div class="form-group">
 <label>Email (required at Check-In)</label>
-<input id="guestEmail" type="email" autocomplete="email"/>
-<div id="guestEmailValidation" class="field-validation" style="display:none"></div>
-</div>
+<input autocomplete="email" id="guestEmail" type="email">
+<div class="field-validation" id="guestEmailValidation" style="display:none"></div>
+</input></div>
 <div class="form-group">
 <label>Passport / National ID (required at Check-In)</label>
-<input id="guestPassportOrNationalId" autocomplete="off"/>
-<div id="guestPassportValidation" class="field-validation" style="display:none"></div>
-</div>
+<input autocomplete="off" id="guestPassportOrNationalId">
+<div class="field-validation" id="guestPassportValidation" style="display:none"></div>
+</input></div>
 <div class="form-group">
 <label>Date of Birth (required at Check-In)</label>
-<input id="guestDateOfBirth" type="date"/>
-<div id="guestDobValidation" class="field-validation" style="display:none"></div>
-</div>
+<input id="guestDateOfBirth" type="date">
+<div class="field-validation" id="guestDobValidation" style="display:none"></div>
+</input></div>
 <div class="form-group">
 <label>Company / Corporate Account</label>
-<input id="reservationCompany" placeholder="Company name (for City Ledger / corporate billing)"/>
-</div>
+<input id="reservationCompany" placeholder="Company name (for City Ledger / corporate billing)">
+</input></div>
 <div class="form-group">
 <label>Adults</label>
-<input id="adults" min="1" onchange="calculateReservation()" type="number" value="2"/>
-</div>
+<input id="adults" min="1" onchange="calculateReservation()" type="number" value="2">
+</input></div>
 <div class="form-group">
 <label>Children</label>
-<input id="children" max="10" min="0" onchange="updateChildrenAgeFields();calculateReservation()" type="number" value="0"/>
-</div>
+<input id="children" max="10" min="0" onchange="updateChildrenAgeFields();calculateReservation()" type="number" value="0">
+</input></div>
 <div class="form-group full" id="childrenAgeGroup" style="display:none">
 <label>Children Ages</label>
 <div class="form-grid" id="childrenAgeFields" style="margin-top:0"></div>
@@ -8559,9 +8550,10 @@ function updateCalendarSummary(){
 function paymentIsRefund(p){ return String(p.type||"").toLowerCase()==="refund" || Number(p.amount||0)<0; }
 function paymentIsReceived(p){ return String(p.status||"Received").toLowerCase()!=="pending"; }
 function getPaymentsTotal(reservationId){
+    const r=reservations.find(x=>x.id===reservationId);
     return payments
         .filter(p=>p.reservationId===reservationId && paymentIsReceived(p))
-        .reduce((sum,p)=>sum+Number(p.amount||0),0);
+        .reduce((sum,p)=>sum+Number(paymentAmountLKR(p,r)||0),0);
 }
 function getPendingPaymentsTotal(reservationId){
     return payments
@@ -8893,15 +8885,6 @@ function viewFolio(reservationId){
     const paid=
         getPaymentsTotal(reservationId);
 
-    // Calculate the restaurant charge first, then calculate the total. The
-    // previous build calculated `total` before normalizing the legacy POS
-    // amount, so the modal could still display 22 instead of 7,040.
-    const normalizedRestaurant=folioRestaurantLKR(reservationId);
-    if(f && Math.abs(Number(f.restaurant||0)-normalizedRestaurant)>0.001){
-        f.restaurant=normalizedRestaurant;
-        f.total=getFolioTotal(reservationId);
-        saveData();
-    }
     const total=
         getFolioTotal(reservationId);
     const balance=
@@ -9283,6 +9266,13 @@ function viewFolio(reservationId){
     document.getElementById("folioModal")
         .classList.add("show");
 
+    // Render the optional folio extension once after the modal is visible.
+    // Do NOT use a MutationObserver here: changing innerHTML inside the extension
+    // can trigger an infinite mutation/render loop and freeze the browser.
+    setTimeout(()=>{
+        try{ if(typeof extendFolioUI==='function') extendFolioUI(); }catch(e){ console.warn('Folio extension:',e); }
+    },0);
+
 }
 
 
@@ -9305,6 +9295,9 @@ function paymentDetailsHtml(p){
 
     }
 
+
+    if(p.paymentCurrency && p.paymentAmount!=null)
+        details.push(escapeHtml(String(p.paymentCurrency).toUpperCase())+" "+Number(p.paymentAmount).toFixed(2)+" @ "+Number(p.exchangeRateAtPayment||p.settlementRate||1).toFixed(4)+" LKR");
 
     if(p.reference)
         details.push(
@@ -9333,6 +9326,70 @@ function closeFolioModal(){
 /* =========================================================
    PAYMENT MODAL
 ========================================================= */
+
+function paymentCurrencyOptions(reservation){
+    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
+    const rows=(typeof currencyRows==='function'?currencyRows():[]).filter(x=>x&&x.active!==false);
+    const codes=new Set([base,"LKR","USD","EUR"]);
+    rows.forEach(x=>codes.add(String(x.code||"").toUpperCase()));
+    const preferred=String(reservation?.currency||reservation?.guestCurrency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();
+    const ordered=[preferred,base,"USD","EUR","LKR",...Array.from(codes)];
+    return [...new Set(ordered)].filter(Boolean).map(code=>{
+        const row=rows.find(x=>String(x.code||"").toUpperCase()===code);
+        let rate=Number(row?.rate||0);
+        if(code===base||code==="LKR") rate=1;
+        if(!rate && code===String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase()) rate=Number(settings?.postingRate||settings?.settlementRate||320)||320;
+        return {code,rate:rate>0?rate:1,symbol:row?.symbol||code};
+    });
+}
+
+function paymentRateToLKR(currency){
+    const code=String(currency||"LKR").toUpperCase();
+    const base=String(settings?.baseCurrency||"LKR").toUpperCase();
+    if(code===base||code==="LKR") return 1;
+    const row=(typeof currencyRows==='function'?currencyRows():[]).find(x=>String(x.code||"").toUpperCase()===code);
+    if(row&&Number(row.rate)>0) return Number(row.rate);
+    if(code===String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase()) return Number(settings?.postingRate||settings?.settlementRate||320)||320;
+    return 1;
+}
+
+function updatePaymentCurrencyDisplay(){
+    const cur=String(document.getElementById('paymentCurrency')?.value||'LKR').toUpperCase();
+    const rate=paymentRateToLKR(cur);
+    const input=document.getElementById('paymentAmount');
+    const rateEl=document.getElementById('paymentFxRate');
+    const eqEl=document.getElementById('paymentLkrEquivalent');
+    const label=document.getElementById('paymentAmountLabel');
+    if(!input) return;
+
+    // Keep the underlying LKR value stable when the user changes currency.
+    // The displayed amount is always the amount payable in the selected currency.
+    let lkrValue=Number(input.dataset.lkrValue||0);
+    if(!Number.isFinite(lkrValue)||lkrValue<0){
+        const oldRate=Number(input.dataset.lastRate||1)||1;
+        lkrValue=Number(input.value||0)*oldRate;
+    }
+    const converted=rate>0 ? lkrValue/rate : lkrValue;
+    input.value=(cur===String(settings?.baseCurrency||"LKR").toUpperCase() ? converted.toFixed(2) : converted.toFixed(4));
+    input.dataset.lkrValue=lkrValue.toFixed(2);
+    input.dataset.lastRate=String(rate);
+
+    if(label) label.textContent='Amount Received ('+cur+') *';
+    if(rateEl) rateEl.textContent='1 '+cur+' = '+rate.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:6})+' LKR';
+    if(eqEl) eqEl.textContent='LKR Equivalent: LKR '+lkrValue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function updatePaymentAmountLKRValue(){
+    const input=document.getElementById('paymentAmount');
+    if(!input) return;
+    const cur=String(document.getElementById('paymentCurrency')?.value||'LKR').toUpperCase();
+    const rate=paymentRateToLKR(cur);
+    const amount=Number(input.value||0);
+    input.dataset.lkrValue=(amount*rate).toFixed(2);
+    input.dataset.lastRate=String(rate);
+    const eqEl=document.getElementById('paymentLkrEquivalent');
+    if(eqEl) eqEl.textContent='LKR Equivalent: LKR '+(amount*rate).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 
 function openPaymentModal(reservationId){
     if(!requireActionPermission("payments.deposit")) return;
@@ -9416,16 +9473,30 @@ function openPaymentModal(reservationId){
 
         <div class="form-group">
 
-            <label>Amount Received (LKR) *</label>
+            <label>Payment Currency</label>
+            <select id="paymentCurrency" onchange="updatePaymentCurrencyDisplay()">
+                ${paymentCurrencyOptions(r).map(x=>`<option value="${escapeHtml(x.code)}" ${String(x.code).toUpperCase()===String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||'USD').toUpperCase()?'selected':''}>${escapeHtml(x.code)}${x.code===String(settings?.baseCurrency||'LKR').toUpperCase()?' — Base Currency':''}</option>`).join('')}
+            </select>
+            <div style="font-size:11px;color:#6b7280;margin-top:5px">Foreign-currency payments are recorded in the payment currency and converted to LKR using the current payment-time rate. The rate is saved with the payment.
+            </div>
+
+        </div>
+
+        <div class="form-group">
+
+            <label id="paymentAmountLabel">Amount Received (LKR) *</label>
 
             <input type="number"
                    id="paymentAmount"
                    min="0.01"
-                   step="0.01"
-                   value="${reservationAmountLKR(r,balance).toFixed(2)}">
-            <div style="font-size:11px;color:#6b7280;margin-top:5px">
-                1 ${escapeHtml(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase())} = ${reservationSettlementRate(r).toFixed(4)} LKR · Folio balance ${money(balance)}
-            </div>
+                   step="0.0001"
+                   value="${(reservationAmountLKR(r,balance)/paymentRateToLKR(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||'USD'))).toFixed(4)}"
+                   data-lkr-value="${Number(reservationAmountLKR(r,balance)).toFixed(2)}"
+                   data-last-rate="${paymentRateToLKR(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||'USD'))}"
+                   oninput="updatePaymentAmountLKRValue()">
+            <div id="paymentFxRate" style="font-size:11px;color:#6b7280;margin-top:5px"></div>
+            <div id="paymentLkrEquivalent" style="font-size:12px;font-weight:600;margin-top:4px"></div>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px">Folio balance: ${money(balance)} (${accMoney(reservationAmountLKR(r,balance))} base value)</div>
 
         </div>
 
@@ -9551,6 +9622,7 @@ function openPaymentModal(reservationId){
 
     document.getElementById("paymentModal")
         .classList.add("show");
+    updatePaymentCurrencyDisplay();
 
 }
 
@@ -9605,33 +9677,26 @@ function savePayment(reservationId){
         ).value;
 
 
-    const settlementAmountLKR=Number(document.getElementById("paymentAmount").value||0);
+    const paymentCurrency=String(document.getElementById("paymentCurrency")?.value||"LKR").toUpperCase();
+    const foreignAmount=Number(document.getElementById("paymentAmount").value||0);
     const reservation=reservations.find(x=>x.id===reservationId);
-    const settlementRate=reservationSettlementRate(reservation);
-    const amount=settlementRate>0 ? settlementAmountLKR/settlementRate : settlementAmountLKR;
+    const settlementRate=paymentRateToLKR(paymentCurrency);
+    const settlementAmountLKR=foreignAmount*settlementRate;
+    const reservationRate=reservationSettlementRate(reservation);
+    const amount=reservationRate>0 ? settlementAmountLKR/reservationRate : settlementAmountLKR;
+    const balance=getBalance(reservationId);
+    // getBalance() is the folio outstanding balance in the PMS base currency (LKR).
+    // Do not convert it again using the reservation's guest-currency rate.
+    const balanceLKR=Number(balance||0);
 
-
-    const balance=
-        getBalance(reservationId);
-
-
-    if(settlementAmountLKR<=0){
-
-        error.textContent=
-            "Enter a valid LKR payment amount.";
-
+    if(foreignAmount<=0){
+        error.textContent="Enter a valid payment amount.";
         return;
-
     }
 
-
-    if(amount>balance+0.01){
-
-        error.textContent=
-            "Payment cannot be greater than the outstanding balance.";
-
+    if(settlementAmountLKR>balanceLKR+0.02){
+        error.textContent="Payment cannot be greater than the outstanding balance.";
         return;
-
     }
 
 
@@ -9676,6 +9741,16 @@ function savePayment(reservationId){
         error.textContent="This payment reference already exists. Please use a unique reference.";
         return;
     }
+
+    const confirmMessage =
+        "Confirm payment?\n\n" +
+        "Received: " + paymentCurrency + " " + Number(foreignAmount).toFixed(4) + "\n" +
+        "Exchange rate: 1 " + paymentCurrency + " = LKR " + Number(settlementRate).toFixed(4) + "\n" +
+        "LKR equivalent: LKR " + Number(settlementAmountLKR).toFixed(2) + "\n\n" +
+        "Click OK to save this payment, or Cancel to return without saving.";
+
+    if(!window.confirm(confirmMessage)) return;
+
     if(window.__signatureSavingPayment){
         error.textContent="Payment is already being saved. Please wait.";
         return;
@@ -9708,8 +9783,11 @@ function savePayment(reservationId){
         method,
 
         amount,
+        paymentCurrency,
+        paymentAmount:Number(foreignAmount.toFixed(2)),
+        exchangeRateAtPayment:Number(settlementRate),
         settlementAmountLKR:Number(settlementAmountLKR.toFixed(2)),
-        settlementRate,
+        settlementRate:Number(settlementRate),
         settlementCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),
 
         status:
@@ -9754,7 +9832,7 @@ function savePayment(reservationId){
 
     logAudit("PAYMENT_CREATED",reference,"Payment recorded: "+amount,currentPropertyId);
     alert(
-        "Payment recorded successfully.\n\nReceived: LKR "+Number(settlementAmountLKR).toFixed(2)+"\nFolio value: "+money(amount)
+        "Payment recorded successfully.\n\nReceived: "+paymentCurrency+" "+Number(foreignAmount).toFixed(2)+"\nRate: 1 "+paymentCurrency+" = LKR "+Number(settlementRate).toFixed(4)+"\nLKR equivalent: LKR "+Number(settlementAmountLKR).toFixed(2)+"\nFolio value: "+money(amount)
     );
 
     } catch (err) {
@@ -18527,7 +18605,6 @@ async function hydrateSupabaseReservations(){
 }
 
 </script>
-
 <script>
 /* =========================================================
    SUPABASE CLOUD — STEP 3.4 FRONT OFFICE
@@ -18912,7 +18989,6 @@ window.storesCloudRefreshClick = async function(btn){
   setTimeout(()=>{if(!started)scheduleStartRetry();},3500);
 })();
 </script>
-
 <script>
 /* v2.1.163 — Operations Budget & Forecast, isolated from existing accounting workflows */
 (function(){
@@ -18966,7 +19042,6 @@ window.storesCloudRefreshClick = async function(btn){
  document.addEventListener('change',e=>{if(e.target?.id==='obProperty'||e.target?.id==='obYear')obRefresh()});
 })()
 </script>
-
 <script id="budget-account-final-real-fix-v176">
 (function(){
 'use strict';
@@ -19039,7 +19114,6 @@ document.addEventListener('change',function(e){if(e.target?.classList?.contains(
 document.addEventListener('click',function(e){const b=e.target?.closest?.('button');if(!b)return;if(b.textContent?.trim()==='Load Standard Hotel Accounts'){e.preventDefault();e.stopImmediatePropagation();load(false)}},true);
 })();
 </script>
-
 <script>
 /* =========================================================
    v2.1.187 — MULTI-PROPERTY ROOM SCOPE REPAIR
@@ -19100,8 +19174,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   window.repairMultiPropertyRoomScope187=repairCloudRoomScope187;
 })();
 </script>
-
-
 <script>
 /* v2.1.190 — FORCE RESERVATION BOOKING NUMBER MIGRATION
    Runs after login/property hydration as well as when Reservations is opened.
@@ -19369,8 +19441,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   });
 })();
 </script>
-
-
 <script id="v2-1-241-property-base-rate-ui-sync">
 /* v2.1.241 — PROPERTY-SPECIFIC BASE RATE UI SYNC
    Fix: the injected Local/Foreign base-rate fields were only populated when
@@ -19421,7 +19491,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   setTimeout(syncCurrentPropertyBaseRateFields,0);
 })();
 </script>
-
 <script id="v2-1-244-config-source-of-truth-final">
 /* v2.1.244 — CONFIG SOURCE OF TRUTH FINAL
    Supabase properties.settings_data is authoritative for Property Settings,
@@ -19473,7 +19542,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   }
 })();
 </script>
-
 <script id="v2-1-246-config-restaurant-source-of-truth">
 /* v2.1.246 — CONFIG + RESTAURANT CLOUD SOURCE OF TRUTH
    Targeted fix only. Reservations, Rooms, Accounting and POS transaction flows
@@ -19543,7 +19611,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   window.__signatureV247CloudWriteVerify=true;
 })();
 </script>
-
 <script id="v2-1-261-auto-cloud-property-refresh">
 /* v2.1.261 — AUTO CLOUD PROPERTY HYDRATION AFTER LOGIN
    Keep the v2.1.260 location normalization and Manager access fixes unchanged.
@@ -19595,7 +19662,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   };
 })();
 </script>
-
 <script id="v2-1-282-h999-safe-duplicate-cleanup">
 /* v2.1.282 — H999 SAFE DUPLICATE CLEANUP
    Temporary, property-scoped cleanup for the Migration Test Hotel only.
@@ -19823,7 +19889,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   setInterval(addResetButton,1500);
 })();
 </script>
-
 <script id="v288-h999-migration-reset-hard-fix">
 (function(){
   async function hardResetH999(){
@@ -19984,7 +20049,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   setInterval(wire,1000);
 })();
 </script>
-
 <script id="v2-1-290-h999-cloud-sync-fix">
 /* v2.1.290 — H999 migration cloud sync fix.
    Do not send source_booking_no as a top-level column because the existing
@@ -19992,7 +20056,6 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
    Keep migrationSourceBookingNo inside reservation_data for duplicate checks. */
 window.__signatureV290H999CloudSyncFix=true;
 </script>
-
 <script id="v2-1-293-migration-fnb-purchasing-stores-hr">
 /* v2.1.293 — Migration Center: Restaurant Menu + Suppliers + Store Articles + Opening Stock + HR Employees
    Extends the tested v2.1.290 migration flow without changing Guest/Room/Reservation logic.
@@ -20231,7 +20294,6 @@ window.__signatureV290H999CloudSyncFix=true;
   };
 })();
 </script>
-
 <script id="v2-1-297-accounting-opening-balances">
 /* v2.1.297 — Accounting Opening Balances migration.
    Built on the verified v2.1.296 base. Does not alter login or prior migration types. */
@@ -20331,7 +20393,6 @@ window.__signatureV290H999CloudSyncFix=true;
  };
 })();
 </script>
-
 <!-- SIGNATURE PMS v2.1.311 — CENTRAL TAX SETTINGS + FOLIO DISCOUNT -->
 <script>
 (function(){
@@ -20386,8 +20447,25 @@ function loadSriLankaTaxSettings(){
 
 window.applyFolioDiscount=function(id){
   if(typeof requireActionPermission==='function'&&!requireActionPermission('folios.discount'))return;
-  const r=reservations.find(x=>x.id===id),f=typeof getFolio==='function'?getFolio(id):null;
-  if(!r||!f){alert('Guest folio not found.');return;}
+  const r=reservations.find(x=>String(x.id||'')===String(id||''));
+  if(!r){alert('Reservation not found.');return;}
+  let f=typeof getFolio==='function'?getFolio(r.id):null;
+  if(!f){
+    f={
+      id:'f_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      reservationId:r.id,
+      restaurant:Number(folioRestaurantLKR==='function'?folioRestaurantLKR(r.id):0)||0,
+      extras:0,
+      extraItems:[],
+      discounts:0,
+      discountItems:[],
+      taxes:0,
+      serviceCharges:0,
+      total:Number(r.total||r.totalAmount||0)||0,
+      createdAt:typeof localDateTime==='function'?localDateTime():new Date().toISOString()
+    };
+    folios.push(f);
+  }
   const mode=prompt('Discount type: enter P for Percentage or F for Fixed LKR amount.','P');
   if(mode===null)return;
   const m=String(mode).trim().toUpperCase();
@@ -20434,8 +20512,7 @@ function extendFolioUI(){
     (items.length?'<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Type</th><th>Reason</th><th>Amount</th><th>By</th><th></th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(x.type||'')+'</td><td>'+escapeHtml(x.reason||'')+'</td><td>LKR '+num(x.amount).toFixed(2)+'</td><td>'+escapeHtml(x.addedBy||'')+'</td><td><button class="btn btn-danger btn-small" onclick="removeFolioDiscount(\''+rid+'\',\''+x.id+'\')">Remove</button></td></tr>').join('')+'</tbody></table></div>':'<div style="font-size:12px;color:#64748b">No folio discounts applied.</div>');
 }
 
-const observer=new MutationObserver(()=>{try{extendFolioUI();}catch(e){console.warn('Folio extension:',e);}});
-function boot(){loadSriLankaTaxSettings();const h=document.getElementById('folioModalContent');if(h)observer.observe(h,{childList:true,subtree:true});setTimeout(extendFolioUI,200);}
+function boot(){loadSriLankaTaxSettings();}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 function calculateSriLankaTaxPreview(){
   const p=taxCfg(currentProp());
@@ -20445,7 +20522,6 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 })();
 </script>
 </body></html>
-
 <style id="menu-management-button-hardening-v18">
 #restaurantMenuSection{position:relative!important;z-index:100!important;pointer-events:auto!important;}
 #restaurantMenuSection .section-header{position:relative!important;z-index:101!important;pointer-events:auto!important;}
@@ -20681,7 +20757,6 @@ function boot(){injectInternalStayFields();injectPOSInternalFields();window.upda
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
-
 <script>
 /* =========================================================
    LOCAL / FOREIGN ROOM RATE ENGINE
@@ -20851,7 +20926,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensureDual();injectRateBaseFields();renderRoomRatePlans();});else{ensureDual();injectRateBaseFields();renderRoomRatePlans();}
 })();
 </script>
-
 <script>
 /* v2.1.157 — Property Settings + Rate Plan edit protection
    Prevent background render/cloud refresh from replacing values while an
@@ -20930,7 +21004,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 })();
 </script>
-
 <script id="v2-1-193-cloud-source-of-truth">
 /* v2.1.193 — CLOUD SOURCE OF TRUTH ROOT FIX
    The verified v2.1.191 base still merged cloud data into the browser's old
@@ -21218,7 +21291,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   };
 })();
 </script>
-
 <script id="v2-1-240-property-settings-rateplan-cloud-persistence">
 /* v2.1.240 — PROPERTY SETTINGS + RATE PLAN CLOUD PERSISTENCE
    Keep the proven v2.1.239 room/reservation/user cloud flows unchanged.
@@ -21503,7 +21575,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   window.__signatureSavePropertyConfigToCloud=savePropertyConfigToCloud;
 })();
 </script>
-
 <script id="v2-1-243-config-persistence-hardening">
 /* v2.1.244 — PROPERTY SETTINGS + RATE PLAN PERSISTENCE HARDENING
    Scope: only Property Settings and Rate Plans.
@@ -21568,9 +21639,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 })();
 </script>
-
-
-
 <script>
 /* v2.1.263 — DYNAMIC FX RATE ONLY
    This patch is intentionally isolated from login/auth/Supabase initialization.
@@ -21661,7 +21729,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else installFXPanel();
 })();
 </script>
-
 <script id="v2-1-264-rateplan-fx-live">
 /* v2.1.264 — RATE PLAN FX LIVE SYNC ONLY
    Keeps the foreign Rate Plan price in USD while recalculating its LKR
@@ -21803,7 +21870,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else setTimeout(boot,0);
 })();
 </script>
-
 <script id="v2-1-264-rateplan-fx-cloud-source">
 (function(){
   'use strict';
@@ -21845,8 +21911,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   setTimeout(()=>cloudFXSource('read'),1800);
 })();
 </script>
-
-
 <script id="v2-1-265-property-recovery-final">
 /* =========================================================
    v2.1.265 — PROPERTY RECOVERY SAFETY NET
@@ -21912,7 +21976,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   setTimeout(ensureLegacyVisible,3500);
 })();
 </script>
-
 <script id="v2-1-267-final-lkr-rate-architecture">
 /* =========================================================
    v2.1.267 — FINAL LKR RATE ARCHITECTURE
@@ -22181,7 +22244,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else setTimeout(boot,0);
 })();
 </script>
-
 <script id="v2-1-268-property-base-rate-save-fix">
 /* v2.1.268 — Property Settings Base Rate Save Fix
    Final source of truth:
@@ -22317,7 +22379,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   setTimeout(fixLabelsAndFields,1200);
 })();
 </script>
-
 <script id="v2-1-276-migration-validation-single-source">
 /* v2.1.277 — MIGRATION DUPLICATE PROTECTION + VALIDATION SINGLE SOURCE OF TRUTH
    Fixes migration preview rows showing Error/undefined even when validation
