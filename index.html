@@ -1373,36 +1373,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" style="margin-top:16px"><div class="section-header"><div><h3>Engineering Team</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Active Engineering employees from HR can be assigned to jobs.</div></div></div><div class="table-wrap"><table><thead><tr><th>Employee No.</th><th>Name</th><th>Department</th><th>Position</th><th>Status</th></tr></thead><tbody id="engineeringTeamTable"><tr><td class="empty" colspan="5">No active Engineering employees found in HR.</td></tr></tbody></table></div></div>
 </section>
 <section class="page active" id="settings">
-<div class="section" id="customerGeneratorSection" style="border:2px solid #111827;background:#f9fafb">
-<div class="section-header">
-<div>
-<h3>Customer Edition Generator</h3>
-<div style="font-size:12px;color:#6b7280;margin-top:4px">Create a clean, hotel-specific Signature PMS HTML edition from this Master.</div>
-</div>
-<span class="badge badge-green">MASTER ONLY</span>
-</div>
-<div class="form-grid">
-<div class="form-group"><label>Hotel / Property Name</label><input id="genProperty" value=""/></div>
-<div class="form-group"><label>Location</label><input id="genLocation" value="Hikkaduwa, Sri Lanka"/></div>
-<div class="form-group"><label>Currency Symbol</label><input id="genCurrency" value="$"/></div>
-<div class="form-group"><label>Maximum Guests</label><input id="genMaxGuests" min="1" type="number" value="9"/></div>
-<div class="form-group"><label>Number of Rooms / Units</label><input id="genRoomCount" min="1" type="number" value="4"/></div>
-<div class="form-group"><label>Individual Room Rate / Night</label><input id="genRoomRate" min="0" type="number" value="0"/></div>
-<div class="form-group"><label>Entire Villa — Local Rate / Night</label><input id="genVillaLocal" min="0" type="number" value="0"/></div>
-<div class="form-group"><label>Entire Villa — Foreign Rate / Night</label><input id="genVillaForeign" min="0" type="number" value="260"/></div>
-<div class="form-group"><label>Restaurant Food Cost Markup %</label><input id="genMarkup" min="0" step="0.01" type="number" value="20"/></div>
-<div class="form-group"><label>Tea / Coffee Included</label><select id="genTeaCoffee"><option selected="" value="yes">Yes</option><option value="no">No</option></select></div>
-<div class="form-group"><label>Booking Types</label><select id="genBookingTypes"><option selected="" value="room-villa">Individual Rooms + Entire Villa</option><option value="villa">Entire Villa Only</option><option value="room">Individual Rooms Only</option></select></div>
-<div class="form-group"><label>License Holder</label><input id="genLicenseHolder" value=""/></div>
-<div class="form-group"><label>License Key</label><input id="genLicenseKey" value=""/></div>
-<div class="form-group"><label>Support Contact</label><input id="genSupport" value="Signature Hospitality Sri Lanka"/></div>
-<div class="form-group"><label>Installation ID</label><input id="genInstallation" value=""/></div>
-</div>
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:15px">
-<button class="btn btn-primary" onclick="generateCustomerEdition()">Generate Customer Edition</button>
-</div>
-<div style="font-size:12px;color:#6b7280;margin-top:10px">The generated file starts with one clean property and separate storage keys, so it will not inherit Master/demo reservations, guests, folios or payments.</div>
-</div>
 <div class="section" id="dataMigrationSection" style="border:2px solid #dbeafe;background:#f8fbff">
 <div class="section-header"><div><h3>Data Migration / Import Center</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Import a hotel's existing data into the selected property with preview, validation, duplicate protection and a backup step.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
 <div class="summary-box" style="margin-bottom:12px"><strong>Migration flow</strong><br/>Download template → prepare CSV → Preview &amp; Validate → Download backup → Import valid records → review migration result.</div>
@@ -1414,7 +1384,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="form-group"><label>Conversion Rate to LKR</label><input id="migrationFxRate" min="0.000001" step="0.000001" type="number" value="1"/></div>
 <div class="form-group full"><label>CSV File</label><input accept=".csv,text/csv,.txt" id="migrationFile" onchange="handleMigrationFile(event)" type="file"/><div style="font-size:11px;color:#6b7280;margin-top:5px">For Excel, save the sheet as CSV UTF-8 first. Existing PMS data is never deleted by this importer.</div></div>
 </div>
-<div style="margin-top:12px;padding:12px;border:1px dashed #93c5fd;border-radius:10px;background:#ffffff"><div style="font-weight:700">Safe Test Property</div><div style="font-size:12px;color:#64748b;margin:4px 0 8px">Create/select a completely separate H999 property for migration testing. Existing H001/H002 data is not modified.</div><button class="btn btn-secondary" onclick="createMigrationTestProperty()" type="button">Create / Open H999 Migration Test Hotel</button><div id="migrationTestPropertyStatus" style="font-size:12px;color:#475569;margin-top:8px"></div></div>
+<div style="margin-top:12px;padding:12px;border:1px solid #bfdbfe;border-radius:10px;background:#ffffff"><div class="form-group" style="margin:0"><label>Destination Property</label><select id="migrationDestinationProperty" onchange="migrationDestinationChanged(this.value)"></select><div style="font-size:11px;color:#64748b;margin-top:5px">First create the property in Property Management. Then select that property here. Migration is never hard-coded to H999.</div></div></div>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-secondary" onclick="downloadMigrationTemplate()" type="button">Download Template</button><button class="btn btn-secondary" onclick="downloadCurrentDataBackup()" type="button">Download Current Data Backup</button><button class="btn btn-primary" onclick="previewMigration()" type="button">Preview &amp; Validate</button><button class="btn btn-success" disabled="" id="migrationImportBtn" onclick="executeMigrationImport()" type="button">Import Valid Records</button></div>
 <div id="migrationFileStatus" style="font-size:12px;color:#475569;margin-top:10px">No file selected.</div><div class="table-wrap" id="migrationPreview" style="margin-top:12px;display:none"></div><div id="migrationResult" style="margin-top:12px"></div>
 </div>
@@ -20607,6 +20577,80 @@ function calculateSriLankaTaxPreview(){
 window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 })();
 </script>
+
+<script id="signature-migration-clean-final">
+(function(){
+  'use strict';
+  if(window.__signatureMigrationCleanFinal)return;
+  window.__signatureMigrationCleanFinal=true;
+
+  const TEMPLATE_MAP={
+    guests:{file:'Signature_PMS_guest_profiles_import_template.csv',headers:['guest_id','guest_name','phone','email','passport_or_national_id','date_of_birth','country','company_name','notes'],sample:['G-OLD-001','John Smith','+1 555 0100','john@example.com','P123456','1985-05-12','USA','','VIP guest']},
+    rooms:{file:'Signature_PMS_rooms_import_template.csv',headers:['room_number','room_name','room_type','base_rate_lkr','active','housekeeping_status'],sample:['101','Deluxe 101','Deluxe','12000','true','clean']},
+    reservations:{file:'Signature_PMS_reservations_import_template.csv',headers:['booking_no','guest_name','phone','email','passport_or_national_id','guest_type','room_number','check_in','check_out','adults','children','meal_plan','total','currency','status','notes'],sample:['OLD-2026-0001','John Smith','+1 555 0100','john@example.com','P123456','Foreign','101','2026-11-05','2026-11-07','2','0','BB','24000','LKR','Confirmed','Imported opening booking']},
+    restaurant_menu:{file:'Signature_PMS_restaurant_menu_import_template.csv',headers:['outlet_name','item_code','item_name','category','selling_price_lkr','active'],sample:['Main Restaurant','MENU-001','Chicken Fried Rice','Main Course','2500','true']},
+    suppliers:{file:'Signature_PMS_suppliers_import_template.csv',headers:['supplier_code','supplier_name','contact_person','phone','email','payment_terms','tax_no','active','notes'],sample:['SUP-001','ABC Foods','Kamal Perera','0771111111','abc@example.com','30','','true','Imported supplier']},
+    articles:{file:'Signature_PMS_inventory_articles_import_template.csv',headers:['article_code','article_name','category','unit','default_cost_lkr','reorder_level','active'],sample:['FOOD-001','Rice','Food','kg','450','10','true']},
+    opening_stock:{file:'Signature_PMS_opening_stock_import_template.csv',headers:['article_code','quantity','unit_cost_lkr','stock_date','reference','notes'],sample:['FOOD-001','100','450','2026-10-01','OPEN-001','Opening stock balance']},
+    employees:{file:'Signature_PMS_employees_import_template.csv',headers:['employee_no','employee_name','department','position','join_date','basic_salary_lkr','allowances_lkr','ot_rate_lkr','phone','email','bank_details','status','notes'],sample:['EMP-0001','Nimal Perera','Front Office','Receptionist','2026-01-01','85000','10000','500','0771234567','nimal@example.com','Bank / Account','Active','Imported employee']},
+    accounting_opening_balances:{file:'Signature_PMS_accounting_opening_balances_template.csv',headers:['account_code','amount_lkr','side','opening_date','reference','notes'],sample:['1000','50000','Debit','2026-10-01','OPEN-ACC-001','Opening cash balance']},
+    accounting_accounts:{file:'Signature_PMS_accounting_accounts_import_template.csv',headers:['account_code','account_name','account_type','opening_balance_lkr','opening_balance_side','active','notes'],sample:['6000','Laundry & Dry Cleaning','Expense','10000','Debit','true','Imported chart account']}
+  };
+
+  function csv(rows){return rows.map(r=>r.map(v=>{const x=String(v==null?'':v);return /[",\r\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;}).join(',')).join('\r\n')+'\r\n';}
+  function forceCsvDownload(name,text){
+    try{
+      const blob=new Blob(['\uFEFF',text],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download=name; a.style.display='none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){a.remove();try{URL.revokeObjectURL(url);}catch(e){}},1500);
+      return true;
+    }catch(e){
+      try{
+        const data='data:text/csv;charset=utf-8,'+encodeURIComponent('\uFEFF'+text);
+        const a=document.createElement('a');a.href=data;a.download=name;a.style.display='none';
+        document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),1000);return true;
+      }catch(err){alert('CSV template download failed: '+(err?.message||err));return false;}
+    }
+  }
+
+  function syncDestination(){
+    const dest=document.getElementById('migrationDestinationProperty');
+    const top=document.getElementById('propertySwitcher');
+    if(!dest||!top)return;
+    dest.innerHTML=Array.from(top.options).map(o=>`<option value="${String(o.value).replace(/"/g,'&quot;')}">${typeof escapeHtml==='function'?escapeHtml(o.textContent):o.textContent}</option>`).join('');
+    if(currentPropertyId)dest.value=String(currentPropertyId);
+    dest.disabled=top.disabled||!dest.options.length;
+  }
+  window.migrationDestinationChanged=function(id){
+    const top=document.getElementById('propertySwitcher');
+    if(!top)return;
+    if(String(top.value)!==String(id))top.value=id;
+    if(typeof window.switchProperty==='function')window.switchProperty(id);
+    setTimeout(syncDestination,50);
+  };
+  const originalSwitch=window.switchProperty;
+  if(typeof originalSwitch==='function'){
+    window.switchProperty=function(id){
+      const r=originalSwitch.apply(this,arguments);
+      setTimeout(syncDestination,50);
+      return r;
+    };
+  }
+  window.downloadMigrationTemplate=function(){
+    const t=document.getElementById('migrationType')?.value||'guests';
+    const x=TEMPLATE_MAP[t];
+    if(!x){alert('Template is not available for this import type.');return;}
+    forceCsvDownload(x.file,csv([x.headers,x.sample]));
+  };
+  function boot(){syncDestination();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+  setTimeout(syncDestination,300);setTimeout(syncDestination,1200);
+})();
+</script>
 </body></html>
 <style id="menu-management-button-hardening-v18">
 #restaurantMenuSection{position:relative!important;z-index:100!important;pointer-events:auto!important;}
@@ -22616,5 +22660,99 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
      migrationState.validRows=[];const b=document.getElementById('migrationImportBtn');if(b)b.disabled=true;
    }catch(e){console.error('v2.1.296 accounting migration failed',e);alert('Migration failed safely: '+(e?.message||e));}
  };
+})();
+</script>
+<script id="signature-migration-destination-final-fix">
+(function(){
+  'use strict';
+  function fill(){
+    const dest=document.getElementById('migrationDestinationProperty');
+    if(!dest)return;
+    let props=[];
+    try{ if(typeof getAccessibleProperties==='function'){ const x=getAccessibleProperties(); if(Array.isArray(x)) props=x; } }catch(e){}
+    const top=document.getElementById('propertySwitcher');
+    if(!props.length && top && top.options.length){
+      props=Array.from(top.options).map(o=>({id:o.value,name:o.textContent}));
+    }
+    const current=String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:(top&&top.value||''));
+    const html=props.map(p=>{
+      const id=String(p.id||p.propertyId||p.value||'');
+      const name=String(p.property||p.name||p.propertyName||p.label||p.property_code||p.code||'');
+      return id ? '<option value="'+id.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'">'+(typeof escapeHtml==='function'?escapeHtml(name):name.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])))+'</option>' : '';
+    }).join('');
+    if(dest.innerHTML!==html)dest.innerHTML=html;
+    if(current && Array.from(dest.options).some(o=>String(o.value)===current)) dest.value=current;
+    dest.disabled=dest.options.length===0;
+  }
+  function start(){
+    fill();
+    const top=document.getElementById('propertySwitcher');
+    if(top && window.MutationObserver){
+      new MutationObserver(fill).observe(top,{childList:true,subtree:true});
+    }
+    let n=0; const timer=setInterval(()=>{fill(); if(++n>=30)clearInterval(timer);},500);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
+  window.addEventListener('load',fill);
+})();
+</script>
+
+
+<style id="signature-migration-final-cleanup">
+/* Migration Center final cleanup: remove legacy H999 reset controls only. */
+button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H999ResetBtn { display:none !important; }
+</style>
+<script id="signature-migration-final-native-template-download">
+(function(){
+  'use strict';
+  const MAP={
+    guests:{file:'Signature_PMS_guest_profiles_import_template.csv',h:['guest_id','guest_name','phone','email','passport_or_national_id','date_of_birth','country','company_name','notes'],s:['G-OLD-001','John Smith','+1 555 0100','john@example.com','P123456','1985-05-12','USA','','VIP guest']},
+    rooms:{file:'Signature_PMS_rooms_import_template.csv',h:['room_number','room_name','room_type','base_rate_lkr','active','housekeeping_status'],s:['101','Deluxe 101','Deluxe','12000','true','clean']},
+    reservations:{file:'Signature_PMS_reservations_import_template.csv',h:['booking_no','guest_name','phone','email','passport_or_national_id','guest_type','room_number','check_in','check_out','adults','children','meal_plan','total','currency','status','notes'],s:['OLD-2026-0001','John Smith','+1 555 0100','john@example.com','P123456','Foreign','101','2026-11-05','2026-11-07','2','0','BB','24000','LKR','Confirmed','Imported opening booking']},
+    restaurant_menu:{file:'Signature_PMS_restaurant_menu_import_template.csv',h:['outlet_name','item_code','item_name','category','selling_price_lkr','active'],s:['Main Restaurant','MENU-001','Chicken Fried Rice','Main Course','2500','true']},
+    suppliers:{file:'Signature_PMS_suppliers_import_template.csv',h:['supplier_code','supplier_name','contact_person','phone','email','payment_terms','tax_no','active','notes'],s:['SUP-001','ABC Foods','Kamal Perera','0771111111','abc@example.com','30','','true','Imported supplier']},
+    articles:{file:'Signature_PMS_inventory_articles_import_template.csv',h:['article_code','article_name','category','unit','default_cost_lkr','reorder_level','active'],s:['FOOD-001','Rice','Food','kg','450','10','true']},
+    opening_stock:{file:'Signature_PMS_opening_stock_import_template.csv',h:['article_code','quantity','unit_cost_lkr','stock_date','reference','notes'],s:['FOOD-001','100','450','2026-10-01','OPEN-001','Opening stock balance']},
+    employees:{file:'Signature_PMS_employees_import_template.csv',h:['employee_no','employee_name','department','position','join_date','basic_salary_lkr','allowances_lkr','ot_rate_lkr','phone','email','bank_details','status','notes'],s:['EMP-0001','Nimal Perera','Front Office','Receptionist','2026-01-01','85000','10000','500','0771234567','nimal@example.com','Bank / Account','Active','Imported employee']},
+    accounting_opening_balances:{file:'Signature_PMS_accounting_opening_balances_template.csv',h:['account_code','amount_lkr','side','opening_date','reference','notes'],s:['1000','50000','Debit','2026-10-01','OPEN-ACC-001','Opening cash balance']},
+    accounting_accounts:{file:'Signature_PMS_accounting_accounts_import_template.csv',h:['account_code','account_name','account_type','opening_balance_lkr','opening_balance_side','active','notes'],s:['6000','Laundry & Dry Cleaning','Expense','10000','Debit','true','Imported chart account']}
+  };
+  function q(v){var x=String(v==null?'':v);return /[",\r\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;}
+  function csv(x){return [x.h,x.s].map(r=>r.map(q).join(',')).join('\r\n')+'\r\n';}
+  function setup(){
+    // Remove any legacy H999 reset button, including buttons re-created by old interval code.
+    document.querySelectorAll('button').forEach(function(b){
+      var t=(b.textContent||'').trim().toUpperCase(), id=(b.id||'').toUpperCase();
+      if(t.includes('H999') && (t.includes('RESET') || id.includes('H999RESET'))) b.remove();
+    });
+    var old=document.querySelector('#dataMigrationSection button[onclick="downloadMigrationTemplate()"]');
+    if(!old)return;
+    var a=document.getElementById('migrationTemplateDirectLink');
+    if(!a){
+      a=document.createElement('a');
+      a.id='migrationTemplateDirectLink';
+      a.className=old.className;
+      a.style.textDecoration='none';
+      a.style.display='inline-flex';
+      a.style.alignItems='center';
+      a.style.justifyContent='center';
+      old.parentNode.insertBefore(a,old);
+      old.remove();
+    }
+    var type=document.getElementById('migrationType')?.value||'guests';
+    var x=MAP[type]||MAP.guests;
+    a.textContent='Download Template';
+    a.download=x.file;
+    a.href='data:text/csv;charset=utf-8,'+encodeURIComponent('\uFEFF'+csv(x));
+    a.title='Download '+x.file;
+  }
+  function observe(){
+    setup();
+    var mt=document.getElementById('migrationType');
+    if(mt)mt.addEventListener('change',setup);
+    if(window.MutationObserver)new MutationObserver(function(){setup();}).observe(document.body,{childList:true,subtree:true});
+    setInterval(setup,1000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe);else observe();
 })();
 </script>
