@@ -21023,7 +21023,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const PAYMENT_PREFIX='signature_pms_fnb_payment_';
   const POLL_MS=5000;
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
-  function pid(){try{return String(window.currentPropertyId||'')}catch(e){return ''}}
+  function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
   async function uid(){try{const c=client();if(!c)return '';const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
   function samePid(x){return String(x?.propertyId||'')===pid()}
   async function put(key,data){
@@ -21045,20 +21045,22 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   async function publishSale(sale){return sale&&samePid(sale)?put(SALE_PREFIX+String(sale.id),sale):false}
   async function publishPayment(payment){return payment&&samePid(payment)?put(PAYMENT_PREFIX+String(payment.id),payment):false}
   function mergeSales(incoming){
-    const arr=Array.isArray(window.sales)?window.sales:[];
+    const arr=Array.isArray(sales)?sales:[];
     const byId=new Map(arr.filter(s=>samePid(s)).map(s=>[String(s.id),s]));
     incoming.filter(s=>s&&samePid(s)).forEach(s=>byId.set(String(s.id),s));
     const others=arr.filter(s=>!samePid(s));
-    window.sales=others.concat(Array.from(byId.values()));
-    try{(window.__signatureNativeLocalStorage||localStorage).setItem('signature_pms_sales',JSON.stringify(window.sales));}catch(e){}
+    const merged=others.concat(Array.from(byId.values()));
+    sales.splice(0,sales.length,...merged);
+    try{(window.__signatureNativeLocalStorage||localStorage).setItem('signature_pms_sales',JSON.stringify(sales));}catch(e){}
   }
   function mergePayments(incoming){
-    const arr=Array.isArray(window.payments)?window.payments:[];
+    const arr=Array.isArray(payments)?payments:[];
     const byId=new Map(arr.filter(x=>samePid(x)).map(x=>[String(x.id),x]));
     incoming.filter(x=>x&&samePid(x)).forEach(x=>byId.set(String(x.id),x));
     const others=arr.filter(x=>!samePid(x));
-    window.payments=others.concat(Array.from(byId.values()));
-    try{(window.__signatureNativeLocalStorage||localStorage).setItem('signature_pms_payments',JSON.stringify(window.payments));}catch(e){}
+    const merged=others.concat(Array.from(byId.values()));
+    payments.splice(0,payments.length,...merged);
+    try{(window.__signatureNativeLocalStorage||localStorage).setItem('signature_pms_payments',JSON.stringify(payments));}catch(e){}
   }
   async function pullSales(){
     const c=client(), propertyId=pid(), userId=await uid(); if(!c||!propertyId||!userId)return false;
