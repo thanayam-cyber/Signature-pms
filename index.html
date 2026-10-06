@@ -3091,6 +3091,23 @@ function saveData(){
     mergePropertyData(STORAGE.pmTransactions,pmTransactions);
     mergePropertyData(STORAGE.fnbTables,fnbTables);
 
+    /* v2.1.334 — explicit transaction cloud publish.
+       Restaurant/POS transactions must be shared between users/devices.
+       Property Settings already has its own authoritative cloud path;
+       transactional arrays use pms_cloud_records as the shared bridge. */
+    try{
+        const sync=window.signatureCloudSync;
+        if(sync && typeof sync.upsert==='function'){
+            const keys=[STORAGE.sales,STORAGE.payments,STORAGE.folios,STORAGE.fnbTables];
+            keys.forEach(key=>{
+                try{
+                    const scoped=readArray(key).filter(x=>String(x?.propertyId??'')===String(currentPropertyId??''));
+                    Promise.resolve(sync.upsert(key,scoped)).catch(e=>console.warn('POS transaction cloud publish failed:',key,e));
+                }catch(e){console.warn('POS transaction cloud publish prepare failed:',key,e);}
+            });
+        }
+    }catch(e){console.warn('POS transaction cloud bridge unavailable:',e);}
+
     if(settings){
         settings.posMenu=normalizePOSMenu(POS_MENU);
         const index=properties.findIndex(p=>p.id===currentPropertyId);
@@ -15129,7 +15146,7 @@ window.saveGRN=function(){
 function hrEmployees(){return rows(K.emp)}
 function hrLeaves(){return rows(K.leave)}
 function hrOT(){return rows(K.ot)}
-function renderHR(){renderEmployees();renderAttendance();hrRenderAttendanceDevices();renderLeave();renderOT();renderPayroll();renderHRKPIs();}
+function renderHR(){renderEmployees();renderAttendance();renderLeave();renderOT();renderPayroll();renderHRKPIs();}
 function renderHRKPIs(){const em=hrScopedEmployees(),atAll=hrScopedRows(K.att).filter(x=>x.date===today()),at=atAll,py=hrHasPayrollAccess()?rows(K.pay).filter(x=>x.period===today().slice(0,7)):[];const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};set('hrEmpCount',em.filter(x=>x.status==='Active').length);set('hrTodayPresent',at.filter(x=>['Present','Late'].includes(x.status)).length);set('hrTodayAbsent',at.filter(x=>x.status==='Absent').length);set('hrPayrollTotal',typeof accMoney==='function'?accMoney(py.reduce((s,x)=>s+Number(x.netPay||0),0)):py.reduce((s,x)=>s+Number(x.netPay||0),0));}
 function hrHasPayrollAccess(){
   if(!currentUser)return false;
@@ -15198,9 +15215,9 @@ function applyHRRoleVisibility(){
 }
 
 if(typeof applyHRRoleVisibility==='function')applyHRRoleVisibility();
-window.openEmployeeModal=function(){if(!requireModuleAction("hr.employee"))return;const idm='sigEmployeeModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Employee Master</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><input type="hidden" id="heEditId"><div class="form-group"><label>Employee No.</label><input id="heNo" placeholder="Auto"></div><div class="form-group"><label>Full Name *</label><input id="heName"></div><div class="form-group"><label>Department</label><input id="heDept"></div><div class="form-group"><label>Position</label><input id="hePos"></div><div class="form-group"><label>Join Date</label><input id="heJoin" type="date"></div><div class="form-group"><label>Basic Salary</label><input id="heBasic" type="number" min="0" step="0.01"></div><div class="form-group"><label>Fixed Allowances</label><input id="heAllow" type="number" min="0" step="0.01"></div><div class="form-group"><label>OT Rate / Hour</label><input id="heOT" type="number" min="0" step="0.01"></div><div class="form-group"><label>Phone</label><input id="hePhone"></div><div class="form-group"><label>Email</label><input id="heEmail" type="email"></div><div class="form-group"><label>Bank / Payment Details</label><input id="heBank"></div><div class="form-group"><label>Status</label><select id="heStatus"><option>Active</option><option>Resigned</option><option>Inactive</option></select></div><div class="form-group"><label>Resignation Date</label><input id="heResignDate" type="date"></div><div class="form-group full"><label>Notes</label><textarea id="heNotes"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button><button class="btn btn-primary" onclick="saveEmployee()">Save Employee</button></div></div></div>`);document.getElementById('heEditId').value='';document.getElementById('heJoin').value=today();document.getElementById('heResignDate').value='';const title=document.querySelector('#'+idm+' .modal-header h3');if(title)title.textContent='Employee Master';document.getElementById(idm).classList.add('show');};
-window.saveEmployee=function(){const name=document.getElementById('heName').value.trim();if(!name){alert('Employee name is required.');return;}const a=hrEmployees();const editId=document.getElementById('heEditId').value.trim();const no=document.getElementById('heNo').value.trim()||('EMP-'+String(a.length+1).padStart(4,'0'));if(a.some(x=>x.employeeNo===no&&String(x.id)!==editId)){alert('Employee number already exists.');return;}const data={employeeNo:no,name,department:document.getElementById('heDept').value.trim(),position:document.getElementById('hePos').value.trim(),joinDate:document.getElementById('heJoin').value||today(),basicSalary:Number(document.getElementById('heBasic').value||0),allowances:Number(document.getElementById('heAllow').value||0),otRate:Number(document.getElementById('heOT').value||0),phone:document.getElementById('hePhone').value.trim(),email:document.getElementById('heEmail').value.trim(),bankDetails:document.getElementById('heBank').value.trim(),status:document.getElementById('heStatus').value,notes:document.getElementById('heNotes').value.trim(),resignationDate:document.getElementById('heResignDate').value||null};if(editId){const x=a.find(z=>String(z.id)===editId);if(!x){alert('Employee record not found.');return;}Object.assign(x,data,x.status==='Resigned'?{resignationDate:data.resignationDate||today()}:{resignationDate:data.resignationDate});x.updatedAt=new Date().toISOString();x.updatedBy=user();}else{a.push({id:id('emp'),propertyId:currentPropertyId,...data,createdAt:new Date().toISOString(),createdBy:user()});}saveProp(K.emp,a);document.getElementById('sigEmployeeModal').classList.remove('show');renderHR();};
-window.editEmployee=function(empId){if(!hasModuleAction('hr.employee')){alert('Access denied. Employee access is not assigned to your user account.');return;}const x=hrEmployees().find(z=>String(z.id)===String(empId));if(!x){alert('Employee record not found.');return;}openEmployeeModal();document.getElementById('heEditId').value=x.id;document.getElementById('heNo').value=x.employeeNo||'';document.getElementById('heName').value=x.name||'';document.getElementById('heDept').value=x.department||'';document.getElementById('hePos').value=x.position||'';document.getElementById('heJoin').value=x.joinDate||'';document.getElementById('heBasic').value=x.basicSalary??'';document.getElementById('heAllow').value=x.allowances??'';document.getElementById('heOT').value=x.otRate??'';document.getElementById('hePhone').value=x.phone||'';document.getElementById('heEmail').value=x.email||'';document.getElementById('heBank').value=x.bankDetails||'';document.getElementById('heStatus').value=x.status||'Active';document.getElementById('heResignDate').value=x.resignationDate||'';document.getElementById('heNotes').value=x.notes||'';const title=document.querySelector('#sigEmployeeModal .modal-header h3');if(title)title.textContent='Edit Employee';};
+window.openEmployeeModal=function(){if(!requireModuleAction("hr.employee"))return;const idm='sigEmployeeModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Employee Master</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><input type="hidden" id="heEditId"><div class="form-group"><label>Employee No.</label><input id="heNo" placeholder="Auto"></div><div class="form-group"><label>Full Name *</label><input id="heName"></div><div class="form-group"><label>Department</label><input id="heDept"></div><div class="form-group"><label>Position</label><input id="hePos"></div><div class="form-group"><label>Join Date</label><input id="heJoin" type="date"></div><div class="form-group"><label>Basic Salary</label><input id="heBasic" type="number" min="0" step="0.01"></div><div class="form-group"><label>Fixed Allowances</label><input id="heAllow" type="number" min="0" step="0.01"></div><div class="form-group"><label>OT Rate / Hour</label><input id="heOT" type="number" min="0" step="0.01"></div><div class="form-group"><label>Phone</label><input id="hePhone"></div><div class="form-group"><label>Email</label><input id="heEmail" type="email"></div><div class="form-group"><label>NIC / Passport</label><input id="heNic"></div><div class="form-group"><label>Date of Birth</label><input id="heDob" type="date"></div><div class="form-group"><label>Gender</label><select id="heGender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div><div class="form-group"><label>Employment Type</label><select id="heEmploymentType"><option>Permanent</option><option>Probation</option><option>Temporary</option><option>Casual</option><option>Contract</option><option>Trainee</option></select></div><div class="form-group"><label>Probation End Date</label><input id="heProbationEnd" type="date"></div><div class="form-group"><label>Emergency Contact</label><input id="heEmergency"></div><div class="form-group"><label>Emergency Phone</label><input id="heEmergencyPhone"></div><div class="form-group"><label>EPF Applicable</label><select id="heEpfApplicable"><option value="true">Yes</option><option value="false">No</option></select></div><div class="form-group"><label>EPF No.</label><input id="heEpfNo"></div><div class="form-group"><label>EPF Joining Date</label><input id="heEpfJoin" type="date"></div><div class="form-group"><label>ETF Applicable</label><select id="heEtfApplicable"><option value="true">Yes</option><option value="false">No</option></select></div><div class="form-group"><label>ETF No.</label><input id="heEtfNo"></div><div class="form-group"><label>ETF Joining Date</label><input id="heEtfJoin" type="date"></div><div class="form-group"><label>Bank / Payment Details</label><input id="heBank"></div><div class="form-group"><label>Status</label><select id="heStatus"><option>Active</option><option>Resigned</option><option>Inactive</option></select></div><div class="form-group"><label>Resignation Date</label><input id="heResignDate" type="date"></div><div class="form-group full"><label>Notes</label><textarea id="heNotes"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button><button class="btn btn-primary" onclick="saveEmployee()">Save Employee</button></div></div></div>`);document.getElementById('heEditId').value='';document.getElementById('heJoin').value=today();document.getElementById('heResignDate').value='';const title=document.querySelector('#'+idm+' .modal-header h3');if(title)title.textContent='Employee Master';document.getElementById(idm).classList.add('show');};
+window.saveEmployee=function(){const name=document.getElementById('heName').value.trim();if(!name){alert('Employee name is required.');return;}const a=hrEmployees();const editId=document.getElementById('heEditId').value.trim();const no=document.getElementById('heNo').value.trim()||('EMP-'+String(a.length+1).padStart(4,'0'));if(a.some(x=>x.employeeNo===no&&String(x.id)!==editId)){alert('Employee number already exists.');return;}const data={employeeNo:no,name,department:document.getElementById('heDept').value.trim(),position:document.getElementById('hePos').value.trim(),joinDate:document.getElementById('heJoin').value||today(),basicSalary:Number(document.getElementById('heBasic').value||0),allowances:Number(document.getElementById('heAllow').value||0),otRate:Number(document.getElementById('heOT').value||0),phone:document.getElementById('hePhone').value.trim(),email:document.getElementById('heEmail').value.trim(),bankDetails:document.getElementById('heBank').value.trim(),status:document.getElementById('heStatus').value,notes:document.getElementById('heNotes').value.trim(),resignationDate:document.getElementById('heResignDate').value||null,nicPassport:document.getElementById('heNic').value.trim(),dob:document.getElementById('heDob').value||'',gender:document.getElementById('heGender').value,employmentType:document.getElementById('heEmploymentType').value,probationEnd:document.getElementById('heProbationEnd').value||'',emergencyContact:document.getElementById('heEmergency').value.trim(),emergencyPhone:document.getElementById('heEmergencyPhone').value.trim(),epfApplicable:document.getElementById('heEpfApplicable').value==='true',epfNo:document.getElementById('heEpfNo').value.trim(),epfJoiningDate:document.getElementById('heEpfJoin').value||'',etfApplicable:document.getElementById('heEtfApplicable').value==='true',etfNo:document.getElementById('heEtfNo').value.trim(),etfJoiningDate:document.getElementById('heEtfJoin').value||''};if(editId){const x=a.find(z=>String(z.id)===editId);if(!x){alert('Employee record not found.');return;}Object.assign(x,data,x.status==='Resigned'?{resignationDate:data.resignationDate||today()}:{resignationDate:data.resignationDate});x.updatedAt=new Date().toISOString();x.updatedBy=user();}else{a.push({id:id('emp'),propertyId:currentPropertyId,...data,createdAt:new Date().toISOString(),createdBy:user()});}saveProp(K.emp,a);document.getElementById('sigEmployeeModal').classList.remove('show');renderHR();};
+window.editEmployee=function(empId){if(!hasModuleAction('hr.employee')){alert('Access denied. Employee access is not assigned to your user account.');return;}const x=hrEmployees().find(z=>String(z.id)===String(empId));if(!x){alert('Employee record not found.');return;}openEmployeeModal();document.getElementById('heEditId').value=x.id;document.getElementById('heNo').value=x.employeeNo||'';document.getElementById('heName').value=x.name||'';document.getElementById('heDept').value=x.department||'';document.getElementById('hePos').value=x.position||'';document.getElementById('heJoin').value=x.joinDate||'';document.getElementById('heBasic').value=x.basicSalary??'';document.getElementById('heAllow').value=x.allowances??'';document.getElementById('heOT').value=x.otRate??'';document.getElementById('hePhone').value=x.phone||'';document.getElementById('heEmail').value=x.email||'';document.getElementById('heBank').value=x.bankDetails||'';document.getElementById('heNic').value=x.nicPassport||'';document.getElementById('heDob').value=x.dob||'';document.getElementById('heGender').value=x.gender||'';document.getElementById('heEmploymentType').value=x.employmentType||'Permanent';document.getElementById('heProbationEnd').value=x.probationEnd||'';document.getElementById('heEmergency').value=x.emergencyContact||'';document.getElementById('heEmergencyPhone').value=x.emergencyPhone||'';document.getElementById('heEpfApplicable').value=x.epfApplicable===false?'false':'true';document.getElementById('heEpfNo').value=x.epfNo||'';document.getElementById('heEpfJoin').value=x.epfJoiningDate||'';document.getElementById('heEtfApplicable').value=x.etfApplicable===false?'false':'true';document.getElementById('heEtfNo').value=x.etfNo||'';document.getElementById('heEtfJoin').value=x.etfJoiningDate||'';document.getElementById('heStatus').value=x.status||'Active';document.getElementById('heResignDate').value=x.resignationDate||'';document.getElementById('heNotes').value=x.notes||'';const title=document.querySelector('#sigEmployeeModal .modal-header h3');if(title)title.textContent='Edit Employee';};
 window.resignEmployee=function(empId){if(!hasModuleAction('hr.employee')){alert('Access denied. Employee access is not assigned to your user account.');return;}const a=hrEmployees(),x=a.find(z=>String(z.id)===String(empId));if(!x){alert('Employee record not found.');return;}if(String(x.status||'').toLowerCase()==='resigned'){alert('This employee is already resigned.');return;}const date=prompt('Enter resignation / last working date (YYYY-MM-DD):',today());if(date===null)return;if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert('Please enter the date as YYYY-MM-DD.');return;}if(!confirm('Mark '+x.name+' as Resigned?\n\nPrevious attendance, leave, overtime, payroll and roster history will be kept.'))return;x.status='Resigned';x.resignationDate=date;x.updatedAt=new Date().toISOString();x.updatedBy=user();saveProp(K.emp,a);renderHR();alert('Employee marked as Resigned. Historical records have been retained.');};
 window.markAttendance=function(){
  if(!canHRAttendance()){alert('Access denied. Attendance entry is not assigned to your user account.');return;}
@@ -15368,32 +15385,7 @@ function hrRenderShiftMaster(){const e=document.getElementById('hrShiftMasterTab
 window.hrRefreshRoster=function(){if(!requireModuleAction('hr.roster_update'))return;try{if(typeof hrRenderRosterTable==='function')hrRenderRosterTable();else if(typeof openRosterUpdate==='function')openRosterUpdate();}catch(e){console.error('Roster refresh failed:',e);alert('Roster refresh failed: '+(e?.message||e));}};
 window.openShiftManagement=function(){if(currentUser?.role!=='Admin'){alert('Only Admin can manage shifts.');return;}const idm='sigShiftManagementModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:1000px"><div class="modal-header"><h3>Shift Management</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Shift Code</label><input id="hrShiftCode" placeholder="M1"></div><div class="form-group"><label>Shift Name</label><input id="hrShiftName" placeholder="Morning 1"></div><div class="form-group"><label>Start Time</label><input id="hrShiftStart" type="time"></div><div class="form-group"><label>End Time</label><input id="hrShiftEnd" type="time"></div><div class="form-group"><label>Break (minutes)</label><input id="hrShiftBreak" type="number" min="0" value="0"></div></div><div style="display:flex;justify-content:flex-end;margin:12px 0"><button class="btn btn-primary" onclick="hrSaveShift()">Save Shift</button></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Start</th><th>End</th><th>Break</th><th>Actions</th></tr></thead><tbody id="hrShiftMasterTable"></tbody></table></div></div></div>`);hrRenderShiftMaster();document.getElementById(idm).classList.add('show');}
 window.openRosterUpdate=function(){if(!requireModuleAction('hr.roster_update'))return;const idm='sigRosterUpdateModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:98vw;width:1500px"><div class="modal-header"><div><h3>Monthly Roster Update</h3><div style="font-size:12px;color:#6b7280">Allocate custom shifts, OFF, AL, ML and CL for the selected month.</div></div><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="toolbar" style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><select id="hrRosterDeptMonth" onchange="hrRenderRosterTable()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><input id="hrRosterMonth" type="month" value="${new Date().toISOString().slice(0,7)}" onchange="hrRenderRosterTable()">${currentUser?.role==='Admin'?'<button class="btn btn-primary" onclick="window.openShiftManagement()">Shift Management</button>':''}<button class="btn btn-secondary" onclick="window.hrRefreshRoster()">Refresh</button><button class="btn btn-primary" onclick="window.hrSaveRoster()">Save Roster</button></div><div id="hrRosterTableWrap"></div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button></div></div></div>`);const d=document.getElementById('hrRosterDeptMonth');if(isDepartmentSupervisor()){const own=String(currentUser?.department||'').toLowerCase();d.value=[...d.options].some(o=>String(o.value).toLowerCase()===own)?own:'';d.disabled=true;}hrRenderRosterTable();document.getElementById(idm).classList.add('show');};
-
-function hrAttendanceDevices(){return rows(K.attDevices||'signature_pms_hr_attendance_devices').filter(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId));}
-window.hrSaveAttendanceDevice=function(){
- if(!requireModuleAction('hr.attendance')){alert('You do not have permission to save Attendance Devices.');return;}
- const name=document.getElementById('hrDevName')?.value.trim();
- const brand=document.getElementById('hrDevBrand')?.value.trim();
- const model=document.getElementById('hrDevModel')?.value.trim();
- const ip=document.getElementById('hrDevIp')?.value.trim();
- const port=Number(document.getElementById('hrDevPort')?.value||0);
- const deviceId=document.getElementById('hrDevId')?.value.trim();
- const protocol=document.getElementById('hrDevProtocol')?.value||'API';
- const syncMode=document.getElementById('hrDevSync')?.value||'Manual';
- if(!name){alert('Device name is required.');return;}
- const key=K.attDevices||'signature_pms_hr_attendance_devices'; const all=rows(key); const rec={id:id('attdev'),propertyId:currentPropertyId,name,brand,model,ip,port,deviceId,protocol,syncMode,status:'Configured',lastSync:'',createdBy:user(),createdAt:new Date().toISOString()};
- all.push(rec);saveProp(key,all);document.getElementById('sigAttendanceDeviceModal')?.classList.remove('show');hrRenderAttendanceDevices();alert('Attendance device configuration saved.');
-}
-window.hrOpenAttendanceDevices=function(){
- if(!requireModuleAction('hr.attendance')){alert('You do not have permission to manage Attendance Devices.');return;}
- const idm='sigAttendanceDeviceModal';
- if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:900px"><div class="modal-header"><div><h3>Attendance Device Integration</h3><div style="font-size:12px;color:#6b7280">Device-ready configuration. Actual hardware sync will use the selected connector/API when the client device is supplied.</div></div><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Device Name *</label><input id="hrDevName" placeholder="Front Office Attendance"></div><div class="form-group"><label>Brand</label><input id="hrDevBrand" placeholder="ZKTeco / Hikvision / Other"></div><div class="form-group"><label>Model</label><input id="hrDevModel" placeholder="Device model"></div><div class="form-group"><label>IP Address / Host</label><input id="hrDevIp" placeholder="192.168.1.100"></div><div class="form-group"><label>Port</label><input id="hrDevPort" type="number" placeholder="4370"></div><div class="form-group"><label>Device ID</label><input id="hrDevId" placeholder="Optional device ID"></div><div class="form-group"><label>Protocol / Connector</label><select id="hrDevProtocol"><option>API</option><option>ZKTeco</option><option>Hikvision</option><option>Suprema</option><option>Other</option></select></div><div class="form-group"><label>Sync Mode</label><select id="hrDevSync"><option>Manual</option><option>Scheduled</option><option>Real-time API</option></select></div></div><div style="margin:12px 0;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-size:12px;color:#4b5563"><b>Integration flow:</b> Fingerprint / Face device → Connector/API → Signature PMS Attendance → Payroll. Employee Machine ID mapping and duplicate-punch protection will be applied when the actual device connector is enabled.</div><div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button><button class="btn btn-primary" onclick="hrSaveAttendanceDevice()">Save Device</button></div></div></div>`);
- document.getElementById(idm).classList.add('show');
-}
-function hrRenderAttendanceDevices(){const e=document.getElementById('hrAttendanceDevicesTable');if(!e)return;const a=hrAttendanceDevices();e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.brand||'-')}</td><td>${esc(x.model||'-')}</td><td>${esc(x.ip||'-')}</td><td>${esc(x.protocol||'API')}</td><td>${esc(x.status||'Configured')}</td><td>${x.lastSync?esc(x.lastSync):'Not synced'}</td></tr>`).join(''):`<tr><td colspan="7" class="empty">No attendance devices configured.</td></tr>`;}
-window.hrTestAttendanceDevice=function(){if(!requireModuleAction('hr.attendance'))return;const a=hrAttendanceDevices();if(!a.length){alert('No attendance device configured yet.');return;}alert('Device configuration is ready. Actual connection test will be enabled when the client hardware/API connector is supplied.');};
-window.hrSyncAttendanceDevices=function(){if(!requireModuleAction('hr.attendance'))return;const a=hrAttendanceDevices();if(!a.length){alert('No attendance device configured yet.');return;}alert('Attendance sync connector is ready for hardware integration. No live device is connected yet.');};
-function addHRPage(){if(document.getElementById('hr'))return;const nav=document.querySelector('.main');if(!nav)return;const sec=document.createElement('section');sec.className='page';sec.id='hr';sec.innerHTML=`<div class="section"><div class="section-header"><div><h3>Human Resources & Payroll</h3><div style="font-size:12px;color:#6b7280">Complete employee, attendance, leave, overtime and payroll workflow linked to Accounting.</div><div id="payrollAccountingStatus" style="margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#6b7280;font-size:12px">Accounting posting status: waiting for payroll posting.</div></div><div class="toolbar"><button class="btn btn-primary" onclick="openEmployeeModal()">+ Employee</button><button class="btn btn-secondary" onclick="markAttendance()">Attendance</button><button class="btn btn-secondary" onclick="openLeaveModal()">Leave</button><button class="btn btn-secondary" onclick="openOTModal()">Overtime</button><button class="btn btn-secondary" onclick="runPayroll()">Calculate Payroll</button><button class="btn btn-secondary" onclick="approvePayroll()">Approve Payroll</button><button class="btn btn-success" onclick="window.postPayroll()">Post to Accounting</button><button class="btn btn-success" onclick="payPayroll()">Pay Payroll</button><button class="btn btn-secondary" data-hr-right="hr.roster_update" onclick="openRosterUpdate()">Roster Update</button><button class="btn btn-secondary" onclick="renderHR()">Refresh</button></div></div><div class="grid-4"><div class="card"><div class="card-title">Active Employees</div><div class="card-value" id="hrEmpCount">0</div></div><div class="card"><div class="card-title">Today Present</div><div class="card-value" id="hrTodayPresent">0</div></div><div class="card"><div class="card-title">Today Absent</div><div class="card-value" id="hrTodayAbsent">0</div></div><div class="card"><div class="card-title">Current Month Payroll</div><div class="card-value" id="hrPayrollTotal">0</div></div></div></div><div class="section" id="hrEmployeeSection"><div class="section-header"><div><h3>Employee Details</h3><div class="toolbar" style="margin-top:8px"><select id="hrEmpDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><select id="hrEmpStatusFilter" onchange="hrApplyFilters()"><option value="">All Status</option><option value="Active">Active</option><option value="Resigned">Resigned</option><option value="Inactive">Inactive</option></select><input id="hrEmpFromFilter" type="date" onchange="hrApplyFilters()" title="Join Date From"><input id="hrEmpToFilter" type="date" onchange="hrApplyFilters()" title="Join Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Employee No.</th><th>Name</th><th>Department</th><th>Position</th><th>Join Date</th><th>Basic Salary</th><th>Status</th><th>Actions</th></tr></thead><tbody id="hrEmployeeTable"></tbody></table></div></div><div class="section" id="hrAttendanceSection"><div class="section-header"><div><h3>Attendance</h3><div class="toolbar" style="margin-top:8px"><select id="hrAttDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><input id="hrAttFromFilter" type="date" onchange="hrApplyFilters()" title="Date From"><input id="hrAttToFilter" type="date" onchange="hrApplyFilters()" title="Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div style="margin:10px 0;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><b>Attendance Device Integration</b><div style="font-size:12px;color:#6b7280">Ready for fingerprint / face devices such as ZKTeco, Hikvision, Suprema or API-based devices.</div></div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-small" onclick="hrOpenAttendanceDevices()">+ Device</button><button class="btn btn-secondary btn-small" onclick="hrTestAttendanceDevice()">Test Connection</button><button class="btn btn-secondary btn-small" onclick="hrSyncAttendanceDevices()">Sync Now</button></div></div><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Device</th><th>Brand</th><th>Model</th><th>Host</th><th>Connector</th><th>Status</th><th>Last Sync</th></tr></thead><tbody id="hrAttendanceDevicesTable"></tbody></table></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee No.</th><th>Name</th><th>Status</th><th>Marked By</th></tr></thead><tbody id="hrAttendanceTable"></tbody></table></div></div><div class="section" id="hrLeaveSection"><div class="section-header"><h3>Leave</h3></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Name</th><th>Type</th><th>From</th><th>To</th><th>Status</th></tr></thead><tbody id="hrLeaveTable"></tbody></table></div></div><div class="section" id="hrOvertimeSection"><div class="section-header"><h3>Overtime</h3></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Name</th><th>Hours</th><th>Rate</th><th>Amount</th><th>Status</th></tr></thead><tbody id="hrOTTable"></tbody></table></div></div><div class="section" id="hrPayrollSection"><div class="section-header"><h3>Payroll</h3></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Employee</th><th>Name</th><th>Present</th><th>Absent</th><th>Basic</th><th>OT</th><th>Deductions</th><th>Net Pay</th><th>Status</th></tr></thead><tbody id="hrPayrollTable"></tbody></table></div></div>`;nav.appendChild(sec);applyHRRoleVisibility();}
+function addHRPage(){if(document.getElementById('hr'))return;const nav=document.querySelector('.main');if(!nav)return;const sec=document.createElement('section');sec.className='page';sec.id='hr';sec.innerHTML=`<div class="section"><div class="section-header"><div><h3>Human Resources & Payroll</h3><div style="font-size:12px;color:#6b7280">Complete employee, attendance, leave, overtime and payroll workflow linked to Accounting.</div><div id="payrollAccountingStatus" style="margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#6b7280;font-size:12px">Accounting posting status: waiting for payroll posting.</div></div><div class="toolbar"><button class="btn btn-primary" onclick="openEmployeeModal()">+ Employee</button><button class="btn btn-secondary" onclick="markAttendance()">Attendance</button><button class="btn btn-secondary" onclick="openLeaveModal()">Leave</button><button class="btn btn-secondary" onclick="openOTModal()">Overtime</button><button class="btn btn-secondary" onclick="runPayroll()">Calculate Payroll</button><button class="btn btn-secondary" onclick="approvePayroll()">Approve Payroll</button><button class="btn btn-success" onclick="window.postPayroll()">Post to Accounting</button><button class="btn btn-success" onclick="payPayroll()">Pay Payroll</button><button class="btn btn-secondary" data-hr-right="hr.roster_update" onclick="openRosterUpdate()">Roster Update</button><button class="btn btn-secondary" onclick="renderHR()">Refresh</button></div></div><div class="grid-4"><div class="card"><div class="card-title">Active Employees</div><div class="card-value" id="hrEmpCount">0</div></div><div class="card"><div class="card-title">Today Present</div><div class="card-value" id="hrTodayPresent">0</div></div><div class="card"><div class="card-title">Today Absent</div><div class="card-value" id="hrTodayAbsent">0</div></div><div class="card"><div class="card-title">Current Month Payroll</div><div class="card-value" id="hrPayrollTotal">0</div></div></div></div><div class="section" id="hrEmployeeSection"><div class="section-header"><div><h3>Employee Details</h3><div class="toolbar" style="margin-top:8px"><select id="hrEmpDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><select id="hrEmpStatusFilter" onchange="hrApplyFilters()"><option value="">All Status</option><option value="Active">Active</option><option value="Resigned">Resigned</option><option value="Inactive">Inactive</option></select><input id="hrEmpFromFilter" type="date" onchange="hrApplyFilters()" title="Join Date From"><input id="hrEmpToFilter" type="date" onchange="hrApplyFilters()" title="Join Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Employee No.</th><th>Name</th><th>Department</th><th>Position</th><th>Join Date</th><th>Basic Salary</th><th>Status</th><th>Actions</th></tr></thead><tbody id="hrEmployeeTable"></tbody></table></div></div><div class="section" id="hrAttendanceSection"><div class="section-header"><div><h3>Attendance</h3><div class="toolbar" style="margin-top:8px"><select id="hrAttDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><input id="hrAttFromFilter" type="date" onchange="hrApplyFilters()" title="Date From"><input id="hrAttToFilter" type="date" onchange="hrApplyFilters()" title="Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee No.</th><th>Name</th><th>Status</th><th>Marked By</th></tr></thead><tbody id="hrAttendanceTable"></tbody></table></div></div><div class="section" id="hrLeaveSection"><div class="section-header"><h3>Leave</h3></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Name</th><th>Type</th><th>From</th><th>To</th><th>Status</th></tr></thead><tbody id="hrLeaveTable"></tbody></table></div></div><div class="section" id="hrOvertimeSection"><div class="section-header"><h3>Overtime</h3></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Name</th><th>Hours</th><th>Rate</th><th>Amount</th><th>Status</th></tr></thead><tbody id="hrOTTable"></tbody></table></div></div><div class="section" id="hrPayrollSection"><div class="section-header"><h3>Payroll</h3></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Employee</th><th>Name</th><th>Present</th><th>Absent</th><th>Basic</th><th>OT</th><th>Deductions</th><th>Net Pay</th><th>Status</th></tr></thead><tbody id="hrPayrollTable"></tbody></table></div></div>`;nav.appendChild(sec);applyHRRoleVisibility();}
 (function(){
 'use strict';
 /* Signature PMS Staff Lifecycle + Sri Lanka statutory HR extension */
@@ -15404,7 +15396,6 @@ try{
   K.advances='signature_pms_hr_advances';
   K.exit='signature_pms_hr_exit';
   K.training='signature_pms_hr_training';
-  K.attDevices='signature_pms_hr_attendance_devices';
 }catch(e){}
 
 const hrLC={
@@ -20818,6 +20809,195 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   function boot(){syncDestination();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
   setTimeout(syncDestination,300);setTimeout(syncDestination,1200);
+})();
+</script>
+
+<script>
+(function(){
+  'use strict';
+  const CLOUD_TABLE='pms_cloud_records';
+  const PREFIXES=['signature_pms_','signaturePMS_','signature_pms','signaturePMS'];
+  const EXCLUDE=['signature_pms_supabase_','sb-'];
+  let cloudTimer=null;
+  let cloudBusy=false;
+  let cloudPatchInstalled=false;
+
+  function isCloudKey(key){
+    const k=String(key||'');
+    if(!PREFIXES.some(p=>k.startsWith(p))) return false;
+    return !EXCLUDE.some(p=>k.startsWith(p));
+  }
+  function client(){
+    try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}
+  }
+  function pid(){try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||'')}catch(e){return ''}}
+  function currentUserId(){try{return String(window.supabaseClient?.auth?.user?.()?.id||'')}catch(e){return ''}}
+  async function authUserId(){
+    try{
+      const c=client(); if(!c)return '';
+      const {data}=await c.auth.getUser();
+      return data?.user?.id||'';
+    }catch(e){return ''}
+  }
+  function safeParse(v){try{return JSON.parse(v)}catch(e){return null}}
+  function propertyFilterValue(value, propertyId){
+    if(Array.isArray(value)){
+      const scoped=value.filter(x=>x && typeof x==='object' && String(x.propertyId||'')===String(propertyId));
+      const hasPropertyObjects=value.some(x=>x && typeof x==='object' && ('propertyId' in x));
+      return {data:hasPropertyObjects?scoped:value, scoped:hasPropertyObjects};
+    }
+    return {data:value,scoped:false};
+  }
+  function mergeCloudValue(localValue, cloudValue, propertyId, scoped){
+    if(!scoped) return cloudValue;
+    const local=Array.isArray(localValue)?localValue:[];
+    const keep=local.filter(x=>!x || typeof x!=='object' || String(x.propertyId||'')!==String(propertyId));
+    const incoming=Array.isArray(cloudValue)?cloudValue:[];
+    return keep.concat(incoming);
+  }
+  async function cloudUpsert(key,value){
+    if(!isCloudKey(key) || !pid()) return;
+    const c=client(); if(!c)return;
+    const uid=await authUserId(); if(!uid)return;
+    const prepared=propertyFilterValue(value,pid());
+    const row={property_id:pid(),storage_key:String(key),data:prepared.data,updated_by:uid,updated_at:new Date().toISOString()};
+    const {error}=await c.from(CLOUD_TABLE).upsert(row,{onConflict:'property_id,storage_key'});
+    if(error) console.warn('Cloud save skipped:',key,error.message);
+  }
+  async function cloudPull(){
+    if(cloudBusy || !pid()) return false;
+    const c=client(); if(!c)return false;
+    const uid=await authUserId(); if(!uid)return false;
+    cloudBusy=true;
+    try{
+      const {data,error}=await c.from(CLOUD_TABLE).select('storage_key,data,updated_at').eq('property_id',pid());
+      if(error) throw error;
+      const nativeSet=window.__signatureNativeLocalStorage||localStorage;
+      (data||[]).forEach(row=>{
+        if(!isCloudKey(row.storage_key))return;
+        const oldRaw=nativeSet.getItem(row.storage_key);
+        const old=safeParse(oldRaw);
+        const prepared=propertyFilterValue(old,pid());
+        const merged=mergeCloudValue(old,row.data,pid(),prepared.scoped);
+        nativeSet.setItem(row.storage_key,JSON.stringify(merged));
+      });
+      /* Cloud pull updates storage only. UI rendering is intentionally NOT
+         triggered here; rendering while a user is typing in Property Settings
+         replaces the active form controls and causes the page to flicker/reload.
+         The normal PMS save/navigation flow owns UI rendering. */
+      return true;
+    }catch(e){
+      console.warn('Cloud pull failed:',e?.message||e);
+      return false;
+    }finally{cloudBusy=false}
+  }
+  async function cloudPushAll(){
+    if(!pid())return;
+    const c=client(); if(!c)return;
+    const nativeSet=window.__signatureNativeLocalStorage||localStorage;
+    const uid=await authUserId(); if(!uid)return;
+    let cloudKeys=new Set();
+    try{
+      const {data,error}=await c.from(CLOUD_TABLE).select('storage_key').eq('property_id',pid());
+      if(error)throw error;
+      (data||[]).forEach(r=>cloudKeys.add(String(r.storage_key||'')));
+    }catch(e){
+      console.warn('Cloud key inventory failed; refusing destructive bootstrap push:',e?.message||e);
+      return;
+    }
+    // Bootstrap rule: never overwrite an existing cloud record with browser data.
+    // Only keys that do not yet exist in Supabase are uploaded from this device.
+    for(let i=0;i<nativeSet.length;i++){
+      const key=nativeSet.key(i);
+      if(!isCloudKey(key)||cloudKeys.has(String(key)))continue;
+      try{await cloudUpsert(key,safeParse(nativeSet.getItem(key)))}catch(e){}
+    }
+  }
+  async function subscribeRealtime(){
+    try{
+      const c=client(); if(!c||!pid())return;
+      if(window.__signaturePMSCloudRecordChannel){
+        try{c.removeChannel(window.__signaturePMSCloudRecordChannel)}catch(e){}
+      }
+      const channel=c.channel('signature-pms-cloud-records-'+pid()+'-'+Date.now())
+        .on('postgres_changes',{event:'*',schema:'public',table:CLOUD_TABLE,filter:'property_id=eq.'+pid()},payload=>{
+          if(cloudBusy)return;
+          const row=payload?.new||payload?.old||{};
+          const key=String(row.storage_key||'');
+          if(!isCloudKey(key))return;
+          if(payload.eventType==='DELETE'){
+            const nativeSet=window.__signatureNativeLocalStorage||localStorage;
+            try{nativeSet.removeItem(key)}catch(e){}
+          }else if(payload.new?.data!==undefined){
+            const nativeSet=window.__signatureNativeLocalStorage||localStorage;
+            try{
+              const old=safeParse(nativeSet.getItem(key));
+              const prepared=propertyFilterValue(old,pid());
+              const merged=mergeCloudValue(old,payload.new.data,pid(),prepared.scoped);
+              nativeSet.setItem(key,JSON.stringify(merged));
+            }catch(e){}
+          }
+          /* Realtime cloud updates must never re-render the active page.
+             They only update the backing local cache. This is critical for
+             Property Settings and Rate Plans while the user is typing. */
+        }).subscribe(status=>console.log('Signature PMS cloud records realtime:',status));
+      window.__signaturePMSCloudRecordChannel=channel;
+    }catch(e){console.warn('Cloud realtime subscription skipped:',e?.message||e)}
+  }
+  function installPatch(){
+    if(cloudPatchInstalled)return;
+    cloudPatchInstalled=true;
+    const nativeSet=localStorage.setItem.bind(localStorage);
+    const nativeRemove=localStorage.removeItem.bind(localStorage);
+    window.__signatureNativeLocalStorage=localStorage;
+    localStorage.setItem=function(key,value){
+      nativeSet(key,value);
+      if(isCloudKey(key) && !cloudBusy && pid()) Promise.resolve().then(()=>cloudUpsert(key,safeParse(value)));
+    };
+    localStorage.removeItem=function(key){
+      nativeRemove(key);
+      if(isCloudKey(key) && !cloudBusy && pid()) Promise.resolve().then(()=>cloudUpsert(key,[]));
+    };
+  }
+  async function afterLogin(){
+    installPatch();
+    await cloudPull();
+    await cloudPushAll();
+    await cloudPull();
+    /* v2.1.334 — hydrate transactional arrays after cloud pull.
+       Realtime intentionally avoids rerendering active forms, but after login
+       there is no active edit to protect. This makes Restaurant/POS orders
+       created by another user available immediately on the new session. */
+    try{
+      if(typeof loadCurrentPropertyData==='function' && pid()){
+        loadCurrentPropertyData();
+      }
+    }catch(e){console.warn('Post-login cloud transaction hydration skipped:',e);}
+    await subscribeRealtime();
+    try{setSupabaseCloudMessage('Cloud source of truth active — PMS data synced for this property.','success');}catch(e){}
+  }
+  window.signatureCloudSync={pull:cloudPull,pushAll:cloudPushAll,afterLogin,upsert:cloudUpsert,realtime:subscribeRealtime};
+  window.refreshFullCloudPMS=cloudPull;
+  installPatch();
+
+  function hook(name){
+    const original=window[name];
+    if(typeof original!=='function' || original.__cloudWrapped)return;
+    const wrapped=function(){
+      const result=original.apply(this,arguments);
+      Promise.resolve(result).then(()=>{
+        if(name==='switchProperty'||name==='hydrateCloudAfterLocalLogin'||name==='setSession') afterLogin();
+      }).catch(()=>{});
+      return result;
+    };
+    wrapped.__cloudWrapped=true;
+    window[name]=wrapped;
+  }
+  setTimeout(()=>{
+    ['switchProperty','hydrateCloudAfterLocalLogin','setSession'].forEach(hook);
+    if(typeof window.refreshFullCloudPMS==='function' && pid()) afterLogin();
+    cloudTimer=setInterval(()=>{if(pid()&&!document.hidden) cloudPull();},30000);
+  },1500);
 })();
 </script>
 </body></html>
