@@ -10841,60 +10841,71 @@ function renderPOS(){
 
 
 function addPOSItem(id){
-
     if(!currentUser){showLoginScreen();return;}
     if(!hasActionPermission("pos.add_items")){alert("Access denied. Add Items / Take Orders has not been assigned to your user account.");return;}
     if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}
 
-
-    const item=
-        POS_MENU.find(
-            x=>x.id===id
-        );
-
-    if(!item)
-        return;
-
+    /* Resolve menu item by string ID so UUID/string/legacy IDs all work. */
+    const item=Array.isArray(POS_MENU)
+        ? POS_MENU.find(x=>String(x?.id)===String(id))
+        : null;
+    if(!item){alert("Menu item could not be found. Please refresh the Restaurant POS menu.");return;}
 
     const outlet=getCurrentPOSOutlet();
-    if(!outlet){
-        alert("Please select an active restaurant / outlet.");
-        return;
-    }
-
+    if(!outlet){alert("Please select an active restaurant / outlet.");return;}
     const itemOutletId=String(item.outletId||outlet.id);
     if(itemOutletId!==String(outlet.id)){
         alert("This menu item belongs to another restaurant / outlet.");
         return;
     }
 
-    const existing=
-        posOrder.find(
-            x=>x.id===id && String(x.outletId||outlet.id)===String(outlet.id)
-        );
+    /* TABLE SERVICE: write directly to the active table.
+       Do not depend on the normal POS order renderer to move the item into the table. */
+    if(typeof activeFNBTableId!=="undefined" && activeFNBTableId && typeof fnbTableById==="function"){
+        const table=fnbTableById(activeFNBTableId);
+        if(table){
+            if(!Array.isArray(table.items)) table.items=[];
+            const existing=table.items.find(x=>String(x?.id)===String(item.id));
+            if(existing){
+                existing.qty=Number(existing.qty||0)+1;
+                existing.sentQty=Number(existing.sentQty||0);
+            }else{
+                table.items.push({
+                    id:item.id,
+                    name:item.name,
+                    category:item.category||"",
+                    price:Number(item.price||0),
+                    qty:1,
+                    sentQty:0,
+                    outletId:outlet.id,
+                    outletName:outlet.name
+                });
+            }
+            table.status="Open";
+            posOrder=table.items.map(x=>({...x}));
+            saveFNBTableData();
+            renderPOSOrder();
+            refreshFNBTableService();
+            return;
+        }
+    }
 
-
-    if(existing)
-        existing.qty++;
-
-    else
-        posOrder.push({
-
-            id:item.id,
-            name:item.name,
-            category:item.category||"",
-            price:item.price,
-            qty:1,
-            outletId:outlet.id,
-            outletName:outlet.name
-
-        });
-
-
+    /* NORMAL POS: keep the existing non-table order behaviour. */
+    const existing=posOrder.find(
+        x=>String(x?.id)===String(item.id) && String(x?.outletId||outlet.id)===String(outlet.id)
+    );
+    if(existing) existing.qty=Number(existing.qty||0)+1;
+    else posOrder.push({
+        id:item.id,
+        name:item.name,
+        category:item.category||"",
+        price:Number(item.price||0),
+        qty:1,
+        outletId:outlet.id,
+        outletName:outlet.name
+    });
     renderPOSOrder();
-
 }
-
 
 function changePOSQty(id,change){
 
@@ -10924,6 +10935,8 @@ function changePOSQty(id,change){
 
 
     renderPOSOrder();
+    if(typeof activeFNBTableId!=="undefined" && activeFNBTableId && typeof syncFNBActiveTable==="function") syncFNBActiveTable();
+    if(typeof activeFNBTableId!=="undefined" && activeFNBTableId && typeof refreshFNBTableService==="function") refreshFNBTableService();
 
 }
 
@@ -10932,8 +10945,9 @@ function clearPOSOrder(){
 
     if(!hasActionPermission("pos.void") && !hasActionPermission("pos.edit_quantity")){alert("Access denied. Clear / remove order items has not been assigned to your user account.");return;}
     posOrder=[];
-
+    if(typeof activeFNBTableId!=="undefined" && activeFNBTableId && typeof syncFNBActiveTable==="function") syncFNBActiveTable();
     renderPOSOrder();
+    if(typeof activeFNBTableId!=="undefined" && activeFNBTableId && typeof refreshFNBTableService==="function") refreshFNBTableService();
 
 }
 
