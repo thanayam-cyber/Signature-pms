@@ -19089,7 +19089,7 @@ async function hydrateSupabaseRooms(){
 </script>
 <script id="v2-1-343-purchasing-pr-cloud-source-of-truth">
 /* =========================================================
-   v2.1.343 — PURCHASE REQUEST CLOUD SOURCE OF TRUTH
+   v2.1.344 — PURCHASE REQUEST CLOUD SOURCE OF TRUTH
    Targeted fix only for Purchasing PRs.
    - PRs are stored in property_store_records as purchase_requests.
    - Additive/upsert-only: never delete another user's PR from cloud.
@@ -19166,23 +19166,23 @@ async function hydrateSupabaseRooms(){
 
   function wrap(name){
     const fn=window[name];
-    if(typeof fn!=='function'||fn.__v343PRWrapped)return;
+    if(typeof fn!=='function'||fn.__v344PRWrapped)return;
     const wrapped=function(){
       const result=fn.apply(this,arguments);
       [150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseRequests(),ms));
       return result;
     };
-    wrapped.__v343PRWrapped=true;window[name]=wrapped;
+    wrapped.__v344PRWrapped=true;window[name]=wrapped;
   }
   function nav(name){
     const fn=window[name];
-    if(typeof fn!=='function'||fn.__v343PRNavWrapped)return;
+    if(typeof fn!=='function'||fn.__v344PRNavWrapped)return;
     const wrapped=function(){
       const result=fn.apply(this,arguments);
       [300,1000,2500].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseRequests(),ms));
       return result;
     };
-    wrapped.__v343PRNavWrapped=true;window[name]=wrapped;
+    wrapped.__v344PRNavWrapped=true;window[name]=wrapped;
   }
   function boot(){
     wrap('savePurchaseRequest');wrap('approvePurchaseRequest');
