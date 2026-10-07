@@ -11346,9 +11346,12 @@ async function settleFNBTable(){
  try{
    if(window.signatureFnbTransactionCloud&&typeof window.signatureFnbTransactionCloud.publishForSale==='function'){
      invoiceCloudSaved=await window.signatureFnbTransactionCloud.publishForSale(saleId);
-   }
+   }else invoiceCloudSaved=false;
  }catch(e){invoiceCloudSaved=false;console.warn("F&B settlement invoice cloud sync failed:",e);}
  try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}
+ if(invoiceCloudSaved){
+   try{if(window.signatureFnbTransactionCloud&&typeof window.signatureFnbTransactionCloud.pull==='function')await window.signatureFnbTransactionCloud.pull();}catch(e){console.warn("F&B post-settlement cloud pull failed:",e);}
+ }
  if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});
  logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);
 
@@ -21223,10 +21226,34 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   async function publishForSale(saleId){
     const sale=sales.find(x=>String(x.id)===String(saleId)&&same(x));
     if(!sale)return false;
-    const a=await publishSale(sale);
+    /* v2.1.381 — settlement must be durable before the table is released.
+       Retry the sale/payment writes and verify the exact rows in Supabase.
+       This closes the gap where Reception showed a new invoice locally but
+       Admin could not see it because a transient cloud write failed. */
     const pays=payments.filter(x=>String(x.saleId||'')===String(saleId)&&same(x));
-    const results=await Promise.all(pays.map(publishPayment));
-    return a&&results.every(Boolean);
+    for(let attempt=0;attempt<3;attempt++){
+      const a=await publishSale(sale);
+      const results=await Promise.all(pays.map(publishPayment));
+      if(a&&results.every(Boolean)){
+        try{
+          const c=client(),p=pid();
+          if(c&&p){
+            const sr=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',SALE_PREFIX+String(sale.id)).maybeSingle();
+            if(sr.error)throw sr.error;
+            const saleOk=sr.data?.data && String(sr.data.data.id)===String(sale.id) && String(sr.data.data.invoiceNo||'')===String(sale.invoiceNo||'');
+            let payOk=true;
+            for(const pay of pays){
+              const pr=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',PAYMENT_PREFIX+String(pay.id)).maybeSingle();
+              if(pr.error)throw pr.error;
+              if(!pr.data?.data || String(pr.data.data.id)!==String(pay.id) || String(pr.data.data.saleId||'')!==String(sale.id)) payOk=false;
+            }
+            if(saleOk&&payOk)return true;
+          }else return true;
+        }catch(e){console.warn('F&B settlement cloud verification attempt '+(attempt+1)+' failed:',e?.message||e);}
+      }
+      await new Promise(r=>setTimeout(r,300*(attempt+1)));
+    }
+    return false;
   }
   function mergeSales(rows){
     const incoming=rows.filter(same), pending=window.__signatureFnbPendingVoids||new Set();
