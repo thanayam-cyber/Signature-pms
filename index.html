@@ -21223,6 +21223,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function publishSale(sale){return same(sale)?put(SALE_PREFIX+String(sale.id),sale):false}
   async function publishPayment(payment){return same(payment)?put(PAYMENT_PREFIX+String(payment.id),payment):false}
+  const INVOICE_INDEX_KEY='signature_pms_fnb_invoice_index';
   async function publishForSale(saleId){
     const sale=sales.find(x=>String(x.id)===String(saleId)&&same(x));
     if(!sale)return false;
@@ -21247,7 +21248,24 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
               if(pr.error)throw pr.error;
               if(!pr.data?.data || String(pr.data.data.id)!==String(pay.id) || String(pr.data.data.saleId||'')!==String(sale.id)) payOk=false;
             }
-            if(saleOk&&payOk)return true;
+            if(saleOk&&payOk){
+              /* v2.1.382 — maintain a compact property invoice index as a
+                 second source for the Admin invoice screen. This does not
+                 replace the per-sale records; it only makes the invoice list
+                 resilient when a realtime/per-key pull arrives late. */
+              try{
+                const ix=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',INVOICE_INDEX_KEY).maybeSingle();
+                if(!ix.error){
+                  const rows=Array.isArray(ix.data?.data)?ix.data.data:[];
+                  const map=new Map(rows.map(x=>[String(x?.id||''),x]));
+                  map.set(String(sale.id),sale);
+                  const trimmed=Array.from(map.values()).sort((a,b)=>String(b.dateTime||b.date||'').localeCompare(String(a.dateTime||a.date||''))).slice(0,100);
+                  const ir=await c.from(TABLE).upsert({property_id:p,storage_key:INVOICE_INDEX_KEY,data:trimmed,updated_by:await userId(),updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+                  if(ir.error)console.warn('F&B invoice index save failed:',ir.error.message||ir.error);
+                }
+              }catch(e){console.warn('F&B invoice index update failed:',e?.message||e)}
+              return true;
+            }
           }else return true;
         }catch(e){console.warn('F&B settlement cloud verification attempt '+(attempt+1)+' failed:',e?.message||e);}
       }
@@ -21269,18 +21287,29 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     payments.splice(0,payments.length,...keep,...incoming);
     try{localStorage.setItem('signature_pms_payments',JSON.stringify(payments));}catch(e){}
   }
+  let lastInvoiceFingerprint='';
+  function invoiceFingerprint(){
+    try{return JSON.stringify((sales||[]).map(x=>({id:x.id,invoiceNo:x.invoiceNo,status:x.status,voided:!!x.voided,dateTime:x.dateTime,total:x.total})).sort((a,b)=>String(a.id).localeCompare(String(b.id))));}catch(e){return ''}
+  }
   async function pull(){
     const c=client(), p=pid(), u=await userId();
     if(!c||!p||!u)return false;
     try{
+      const before=invoiceFingerprint();
       const a=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',SALE_PREFIX+'%');
       if(a.error)throw a.error;
       const b=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PAYMENT_PREFIX+'%');
       if(b.error)throw b.error;
       mergeSales((a.data||[]).map(r=>r.data));
       mergePayments((b.data||[]).map(r=>r.data));
-      /* Never redraw while a user has items selected in the POS cart. */
-      if(!Array.isArray(posOrder)||posOrder.length===0){try{if(typeof renderAll==='function')renderAll()}catch(e){}}
+      /* v2.1.382 — fallback invoice index for Admin invoice rendering. */
+      const ix=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',INVOICE_INDEX_KEY).maybeSingle();
+      if(!ix.error && Array.isArray(ix.data?.data))mergeSales(ix.data.data);
+      const after=invoiceFingerprint();
+      const changed=before!==after;
+      if(changed){lastInvoiceFingerprint=after;try{if(typeof renderPOSInvoices==='function')renderPOSInvoices();}catch(e){}}
+      /* Never call renderAll() from the 5-second F&B poll. That was causing
+         the Admin Restaurant section to visibly blink/reset on every poll. */
       return true;
     }catch(e){console.warn('F&B cloud pull failed:',e?.message||e);return false}
   }
