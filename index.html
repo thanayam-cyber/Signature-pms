@@ -19126,7 +19126,15 @@ async function hydrateSupabaseRooms(){
       }));
       const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});
       if(error)throw error;
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders synchronized to cloud.','success');
+      const verifyIds=rows.map(r=>String(r.record_id));
+      if(verifyIds.length){
+        const {data:verify,error:verifyError}=await c.from(TABLE).select('record_id,property_id,record_type').eq('property_id',propertyId).eq('record_type','purchase_orders').in('record_id',verifyIds);
+        if(verifyError)throw verifyError;
+        const found=new Set((verify||[]).map(r=>String(r.record_id)));
+        const missing=verifyIds.filter(id=>!found.has(id));
+        if(missing.length)throw new Error('PO saved but cloud verification failed. Missing record(s): '+missing.join(', '));
+      }
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders synchronized and verified in cloud.','success');
       return true;
     }catch(e){
       console.warn('PO cloud sync failed:',e);
