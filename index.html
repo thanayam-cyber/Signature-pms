@@ -19040,7 +19040,7 @@ async function hydrateSupabaseRooms(){
 /* SUPABASE CLOUD — STEP 4.1 STORES / INVENTORY */
 (function(){
   const TABLE='property_store_records';
-  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',purchase_requests:'signature_pms_purchase_requests',purchase_orders:'signature_pms_purchase_orders',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
+  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',purchase_requests:'signature_pms_purchase_requests',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
   const KEYS=Object.values(TYPES);
   const typeForKey=k=>Object.keys(TYPES).find(t=>TYPES[t]===k)||null;
   const readKey=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
@@ -19087,120 +19087,65 @@ async function hydrateSupabaseRooms(){
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();[500,1500,3000].forEach(ms=>setTimeout(()=>{bind();bindNavigation();},ms));
 })();
 </script>
-<script id="v2-1-340-purchasing-po-cloud-fix">
+<script id="v2-1-341-purchasing-po-cloud-source-of-truth">
 /* =========================================================
-   v2.1.340 — PURCHASING PO CLOUD SOURCE OF TRUTH
-   Targeted fix:
-   - Purchase Orders use the existing property_store_records cloud layer.
-   - Manager/Reception-created POs are published to Supabase.
-   - Admin login/property refresh hydrates the same PO set locally.
-   - Existing Purchasing/Stores/Restaurant logic remains unchanged.
+   v2.1.341 — PURCHASING PO CLOUD SOURCE OF TRUTH (SAFE)
+   IMPORTANT: Purchase Orders are owned ONLY by this block.
+   The generic Stores sync deliberately excludes purchase_orders so a user
+   with an old/empty local cache can NEVER delete another user's cloud POs.
 ========================================================= */
 (function(){
   'use strict';
-  if(window.__signatureV340PurchasingPOCloudFix)return;
-  window.__signatureV340PurchasingPOCloudFix=true;
+  if(window.__signatureV341PurchasingPOCloud)return;
+  window.__signatureV341PurchasingPOCloud=true;
 
   const PO_KEY='signature_pms_purchase_orders';
   const TABLE='property_store_records';
 
-  function prop(){
-    return String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
-  }
-  function readPOs(){
-    try{
-      const v=JSON.parse(localStorage.getItem(PO_KEY)||'[]');
-      return Array.isArray(v)?v:[];
-    }catch(e){return [];}
-  }
-  function writePOs(v){
-    try{localStorage.setItem(PO_KEY,JSON.stringify(Array.isArray(v)?v:[]));return true;}
-    catch(e){console.warn('Purchasing PO local write failed:',e);return false;}
-  }
-  async function getClient(){
-    return typeof initSupabaseClient==='function'?initSupabaseClient():null;
-  }
-  async function getAuth(c){
-    const {data:{session},error}=await c.auth.getSession();
-    if(error)throw error;
-    return session?.user||null;
-  }
+  const prop=()=>String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
+  const readPOs=()=>{try{const v=JSON.parse(localStorage.getItem(PO_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
+  const writePOs=v=>{try{localStorage.setItem(PO_KEY,JSON.stringify(Array.isArray(v)?v:[]));return true;}catch(e){console.warn('PO local write failed:',e);return false;}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  async function session(c){const {data:{session},error}=await c.auth.getSession();if(error)throw error;return session?.user||null;}
 
+  /* ADDITIVE ONLY. Never delete cloud POs from a local snapshot. */
   window.syncSupabasePurchaseOrders=async function(){
     try{
-      const c=await getClient();
-      const propertyId=prop();
+      const c=client(), propertyId=prop();
       if(!c||!propertyId)return false;
-      const u=await getAuth(c);
-      if(!u)return false;
-
-      const mine=readPOs().filter(x=>String(x?.propertyId||'')===propertyId);
+      if(!await session(c))return false;
+      const localMine=readPOs().filter(x=>String(x?.propertyId||'')===propertyId);
+      if(!localMine.length)return true;
       const now=new Date().toISOString();
-      const rows=mine.map((record,i)=>({
+      const rows=localMine.map((record,i)=>({
         property_id:propertyId,
         record_type:'purchase_orders',
         record_id:String(record?.id||('purchase_orders_'+i)),
         record_data:{...record,propertyId},
-        updated_at:record?.updatedAt||now
+        updated_at:record?.updatedAt||record?.createdAt||now
       }));
-
-      if(rows.length){
-        const {error}=await c.from(TABLE).upsert(
-          rows,
-          {onConflict:'property_id,record_type,record_id'}
-        );
-        if(error)throw error;
-      }
-
-      const {data:existing,error:readError}=await c.from(TABLE)
-        .select('record_id')
-        .eq('property_id',propertyId)
-        .eq('record_type','purchase_orders');
-      if(readError)throw readError;
-
-      const keep=new Set(rows.map(r=>String(r.record_id)));
-      for(const row of (existing||[])){
-        const id=String(row.record_id);
-        if(!keep.has(id)){
-          const {error}=await c.from(TABLE)
-            .delete()
-            .eq('property_id',propertyId)
-            .eq('record_type','purchase_orders')
-            .eq('record_id',id);
-          if(error)throw error;
-        }
-      }
-
-      if(typeof setSupabaseCloudMessage==='function'){
-        setSupabaseCloudMessage('Purchasing Purchase Orders synchronized to cloud.','success');
-      }
+      const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});
+      if(error)throw error;
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders synchronized to cloud.','success');
       return true;
     }catch(e){
-      console.warn('Purchasing PO cloud sync skipped:',e);
-      if(typeof setSupabaseCloudMessage==='function'){
-        setSupabaseCloudMessage(
-          'Purchase Orders remain local; cloud sync failed: '+(e?.message||e),
-          'error'
-        );
-      }
+      console.warn('PO cloud sync failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Order cloud sync failed: '+(e?.message||e),'error');
       return false;
     }
   };
 
+  /* Cloud is authoritative for POs. Local-only POs are retained until published. */
   window.hydrateSupabasePurchaseOrders=async function(){
     try{
-      const c=await getClient();
-      const propertyId=prop();
+      const c=client(), propertyId=prop();
       if(!c||!propertyId)return false;
-      const u=await getAuth(c);
-      if(!u)return false;
-
+      if(!await session(c))return false;
       const {data,error}=await c.from(TABLE)
         .select('record_id,record_data,updated_at')
         .eq('property_id',propertyId)
         .eq('record_type','purchase_orders');
       if(error)throw error;
-
       const cloud=data||[];
       const local=readPOs();
       const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
@@ -19211,88 +19156,58 @@ async function hydrateSupabaseRooms(){
       cloud.forEach(r=>{
         const cr=r.record_data||{};
         const lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
-        const localUpdated=Date.parse(String(lr?.updatedAt||lr?.createdAt||''));
-        const cloudUpdated=Date.parse(String(r.updated_at||''));
-        if(lr && Number.isFinite(localUpdated) && Number.isFinite(cloudUpdated) && localUpdated>cloudUpdated){
-          merged.push(lr);
-        }else{
-          merged.push({...cr,propertyId});
-        }
+        const lu=Date.parse(String(lr?.updatedAt||lr?.createdAt||''));
+        const cu=Date.parse(String(r.updated_at||''));
+        /* If local is newer, keep it and let the next sync publish it. */
+        merged.push(lr && Number.isFinite(lu) && Number.isFinite(cu) && lu>cu ? lr : {...cr,propertyId});
       });
-
-      // Preserve a locally-created PO if it has not been published yet.
-      localMine.forEach(l=>{
-        if(!cmap.has(String(l?.id||'')))merged.push(l);
-      });
-
+      localMine.forEach(l=>{if(!cmap.has(String(l?.id||'')))merged.push(l);});
       writePOs(other.concat(merged));
 
-      if(typeof renderPurchasingModule==='function'){
-        try{renderPurchasingModule();}catch(e){}
-      }
-      if(typeof renderPurchaseRegister==='function'){
-        try{renderPurchaseRegister();}catch(e){}
-      }
-
-      if(typeof setSupabaseCloudMessage==='function'){
-        setSupabaseCloudMessage('Purchasing Purchase Orders refreshed from cloud.','success');
-      }
+      try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
+      try{if(typeof renderPurchaseRegister==='function')renderPurchaseRegister();}catch(e){}
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders refreshed from cloud.','success');
       return true;
     }catch(e){
-      console.warn('Purchasing PO cloud hydration skipped:',e);
-      if(typeof setSupabaseCloudMessage==='function'){
-        setSupabaseCloudMessage(
-          'Purchase Orders cloud refresh failed: '+(e?.message||e),
-          'error'
-        );
-      }
+      console.warn('PO cloud hydration failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Order cloud refresh failed: '+(e?.message||e),'error');
       return false;
     }
   };
 
   function wrapSave(){
-    const names=['savePOFromPR'];
-    names.forEach(name=>{
-      const fn=window[name];
-      if(typeof fn!=='function'||fn.__v340POCloudWrapped)return;
-      const wrapped=function(){
-        const result=fn.apply(this,arguments);
-        setTimeout(()=>window.syncSupabasePurchaseOrders(),350);
-        return result;
-      };
-      wrapped.__v340POCloudWrapped=true;
-      window[name]=wrapped;
-    });
+    const name='savePOFromPR',fn=window[name];
+    if(typeof fn!=='function'||fn.__v341POWrapped)return;
+    const wrapped=function(){
+      const result=fn.apply(this,arguments);
+      /* Retry because the original PO function is synchronous. */
+      [150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseOrders(),ms));
+      return result;
+    };
+    wrapped.__v341POWrapped=true;
+    window[name]=wrapped;
   }
 
-  function bindNavigation(){
-    const navNames=['switchProperty','hydrateCloudAfterLocalLogin'];
-    navNames.forEach(name=>{
+  function wrapNavigation(){
+    ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{
       const fn=window[name];
-      if(typeof fn!=='function'||fn.__v340POCloudNavWrapped)return;
+      if(typeof fn!=='function'||fn.__v341PONavWrapped)return;
       const wrapped=function(){
         const result=fn.apply(this,arguments);
-        setTimeout(()=>window.hydrateSupabasePurchaseOrders(),500);
+        [300,1000,2500].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));
         return result;
       };
-      wrapped.__v340POCloudNavWrapped=true;
+      wrapped.__v341PONavWrapped=true;
       window[name]=wrapped;
     });
   }
 
   function boot(){
-    wrapSave();
-    bindNavigation();
-    if(prop())setTimeout(()=>window.hydrateSupabasePurchaseOrders(),900);
+    wrapSave();wrapNavigation();
+    [500,1200,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapNavigation();},ms));
+    [1200,2500,4000].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));
   }
-
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);
-  else boot();
-
-  [500,1500,3000].forEach(ms=>setTimeout(()=>{
-    wrapSave();
-    bindNavigation();
-  },ms));
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
 <script>
