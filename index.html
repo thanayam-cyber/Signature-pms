@@ -883,7 +883,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
             </button>
 </div>
 </div>
-<div class="section" id="fnbTableServiceSection" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close &amp; settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTableService()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
+<div class="section" id="fnbTableServiceSection" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close &amp; settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTablesFromCloud()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
 <div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Invoices</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Latest 25 restaurant bills. Every POS order (cash, card, room charge) gets an invoice number.</div></div></div><div class="table-wrap"><table><thead><tr><th>Invoice No</th><th>Date / Time</th><th>Outlet</th><th>Customer</th><th>Method</th><th style="text-align:right">Total</th><th>Action</th></tr></thead><tbody id="posInvoiceTable"><tr><td class="empty" colspan="7">No restaurant invoices yet.</td></tr></tbody></table></div></div>
 </section>
 <!-- PAYMENTS -->
@@ -10825,8 +10825,8 @@ function renderPOS(){
                     ${posMoney(item.price)}
                 </div>
 
-                <button class="btn btn-primary btn-small"
-                    onclick="addPOSItem('${item.id}')">
+                <button type="button" class="btn btn-primary btn-small pos-menu-add-btn"
+                    data-pos-item-id="${escapeHtml(String(item.id))}">
                     Add
                 </button>
 
@@ -10841,36 +10841,34 @@ function renderPOS(){
 
 
 function addPOSItem(id){
-    if(!currentUser){showLoginScreen();return;}
-    if(!hasActionPermission("pos.add_items")){alert("Access denied. Add Items / Take Orders has not been assigned to your user account.");return;}
-    if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}
+    try{
+        if(!currentUser){showLoginScreen();return;}
+        if(!hasActionPermission("pos.add_items")){alert("Access denied. Add Items / Take Orders has not been assigned to your user account.");return;}
+        if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}
 
-    /* Resolve menu item by string ID so UUID/string/legacy IDs all work. */
-    const item=Array.isArray(POS_MENU)
-        ? POS_MENU.find(x=>String(x?.id)===String(id))
-        : null;
-    if(!item){alert("Menu item could not be found. Please refresh the Restaurant POS menu.");return;}
+        const item=Array.isArray(POS_MENU)
+            ? POS_MENU.find(x=>String(x?.id)===String(id))
+            : null;
+        if(!item){alert("Menu item could not be found. Please refresh the Restaurant POS menu.");return;}
 
-    const outlet=getCurrentPOSOutlet();
-    if(!outlet){alert("Please select an active restaurant / outlet.");return;}
-    const itemOutletId=String(item.outletId||outlet.id);
-    if(itemOutletId!==String(outlet.id)){
-        alert("This menu item belongs to another restaurant / outlet.");
-        return;
-    }
+        const outlet=getCurrentPOSOutlet();
+        if(!outlet){alert("Please select an active restaurant / outlet.");return;}
+        const itemOutletId=String(item.outletId||outlet.id);
+        if(itemOutletId!==String(outlet.id)){
+            alert("This menu item belongs to another restaurant / outlet.");
+            return;
+        }
 
-    /* TABLE SERVICE: write directly to the active table.
-       Do not depend on the normal POS order renderer to move the item into the table. */
-    if(typeof activeFNBTableId!=="undefined" && activeFNBTableId && typeof fnbTableById==="function"){
-        const table=fnbTableById(activeFNBTableId);
+        /* Table service is the source of truth while a table is open. */
+        const tableId=(typeof activeFNBTableId!=="undefined")?String(activeFNBTableId||""):"";
+        const table=(tableId && typeof fnbTableById==="function")?fnbTableById(tableId):null;
         if(table){
-            if(!Array.isArray(table.items)) table.items=[];
-            const existing=table.items.find(x=>String(x?.id)===String(item.id));
-            if(existing){
-                existing.qty=Number(existing.qty||0)+1;
-                existing.sentQty=Number(existing.sentQty||0);
+            if(!Array.isArray(table.items))table.items=[];
+            let line=table.items.find(x=>String(x?.id)===String(item.id));
+            if(line){
+                line.qty=Number(line.qty||0)+1;
             }else{
-                table.items.push({
+                line={
                     id:item.id,
                     name:item.name,
                     category:item.category||"",
@@ -10879,7 +10877,8 @@ function addPOSItem(id){
                     sentQty:0,
                     outletId:outlet.id,
                     outletName:outlet.name
-                });
+                };
+                table.items.push(line);
             }
             table.status="Open";
             posOrder=table.items.map(x=>({...x}));
@@ -10888,24 +10887,44 @@ function addPOSItem(id){
             refreshFNBTableService();
             return;
         }
-    }
 
-    /* NORMAL POS: keep the existing non-table order behaviour. */
-    const existing=posOrder.find(
-        x=>String(x?.id)===String(item.id) && String(x?.outletId||outlet.id)===String(outlet.id)
-    );
-    if(existing) existing.qty=Number(existing.qty||0)+1;
-    else posOrder.push({
-        id:item.id,
-        name:item.name,
-        category:item.category||"",
-        price:Number(item.price||0),
-        qty:1,
-        outletId:outlet.id,
-        outletName:outlet.name
-    });
-    renderPOSOrder();
+        /* Normal POS order when no table is active. */
+        const existing=posOrder.find(
+            x=>String(x?.id)===String(item.id) && String(x?.outletId||outlet.id)===String(outlet.id)
+        );
+        if(existing)existing.qty=Number(existing.qty||0)+1;
+        else posOrder.push({
+            id:item.id,
+            name:item.name,
+            category:item.category||"",
+            price:Number(item.price||0),
+            qty:1,
+            outletId:outlet.id,
+            outletName:outlet.name
+        });
+        renderPOSOrder();
+    }catch(err){
+        console.error("Restaurant POS Add Item failed",err);
+        alert("Unable to add item: "+(err?.message||err));
+    }
 }
+
+/* v2.1.375 — use delegated POS menu clicks so Add buttons cannot be lost when
+   the POS menu is re-rendered. This is table-service safe and does not alter
+   Purchasing or any other module. */
+(function(){
+    if(window.__signaturePOSMenuAdd375)return;
+    window.__signaturePOSMenuAdd375=true;
+    document.addEventListener("click",function(e){
+        const b=e.target?.closest?.(".pos-menu-add-btn");
+        if(!b)return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const id=b.getAttribute("data-pos-item-id");
+        if(id===null)return;
+        try{addPOSItem(id);}catch(err){console.error("POS menu delegated add failed",err);alert("Unable to add item: "+(err?.message||err));}
+    },true);
+})();
 
 function changePOSQty(id,change){
 
@@ -11206,7 +11225,14 @@ function fnbVoidInvoice(saleId){
 function defaultFNBTableList(){
  const a=[]; for(let i=1;i<=12;i++) a.push({id:"tbl_"+String(i).padStart(2,"0"),tableNo:String(i),name:"Table "+i,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]}); return a;
 }
-function saveFNBTableData(){if(!currentPropertyId)return;const all=readArray(STORAGE.fnbTables);const keep=all.filter(x=>String(x?.propertyId||"")!==String(currentPropertyId));localStorage.setItem(STORAGE.fnbTables,JSON.stringify(keep.concat((fnbTables||[]).map(x=>({...x,propertyId:currentPropertyId})))));}
+function saveFNBTableData(){
+ if(!currentPropertyId)return;
+ const all=readArray(STORAGE.fnbTables);
+ const keep=all.filter(x=>String(x?.propertyId||"")!==String(currentPropertyId));
+ const tagged=(fnbTables||[]).map(x=>({...x,propertyId:currentPropertyId}));
+ localStorage.setItem(STORAGE.fnbTables,JSON.stringify(keep.concat(tagged)));
+ try{ if(typeof window.__signatureFNBCloudSaveTables === "function") window.__signatureFNBCloudSaveTables(tagged); }catch(e){ console.warn("F&B table cloud save trigger failed:",e); }
+}
 function fnbTableById(id){return (fnbTables||[]).find(x=>String(x.id)===String(id));}
 function fnbTableTotal(t){return (t?.items||[]).reduce((s,i)=>s+Number(i.price||0)*Number(i.qty||0),0);}
 function fnbEnsureHistory(t){if(!Array.isArray(t.ticketHistory))t.ticketHistory=[];return t.ticketHistory;}
@@ -21436,6 +21462,49 @@ const oldOpen=window.openArticleManager;
 if(typeof oldOpen==='function'&&!oldOpen.__v370Open){window.openArticleManager=function(){reconcile();return oldOpen.apply(this,arguments)};window.openArticleManager.__v370Open=true;}
 const boot=()=>{bindSave();bindNav();setTimeout(()=>reconcile(),2500);setTimeout(()=>reconcile(),6000);setTimeout(()=>{bindSave();bindNav();},700);};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+<script id="v2-1-374-fnb-table-cloud-sync">
+/* v2.1.374 — RESTAURANT TABLE SERVICE CLOUD SYNC. F&B tables only. */
+(function(){
+  'use strict';
+  if(window.__signatureV374FNBTableCloudSync)return;
+  window.__signatureV374FNBTableCloudSync=true;
+  const KEY='signature_pms_fnb_tables', TABLE='pms_cloud_records';
+  const prop=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  async function ready(){
+    const c=client(),p=prop(); if(!c||!p)return null;
+    try{const s=await c.auth.getSession(); const u=s?.data?.session?.user; return u?{c,p,u}:null;}catch(e){return null;}
+  }
+  async function saveCloud(list){
+    try{
+      const z=await ready(); if(!z)return false;
+      const data=(Array.isArray(list)?list:[]).map(x=>({...x,propertyId:z.p}));
+      const q=await z.c.from(TABLE).upsert({property_id:z.p,storage_key:KEY,data,updated_by:z.u.id,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      if(q.error)throw q.error;
+      return true;
+    }catch(e){console.warn('F&B table cloud save failed:',e?.message||e);return false;}
+  }
+  async function pullCloud(){
+    try{
+      const z=await ready(); if(!z)return false;
+      const q=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key',KEY).maybeSingle();
+      if(q.error)throw q.error;
+      if(!q.data||!Array.isArray(q.data.data))return false;
+      const cloud=q.data.data.map(x=>({...x,propertyId:z.p}));
+      const all=readArray(STORAGE.fnbTables);
+      const other=all.filter(x=>String(x?.propertyId||'')!==z.p);
+      localStorage.setItem(STORAGE.fnbTables,JSON.stringify(other.concat(cloud)));
+      if(typeof activeFNBTableId!=='undefined' && !activeFNBTableId){fnbTables=cloud;if(typeof refreshFNBTableService==='function')refreshFNBTableService();}
+      return true;
+    }catch(e){console.warn('F&B table cloud pull failed:',e?.message||e);return false;}
+  }
+  window.__signatureFNBCloudSaveTables=saveCloud;
+  window.__signatureFNBCloudPullTables=pullCloud;
+  window.refreshFNBTablesFromCloud=async function(){const ok=await pullCloud();if(ok&&typeof refreshFNBTableService==='function')refreshFNBTableService();return ok;};
+  function boot(){setTimeout(()=>{try{pullCloud();}catch(e){}},700);}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
 </body><script id="v2-1-360-po-open-button-final">
