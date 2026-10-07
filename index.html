@@ -11086,7 +11086,8 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div></body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div>
+</body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
@@ -14902,7 +14903,7 @@ function renderPR(){
    const total=Number(r.total||0), existingPO=findExistingPOForPR(r), poRef=r.poNumber||r.purchaseOrderNumber||existingPO?.number||'';
    let action='';
    if(poRef && hasModuleAction('purchasing.po')){
-     action=`<button class="btn btn-success btn-small" onclick="openPurchaseOrderFromPR('${esc(r.id)}')">Open ${esc(poRef)}</button>`;
+     action=`<button class="btn btn-success btn-small" onclick="window.openPurchaseOrderFromPR('${esc(r.id)}')">Open ${esc(poRef)}</button>`;
    }else{
      action=`<button class="btn btn-secondary btn-small" onclick="openPurchaseRequestDetails('${esc(r.id)}')">Open</button>`;
      if(r.status==='Submitted' && hasModuleAction('purchasing.request')) action+=` <button class="btn btn-primary btn-small" onclick="approvePurchaseRequest('${esc(r.id)}')">Approve</button>`;
@@ -15048,7 +15049,8 @@ window.savePOFromPR=function(prId){
  document.getElementById('sigCreatePOFromPRModal').classList.remove('show');renderPR();if(typeof renderPurchasingModule==='function')renderPurchasingModule();if(typeof renderPurchaseRegister==='function')renderPurchaseRegister();
  /* PO creation also updates the PR reference in cloud so every user sees
     the same PR -> PO state, not only the PO record itself. */
- try{if(typeof window.syncSupabasePurchaseRequests==='function'){[0,250,750,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseRequests(),ms));}}catch(e){console.warn('PR cloud sync after PO creation skipped:',e);}
+ try{if(typeof window.syncSupabasePurchaseRequests==='function'){[0,250,750,1500,3000,5000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseRequests(),ms));}}catch(e){console.warn('PR cloud sync after PO creation skipped:',e);}
+ try{if(typeof window.syncSupabasePurchaseOrders==='function'){[0,250,750,1500,3000,5000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseOrders(),ms));}}catch(e){console.warn('PO cloud sync after PO creation skipped:',e);}
  alert('Purchase Order '+po.number+' created from '+pr.number+'.');
 };
 /* GRN: the old file referenced openGRNModal but did not define it. This implementation stores GRNs and posts Inventory/AP journals in base currency. */
@@ -19150,6 +19152,34 @@ async function hydrateSupabaseRooms(){
       }));
       const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});
       if(error)throw error;
+
+      /* IMPORTANT: this PMS also uses pms_cloud_records as the shared storage
+         row for purchase_orders. Keep that row populated as well. Older builds
+         only wrote property_store_records, leaving the shared row as data=[]. */
+      try{
+        const {data:legacy,error:legacyReadError}=await c.from('pms_cloud_records')
+          .select('data,updated_at')
+          .eq('property_id',propertyId)
+          .eq('storage_key',PO_KEY)
+          .maybeSingle();
+        if(legacyReadError)throw legacyReadError;
+        const existing=Array.isArray(legacy?.data)?legacy.data:[];
+        const byId=new Map(existing.map(x=>[String(x?.id||''),x]));
+        localMine.forEach(po=>byId.set(String(po?.id||('po_'+Date.now()+'_'+Math.random().toString(36).slice(2,6))),{...po,propertyId}));
+        const merged=[...byId.values()];
+        const user=await session(c);
+        const payload={property_id:propertyId,storage_key:PO_KEY,data:merged,updated_by:user?.id||null,updated_at:new Date().toISOString()};
+        const {error:legacyUpsertError}=await c.from('pms_cloud_records').upsert(payload,{onConflict:'property_id,storage_key'});
+        if(legacyUpsertError)throw legacyUpsertError;
+        const {data:legacyVerify,error:legacyVerifyError}=await c.from('pms_cloud_records').select('data').eq('property_id',propertyId).eq('storage_key',PO_KEY).maybeSingle();
+        if(legacyVerifyError)throw legacyVerifyError;
+        const verified=Array.isArray(legacyVerify?.data)?legacyVerify.data:[];
+        const missing=localMine.filter(po=>!verified.some(v=>String(v?.id||'')===String(po?.id||'')));
+        if(missing.length)throw new Error('Shared PO storage verification failed. Missing: '+missing.map(x=>x.number||x.id).join(', '));
+      }catch(legacyErr){
+        console.warn('Shared pms_cloud_records PO sync warning:',legacyErr);
+      }
+
       const verifyIds=rows.map(r=>String(r.record_id));
       if(verifyIds.length){
         const {data:verify,error:verifyError}=await c.from(TABLE).select('record_id,property_id,record_type').eq('property_id',propertyId).eq('record_type','purchase_orders').in('record_id',verifyIds);
@@ -19237,7 +19267,7 @@ async function hydrateSupabaseRooms(){
   function boot(){
     wrapSave();wrapNavigation();
     [500,1200,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapNavigation();},ms));
-    [1200,2500,4000].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));
+    [800,1800,3500,6000].forEach(ms=>setTimeout(async()=>{try{await window.syncSupabasePurchaseOrders();}catch(e){} try{await window.hydrateSupabasePurchaseOrders();}catch(e){}},ms));
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -21085,7 +21115,11 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
       if(error)throw error;
       const cloud=Array.isArray(data?.data)?data.data:[];
-      const merged=merge(cloud,localMine(),pendingRows());
+      let poLocal=[];
+      try{poLocal=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');if(!Array.isArray(poLocal))poLocal=[];}catch(e){poLocal=[];}
+      const poMine=poLocal.filter(x=>String(x?.propertyId||p)===p);
+      const decorate=x=>{const base={...x,propertyId:p};const po=poMine.find(q=>String(q?.prId||'')===String(base.id||'')||(base.poNumber&&String(q?.number||'')===String(base.poNumber)));if(po)base.poSnapshot={...po,propertyId:p};return base;};
+      const merged=merge(cloud,localMine().map(decorate),pendingRows().map(decorate));
       const {error:upErr}=await c.from(TABLE).upsert({
         property_id:p,storage_key:KEY,data:merged,updated_by:u,updated_at:new Date().toISOString()
       },{onConflict:'property_id,storage_key'});
@@ -21167,7 +21201,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin');
     [300,800,1500,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin')},ms));
     [700,1800,3500].forEach(ms=>setTimeout(pull,ms));
-    setInterval(()=>{if(pid()&&!document.hidden)pull()},5000);
+    [1200,3000].forEach(ms=>setTimeout(()=>{try{sync()}catch(e){}},ms));
+    setInterval(()=>{if(pid()&&!document.hidden){pull();try{sync()}catch(e){}}},5000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -21225,7 +21260,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
         .maybeSingle();
       if(!error && data){
         const arr=Array.isArray(data.data)?data.data:[];
-        const po=arr.find(x=>matchesPO(x,prId,poNo));
+        const po=arr.find(x=>matchesPO(x,prId,poNo)||(x?.poSnapshot&&matchesPO(x.poSnapshot,prId,poNo)));
+        if(po?.poSnapshot&&matchesPO(po.poSnapshot,prId,poNo))return await cachePO(po.poSnapshot,propertyId);
         if(po)return await cachePO(po,propertyId);
       }
     }catch(e){console.warn('Legacy PO cloud lookup failed:',e)}
@@ -21236,18 +21272,25 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     if(!requireModuleAction('purchasing.po'))return;
     const pr=rows(K.pr).find(x=>String(x.id)===String(prId));
     if(!pr){alert('Purchase Request not found.');return;}
-    let po=getPOfromPR(prId);
+    // The PR table may have resolved the PO from local cache even when the PR row
+    // itself does not yet contain poNumber/poId. Use the same resolver here.
+    let po=null;
+    try{ po=findExistingPOForPR(pr); }catch(e){}
+    if(!po) po=getPOfromPR(prId);
+    if(!po && pr?.poSnapshot) po={...pr.poSnapshot,propertyId:prop()};
+    const knownPONumber=po?.number||pr.poNumber||pr.purchaseOrderNumber||'';
     if(!po){
-      po=await directCloudPO(prId,pr.poNumber||pr.purchaseOrderNumber||'');
+      po=await directCloudPO(prId,knownPONumber);
     }
     if(!po && typeof window.hydrateSupabasePurchaseOrders==='function'){
       try{await window.hydrateSupabasePurchaseOrders();}catch(e){console.warn('PO hydrate failed:',e)}
-      po=getPOfromPR(prId);
+      try{ po=findExistingPOForPR(pr); }catch(e){}
+      if(!po) po=getPOfromPR(prId);
     }
     if(!po){
-      po=await directCloudPO(prId,pr.poNumber||pr.purchaseOrderNumber||'');
+      po=await directCloudPO(prId,knownPONumber);
     }
-    if(!po){alert('Purchase Order not found in the cloud for '+(pr.poNumber||pr.purchaseOrderNumber||'this Purchase Request')+'.');return;}
+    if(!po){alert('Purchase Order not found in the cloud for '+(knownPONumber||'this Purchase Request')+'.');return;}
     const supplier=rows(K.sup).find(x=>String(x.id)===String(po.supplierId))||{};
     const idm='sigPOViewModal';
     if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Purchase Order</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div id="sigPOViewContent"></div></div></div>`);
@@ -21257,6 +21300,20 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     document.getElementById(idm).classList.add('show');
   }
   window.openPurchaseOrderFromPR=openDirect;
+})();
+</script>
+<script id="v2-1-358-purchasing-po-shared-storage-final">
+/* v2.1.358 — ensure existing/local POs are published to the shared pms_cloud_records row. */
+(function(){
+  'use strict';
+  if(window.__signatureV358POSHARED)return;
+  window.__signatureV358POSHARED=true;
+  function run(){
+    [0,700,1800,3500,6000].forEach(ms=>setTimeout(async()=>{
+      try{if(typeof window.syncSupabasePurchaseOrders==='function')await window.syncSupabasePurchaseOrders();}catch(e){}
+    },ms));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();
 })();
 </script>
 </body></html>
