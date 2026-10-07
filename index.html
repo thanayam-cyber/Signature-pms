@@ -19040,7 +19040,7 @@ async function hydrateSupabaseRooms(){
 /* SUPABASE CLOUD — STEP 4.1 STORES / INVENTORY */
 (function(){
   const TABLE='property_store_records';
-  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',purchase_requests:'signature_pms_purchase_requests',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
+  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
   const KEYS=Object.values(TYPES);
   const typeForKey=k=>Object.keys(TYPES).find(t=>TYPES[t]===k)||null;
   const readKey=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
@@ -19085,6 +19085,112 @@ async function hydrateSupabaseRooms(){
   }
   const boot=async()=>{bind();bindNavigation();if(typeof currentPropertyId!=='undefined'&&currentPropertyId)await window.hydrateSupabaseStores();else setTimeout(()=>window.hydrateSupabaseStores(),1200);};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();[500,1500,3000].forEach(ms=>setTimeout(()=>{bind();bindNavigation();},ms));
+})();
+</script>
+<script id="v2-1-343-purchasing-pr-cloud-source-of-truth">
+/* =========================================================
+   v2.1.343 — PURCHASE REQUEST CLOUD SOURCE OF TRUTH
+   Targeted fix only for Purchasing PRs.
+   - PRs are stored in property_store_records as purchase_requests.
+   - Additive/upsert-only: never delete another user's PR from cloud.
+   - Save + approve both publish immediately.
+   - Login/property switch hydrates PRs for the same property.
+   - Restaurant POS is untouched.
+========================================================= */
+(function(){
+  'use strict';
+  if(window.__signatureV343PurchasingPRCloud)return;
+  window.__signatureV343PurchasingPRCloud=true;
+  const PR_KEY='signature_pms_purchase_requests';
+  const TABLE='property_store_records';
+  const prop=()=>String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
+  const read=()=>{try{const v=JSON.parse(localStorage.getItem(PR_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
+  const write=v=>{try{localStorage.setItem(PR_KEY,JSON.stringify(Array.isArray(v)?v:[]));return true;}catch(e){return false;}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  async function user(c){const r=await c.auth.getUser();if(r.error)throw r.error;return r.data?.user||null;}
+
+  window.syncSupabasePurchaseRequests=async function(){
+    try{
+      const c=client(),propertyId=prop();
+      if(!c||!propertyId)return false;
+      if(!await user(c))return false;
+      const localMine=read().filter(x=>String(x?.propertyId||'')===propertyId);
+      if(!localMine.length)return true;
+      const now=new Date().toISOString();
+      const rows=localMine.map((record,i)=>({
+        property_id:propertyId,
+        record_type:'purchase_requests',
+        record_id:String(record?.id||('purchase_requests_'+i)),
+        record_data:{...record,propertyId},
+        updated_at:record?.updatedAt||record?.createdAt||now
+      }));
+      const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});
+      if(error)throw error;
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Requests synchronized to cloud.','success');
+      return true;
+    }catch(e){
+      console.warn('Purchase Request cloud sync failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Request cloud sync failed: '+(e?.message||e),'error');
+      return false;
+    }
+  };
+
+  window.hydrateSupabasePurchaseRequests=async function(){
+    try{
+      const c=client(),propertyId=prop();
+      if(!c||!propertyId)return false;
+      if(!await user(c))return false;
+      const {data,error}=await c.from(TABLE).select('record_id,record_data,updated_at').eq('property_id',propertyId).eq('record_type','purchase_requests');
+      if(error)throw error;
+      const cloud=data||[],local=read();
+      const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
+      const localMine=local.filter(x=>String(x?.propertyId||'')===propertyId);
+      const cmap=new Map(cloud.map(r=>[String(r.record_id),r]));
+      const merged=[];
+      cloud.forEach(r=>{
+        const cr=r.record_data||{},lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
+        const lu=Date.parse(String(lr?.updatedAt||lr?.createdAt||'')),cu=Date.parse(String(r.updated_at||''));
+        merged.push(lr&&Number.isFinite(lu)&&Number.isFinite(cu)&&lu>cu?lr:{...cr,propertyId});
+      });
+      localMine.forEach(l=>{if(!cmap.has(String(l?.id||'')))merged.push(l);});
+      write(other.concat(merged));
+      try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Requests refreshed from cloud.','success');
+      return true;
+    }catch(e){
+      console.warn('Purchase Request cloud hydration failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Request cloud refresh failed: '+(e?.message||e),'error');
+      return false;
+    }
+  };
+
+  function wrap(name){
+    const fn=window[name];
+    if(typeof fn!=='function'||fn.__v343PRWrapped)return;
+    const wrapped=function(){
+      const result=fn.apply(this,arguments);
+      [150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseRequests(),ms));
+      return result;
+    };
+    wrapped.__v343PRWrapped=true;window[name]=wrapped;
+  }
+  function nav(name){
+    const fn=window[name];
+    if(typeof fn!=='function'||fn.__v343PRNavWrapped)return;
+    const wrapped=function(){
+      const result=fn.apply(this,arguments);
+      [300,1000,2500].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseRequests(),ms));
+      return result;
+    };
+    wrapped.__v343PRNavWrapped=true;window[name]=wrapped;
+  }
+  function boot(){
+    wrap('savePurchaseRequest');wrap('approvePurchaseRequest');
+    nav('switchProperty');nav('hydrateCloudAfterLocalLogin');
+    [500,1200,2500,4000].forEach(ms=>setTimeout(()=>{wrap('savePurchaseRequest');wrap('approvePurchaseRequest');nav('switchProperty');nav('hydrateCloudAfterLocalLogin');},ms));
+    [1200,2500,4000].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseRequests(),ms));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
 <script id="v2-1-341-purchasing-po-cloud-source-of-truth">
