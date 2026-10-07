@@ -11306,13 +11306,54 @@ function sendFNBTableTickets(){
  const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}syncFNBActiveTable();const pending=t.items.map(i=>({...i,newQty:Math.max(0,Number(i.qty)-Number(i.sentQty||0))})).filter(i=>i.newQty>0);if(!pending.length){alert("No new items to send.");return;}const kot=pending.filter(i=>!fnbIsBarItem(i)),bot=pending.filter(i=>fnbIsBarItem(i));
  const printTicket=(type,rows,no)=>{const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to print KOT/BOT.");return;}const title=type==="BOT"?"BAR ORDER TICKET":"KITCHEN ORDER TICKET";w.document.write(`<html><head><title>${title} ${no}</title><style>body{font-family:Arial;padding:20px;max-width:360px;margin:auto}h1,h2{text-align:center}.line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #999}</style></head><body><h1>${title}</h1><h2>${escapeHtml(t.name)} · ${no}</h2><p>Guest: ${escapeHtml(t.guestName||'Walk-In')}<br>Time: ${escapeHtml(localDateTime())}</p>${rows.map(i=>`<div class="line"><span>${escapeHtml(i.name)}</span><strong>${i.newQty}</strong></div>`).join('')}<script>window.onload=function(){window.print();}<\/script></body></html>`);w.document.close();};
  if(kot.length){const no=fnbNextTicket(t,"KOT");printTicket("KOT",kot,no);fnbEnsureHistory(t).push({no,type:"KOT",time:localDateTime(),items:kot.map(i=>({name:i.name,qty:i.newQty}))});kot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}if(bot.length){const no=fnbNextTicket(t,"BOT");printTicket("BOT",bot,no);fnbEnsureHistory(t).push({no,type:"BOT",time:localDateTime(),items:bot.map(i=>({name:i.name,qty:i.newQty}))});bot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}saveFNBTableData();posOrder=t.items.map(i=>({...i}));renderPOSOrder();refreshFNBTableService();}
-function settleFNBTable(){
+async function settleFNBTable(){
  if(!hasActionPermission("pos.close_table")){alert("Access denied. Close Table / Settle Bill has not been assigned to your user account.");return;}
- const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}syncFNBActiveTable();if(!t.items.length){alert("Table has no items.");return;}if(t.items.some(i=>Number(i.qty)>Number(i.sentQty||0))){if(confirm("There are unsent items. Send KOT/BOT first?")){sendFNBTableTickets();}return;}
- const raw=prompt("Payment method: Cash / Card / Room Charge","Cash");if(raw===null)return;const map={cash:"Cash",card:"Card","room charge":"Room Charge"},method=map[String(raw).trim().toLowerCase()];if(!method){alert("Enter Cash, Card, or Room Charge.");return;}if(method==="Cash"&&!hasActionPermission("pos.cash")){alert("Access denied. Take Cash Payment has not been assigned to your user account.");return;}if(method==="Card"&&!hasActionPermission("pos.card")){alert("Access denied. Take Card Payment has not been assigned to your user account.");return;}if(method==="Room Charge"&&(!hasActionPermission("pos.room_charge")||!hasActionPermission("pos.room_post"))){alert("Access denied. Room Charge has not been assigned to your user account.");return;}if(method==="Room Charge"&&t.customerType!=="In-House"){alert("Room Charge requires an in-house guest.");return;}if(method==="Room Charge"&&!t.guestId){alert("Select the guest / folio first.");return;}const outlet=getCurrentPOSOutlet();if(!outlet)return;const guest=t.guestId?reservations.find(r=>String(r.id)===String(t.guestId)):null,total=fnbTableTotal(t),saleId="sale_"+Date.now(),invoiceNo=nextPOSInvoiceNo(),bizDate=cashierBusinessDate(),sale={id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:t.items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,outletId:outlet.id,outletName:outlet.name})),total,paymentMethod:method,customerType:t.customerType||"Walk-In",customerName:guest?.guestName||t.guestName||"",outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),tableNo:t.tableNo,tableName:t.name,kotCount:Number(t.kotNo||0),botCount:Number(t.botNo||0)};sales.push(sale);
+ const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}
+ syncFNBActiveTable();
+ if(!t.items.length){alert("Table has no items.");return;}
+ if(t.items.some(i=>Number(i.qty)>Number(i.sentQty||0))){if(confirm("There are unsent items. Send KOT/BOT first?")){sendFNBTableTickets();}return;}
+ const raw=prompt("Payment method: Cash / Card / Room Charge","Cash");if(raw===null)return;
+ const map={cash:"Cash",card:"Card","room charge":"Room Charge"},method=map[String(raw).trim().toLowerCase()];
+ if(!method){alert("Enter Cash, Card, or Room Charge.");return;}
+ if(method==="Cash"&&!hasActionPermission("pos.cash")){alert("Access denied. Take Cash Payment has not been assigned to your user account.");return;}
+ if(method==="Card"&&!hasActionPermission("pos.card")){alert("Access denied. Take Card Payment has not been assigned to your user account.");return;}
+ if(method==="Room Charge"&&(!hasActionPermission("pos.room_charge")||!hasActionPermission("pos.room_post"))){alert("Access denied. Room Charge has not been assigned to your user account.");return;}
+ if(method==="Room Charge"&&t.customerType!=="In-House"){alert("Room Charge requires an in-house guest.");return;}
+ if(method==="Room Charge"&&!t.guestId){alert("Select the guest / folio first.");return;}
+ const outlet=getCurrentPOSOutlet();if(!outlet)return;
+ const guest=t.guestId?reservations.find(r=>String(r.id)===String(t.guestId)):null;
+ const total=fnbTableTotal(t),saleId="sale_"+Date.now(),invoiceNo=nextPOSInvoiceNo(),bizDate=cashierBusinessDate();
+ const sale={id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:t.items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,outletId:outlet.id,outletName:outlet.name})),total,paymentMethod:method,customerType:t.customerType||"Walk-In",customerName:guest?.guestName||t.guestName||"",outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),tableNo:t.tableNo,tableName:t.name,kotCount:Number(t.kotNo||0),botCount:Number(t.botNo||0)};
+ sales.push(sale);
  if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const lkr=fnbSaleAmountLKR({currency:sale.currency,baseCurrency:sale.baseCurrency,postingRateAtBooking:sale.postingRateAtBooking},total);folio.restaurant=Number(folio.restaurant||0)+lkr;folio.total=getFolioTotal(guest.id);}
  if(method!=="Room Charge")payments.push({id:"p_"+Date.now(),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",notes:"Table settlement — "+t.name});
- saveData();try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);t.status="Available";t.items=[];t.kotNo=0;t.botNo=0;t.customerType="Walk-In";t.guestId="";t.guestName="";activeFNBTableId="";posOrder=[];saveFNBTableData();renderAll();if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
+ saveData();
+ try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}
+ if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});
+ logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);
+
+ /* Close the table locally first, then explicitly wait for the cloud write.
+    The previous flow cleared activeFNBTableId before saveFNBTableData(), which
+    made the cloud save fire-and-forget. Admin could therefore refresh before
+    Supabase received the Available state and still see the table OPEN. */
+ const closedTable={...t,items:[],status:"Available",kotNo:0,botNo:0,customerType:"Walk-In",guestId:"",guestName:"",propertyId:currentPropertyId};
+ const tableIndex=(fnbTables||[]).findIndex(x=>String(x?.id)===String(t.id));
+ if(tableIndex>=0)fnbTables[tableIndex]=closedTable;
+ else fnbTables.push(closedTable);
+ activeFNBTableId="";window.__signatureActiveFNBTableNo="";posOrder=[];
+ const all=readArray(STORAGE.fnbTables);
+ const keep=all.filter(x=>String(x?.propertyId||"")!==String(currentPropertyId));
+ const tagged=(fnbTables||[]).map(x=>({...x,propertyId:currentPropertyId}));
+ localStorage.setItem(STORAGE.fnbTables,JSON.stringify(keep.concat(tagged)));
+ let cloudClosed=true;
+ try{
+   if(typeof window.__signatureFNBCloudSaveTables==="function"){
+     cloudClosed=await window.__signatureFNBCloudSaveTables([closedTable]);
+   }
+ }catch(e){cloudClosed=false;console.warn("F&B closed-table cloud sync failed:",e);}
+ renderPOSOrder();refreshFNBTableService();renderAll();
+ if(!cloudClosed){alert("Table closed and invoice created, but the cloud table status could not be verified. Please use Refresh Tables before the Admin user checks it.");}
+ if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
 }
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
