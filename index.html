@@ -11309,7 +11309,13 @@ function sendFNBTableTickets(){
 async function settleFNBTable(){
  if(!hasActionPermission("pos.close_table")){alert("Access denied. Close Table / Settle Bill has not been assigned to your user account.");return;}
  const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}
- syncFNBActiveTable();
+ /* IMPORTANT: do not call syncFNBActiveTable() here. That function fires an
+    asynchronous OPEN-table cloud write. During settlement that older OPEN write
+    could finish after the AVAILABLE close write and reopen the table in cloud.
+    Copy the current POS lines locally only; the close operation below owns the
+    final cloud write. */
+ t.items=posOrder.map(i=>({...i,sentQty:Number(i.sentQty||0)}));
+ t.status="Open";
  if(!t.items.length){alert("Table has no items.");return;}
  if(t.items.some(i=>Number(i.qty)>Number(i.sentQty||0))){if(confirm("There are unsent items. Send KOT/BOT first?")){sendFNBTableTickets();}return;}
  const raw=prompt("Payment method: Cash / Card / Room Charge","Cash");if(raw===null)return;
@@ -11328,6 +11334,14 @@ async function settleFNBTable(){
  if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const lkr=fnbSaleAmountLKR({currency:sale.currency,baseCurrency:sale.baseCurrency,postingRateAtBooking:sale.postingRateAtBooking},total);folio.restaurant=Number(folio.restaurant||0)+lkr;folio.total=getFolioTotal(guest.id);}
  if(method!=="Room Charge")payments.push({id:"p_"+Date.now(),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",notes:"Table settlement — "+t.name});
  saveData();
+ /* Publish the final restaurant invoice/payment to Supabase before the user
+    leaves the table. This is separate from the table-status cloud write. */
+ let invoiceCloudSaved=true;
+ try{
+   if(window.signatureFnbTransactionCloud&&typeof window.signatureFnbTransactionCloud.publishForSale==='function'){
+     invoiceCloudSaved=await window.signatureFnbTransactionCloud.publishForSale(saleId);
+   }
+ }catch(e){invoiceCloudSaved=false;console.warn("F&B settlement invoice cloud sync failed:",e);}
  try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}
  if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});
  logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);
@@ -11352,7 +11366,9 @@ async function settleFNBTable(){
    }
  }catch(e){cloudClosed=false;console.warn("F&B closed-table cloud sync failed:",e);}
  renderPOSOrder();refreshFNBTableService();renderAll();
- if(!cloudClosed){alert("Table closed and invoice created, but the cloud table status could not be verified. Please use Refresh Tables before the Admin user checks it.");}
+ if(!cloudClosed || !invoiceCloudSaved){
+   alert("Table closed locally and invoice created. Cloud sync is still pending. Please keep the PMS open for a few seconds and use Refresh Tables before the Admin user checks it.");
+ }
  if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
 }
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
@@ -21559,7 +21575,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const c=client(),p=prop(); if(!c||!p)return null;
     try{const s=await c.auth.getSession(); const u=s?.data?.session?.user; return u?{c,p,u}:null;}catch(e){return null;}
   }
-  async function saveCloud(list){
+  async function saveCloudNow(list){
     try{
       const z=await ready(); if(!z)return false;
       const incoming=(Array.isArray(list)?list:[]).map(x=>({...x,propertyId:z.p}));
@@ -21611,6 +21627,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(typeof activeFNBTableId!=='undefined' && !activeFNBTableId){fnbTables=cloud;if(typeof refreshFNBTableService==='function')refreshFNBTableService();}
       return true;
     }catch(e){console.warn('F&B table cloud pull failed:',e?.message||e);return false;}
+  }
+  /* Serialize table writes. Without this queue, an older fire-and-forget OPEN
+     save from Add Item / KOT could complete after the CLOSE save and reopen the
+     table in Supabase. */
+  let tableSaveQueue=Promise.resolve(true);
+  function saveCloud(list){
+    tableSaveQueue=tableSaveQueue.catch(()=>false).then(()=>saveCloudNow(list));
+    return tableSaveQueue;
   }
   window.__signatureFNBCloudSaveTables=saveCloud;
   window.__signatureFNBCloudPullTables=pullCloud;
