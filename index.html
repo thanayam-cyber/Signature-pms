@@ -3091,23 +3091,6 @@ function saveData(){
     mergePropertyData(STORAGE.pmTransactions,pmTransactions);
     mergePropertyData(STORAGE.fnbTables,fnbTables);
 
-    /* v2.1.334 — explicit transaction cloud publish.
-       Restaurant/POS transactions must be shared between users/devices.
-       Property Settings already has its own authoritative cloud path;
-       transactional arrays use pms_cloud_records as the shared bridge. */
-    try{
-        const sync=window.signatureCloudSync;
-        if(sync && typeof sync.upsert==='function'){
-            const keys=[STORAGE.sales,STORAGE.payments,STORAGE.folios,STORAGE.fnbTables];
-            keys.forEach(key=>{
-                try{
-                    const scoped=readArray(key).filter(x=>String(x?.propertyId??'')===String(currentPropertyId??''));
-                    Promise.resolve(sync.upsert(key,scoped)).catch(e=>console.warn('POS transaction cloud publish failed:',key,e));
-                }catch(e){console.warn('POS transaction cloud publish prepare failed:',key,e);}
-            });
-        }
-    }catch(e){console.warn('POS transaction cloud bridge unavailable:',e);}
-
     if(settings){
         settings.posMenu=normalizePOSMenu(POS_MENU);
         const index=properties.findIndex(p=>p.id===currentPropertyId);
@@ -11248,17 +11231,11 @@ function settleFNBTable(){
  const raw=prompt("Payment method: Cash / Card / Room Charge","Cash");if(raw===null)return;const map={cash:"Cash",card:"Card","room charge":"Room Charge"},method=map[String(raw).trim().toLowerCase()];if(!method){alert("Enter Cash, Card, or Room Charge.");return;}if(method==="Cash"&&!hasActionPermission("pos.cash")){alert("Access denied. Take Cash Payment has not been assigned to your user account.");return;}if(method==="Card"&&!hasActionPermission("pos.card")){alert("Access denied. Take Card Payment has not been assigned to your user account.");return;}if(method==="Room Charge"&&(!hasActionPermission("pos.room_charge")||!hasActionPermission("pos.room_post"))){alert("Access denied. Room Charge has not been assigned to your user account.");return;}if(method==="Room Charge"&&t.customerType!=="In-House"){alert("Room Charge requires an in-house guest.");return;}if(method==="Room Charge"&&!t.guestId){alert("Select the guest / folio first.");return;}const outlet=getCurrentPOSOutlet();if(!outlet)return;const guest=t.guestId?reservations.find(r=>String(r.id)===String(t.guestId)):null,total=fnbTableTotal(t),saleId="sale_"+Date.now(),invoiceNo=nextPOSInvoiceNo(),bizDate=cashierBusinessDate(),sale={id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:t.items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,outletId:outlet.id,outletName:outlet.name})),total,paymentMethod:method,customerType:t.customerType||"Walk-In",customerName:guest?.guestName||t.guestName||"",outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),tableNo:t.tableNo,tableName:t.name,kotCount:Number(t.kotNo||0),botCount:Number(t.botNo||0)};sales.push(sale);
  if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const lkr=fnbSaleAmountLKR({currency:sale.currency,baseCurrency:sale.baseCurrency,postingRateAtBooking:sale.postingRateAtBooking},total);folio.restaurant=Number(folio.restaurant||0)+lkr;folio.total=getFolioTotal(guest.id);}
  if(method!=="Room Charge")payments.push({id:"p_"+Date.now(),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",notes:"Table settlement — "+t.name});
- saveData();try{if(window.signatureFnbTransactionCloud){window.signatureFnbTransactionCloud.publishSale(sale);const ps=payments.filter(x=>String(x.saleId||'')===String(saleId));ps.forEach(x=>window.signatureFnbTransactionCloud.publishPayment(x));}}catch(e){console.warn('F&B table transaction publish error:',e);}try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);t.status="Available";t.items=[];t.kotNo=0;t.botNo=0;t.customerType="Walk-In";t.guestId="";t.guestName="";activeFNBTableId="";posOrder=[];saveFNBTableData();renderAll();if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
+ saveData();try{if(typeof storesOnPOSSale==='function')storesOnPOSSale(saleId);}catch(e){}if(guest&&typeof syncReservationToSupabase==='function')Promise.resolve().then(()=>syncReservationToSupabase(guest)).catch(()=>{});logAudit("POS_TABLE_SETTLED",saleId,"Table settled ["+invoiceNo+"] — "+t.name,currentPropertyId);t.status="Available";t.items=[];t.kotNo=0;t.botNo=0;t.customerType="Walk-In";t.guestId="";t.guestName="";activeFNBTableId="";posOrder=[];saveFNBTableData();renderAll();if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
 }
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
 function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
-try{if(window.signatureFnbTransactionCloud){
-  Promise.resolve(window.signatureFnbTransactionCloud.publishForSale?window.signatureFnbTransactionCloud.publishForSale(saleId):false).then(ok=>{
-    if(!ok){console.warn('F&B transaction cloud publish failed:',saleId);try{setSupabaseCloudMessage('Restaurant order saved locally, but cloud publish failed. Please check Supabase access.','error')}catch(e){}}
-    else console.log('F&B transaction published to cloud:',saleId);
-  }).catch(e=>console.warn('F&B transaction publish error:',e));
-}}catch(e){console.warn('F&B transaction publish error:',e);}
 if(guest && typeof syncReservationToSupabase==='function'){
   // v2.1.133 — explicitly sync the updated guest reservation snapshot after
   // the POS sale/folio/payment arrays have been committed locally.
@@ -11276,7 +11253,15 @@ if(guest && typeof syncReservationToSupabase==='function'){
     setSupabaseCloudMessage("Restaurant POS cloud sync failed: "+(e?.message||e),"error");
   });
 }
-clearPOSOrder();renderAll();logAudit("POS_SALE",saleId,"Restaurant order saved ["+invoiceNo+"]: "+total+" — "+outlet.name+" — "+customerType,currentPropertyId);try{if(typeof storesOnPOSSale==="function")storesOnPOSSale(saleId);}catch(e){console.warn("Stock deduction failed",e);}
+clearPOSOrder();renderAll();
+try{
+  if(window.signatureFnbTransactionCloud && typeof window.signatureFnbTransactionCloud.publishForSale==='function'){
+    window.signatureFnbTransactionCloud.publishForSale(saleId).then(function(ok){
+      if(!ok) console.warn("Restaurant POS cloud publish returned false:",saleId);
+    }).catch(function(e){ console.warn("Restaurant POS cloud publish failed:",e); });
+  }
+}catch(e){ console.warn("Restaurant POS cloud publisher unavailable:",e); }
+logAudit("POS_SALE",saleId,"Restaurant order saved ["+invoiceNo+"]: "+total+" — "+outlet.name+" — "+customerType,currentPropertyId);try{if(typeof storesOnPOSSale==="function")storesOnPOSSale(saleId);}catch(e){console.warn("Stock deduction failed",e);}
 if(confirm("Restaurant order saved successfully.\nInvoice No: "+invoiceNo+"\n\nPrint invoice now?"))printPOSInvoice(saleId);}
 
 function renderPayments(){const tbody=document.getElementById('paymentTable');if(!tbody)return;const filtered=payments.filter(paymentMatchesFilters),sum=paymentSummary(filtered),set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=money(v);};const filteredLKR=typeof cashierPaymentSummaryLKR==='function'?cashierPaymentSummaryLKR(filtered):{gross:0,refunds:0,net:0,cash:0,cashRefunds:0,card:0,bank:0};
@@ -20818,312 +20803,96 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 })();
 </script>
 
-<script>
+<script id="v2-1-339-clean-fnb-cloud">
+/* v2.1.339 — isolated Restaurant POS cloud sync
+   Built on the clean v2.1.333 base. Does not wrap login, setSession, or the
+   generic localStorage layer. Restaurant sales/payments are stored as one
+   pms_cloud_records row per transaction, scoped by property_id. */
 (function(){
   'use strict';
-  const CLOUD_TABLE='pms_cloud_records';
-  const PREFIXES=['signature_pms_','signaturePMS_','signature_pms','signaturePMS'];
-  const EXCLUDE=['signature_pms_supabase_','sb-'];
-  let cloudTimer=null;
-  let cloudBusy=false;
-  let cloudPatchInstalled=false;
-
-  function isCloudKey(key){
-    const k=String(key||'');
-    if(!PREFIXES.some(p=>k.startsWith(p))) return false;
-    if(k==='signature_pms_sales' || k==='signature_pms_payments') return false;
-    if(k.startsWith('signature_pms_fnb_sale_') || k.startsWith('signature_pms_fnb_payment_')) return false;
-    return !EXCLUDE.some(p=>k.startsWith(p));
-  }
-  function client(){
-    try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}
-  }
-  function pid(){try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||'')}catch(e){return ''}}
-  function currentUserId(){try{return String(window.supabaseClient?.auth?.user?.()?.id||'')}catch(e){return ''}}
-  async function authUserId(){
-    try{
-      const c=client(); if(!c)return '';
-      const {data}=await c.auth.getUser();
-      return data?.user?.id||'';
-    }catch(e){return ''}
-  }
-  function safeParse(v){try{return JSON.parse(v)}catch(e){return null}}
-  function propertyFilterValue(value, propertyId){
-    if(Array.isArray(value)){
-      const scoped=value.filter(x=>x && typeof x==='object' && String(x.propertyId||'')===String(propertyId));
-      const hasPropertyObjects=value.some(x=>x && typeof x==='object' && ('propertyId' in x));
-      return {data:hasPropertyObjects?scoped:value, scoped:hasPropertyObjects};
-    }
-    return {data:value,scoped:false};
-  }
-  function mergeCloudValue(localValue, cloudValue, propertyId, scoped){
-    if(!scoped) return cloudValue;
-    const local=Array.isArray(localValue)?localValue:[];
-    const keep=local.filter(x=>!x || typeof x!=='object' || String(x.propertyId||'')!==String(propertyId));
-    const incoming=Array.isArray(cloudValue)?cloudValue:[];
-    return keep.concat(incoming);
-  }
-  async function cloudUpsert(key,value){
-    if(!isCloudKey(key) || !pid()) return;
-    const c=client(); if(!c)return;
-    const uid=await authUserId(); if(!uid)return;
-    const prepared=propertyFilterValue(value,pid());
-    const row={property_id:pid(),storage_key:String(key),data:prepared.data,updated_by:uid,updated_at:new Date().toISOString()};
-    const {error}=await c.from(CLOUD_TABLE).upsert(row,{onConflict:'property_id,storage_key'});
-    if(error) console.warn('Cloud save skipped:',key,error.message);
-  }
-  async function cloudPull(){
-    if(cloudBusy || !pid()) return false;
-    const c=client(); if(!c)return false;
-    const uid=await authUserId(); if(!uid)return false;
-    cloudBusy=true;
-    try{
-      const {data,error}=await c.from(CLOUD_TABLE).select('storage_key,data,updated_at').eq('property_id',pid());
-      if(error) throw error;
-      const nativeSet=window.__signatureNativeLocalStorage||localStorage;
-      (data||[]).forEach(row=>{
-        if(!isCloudKey(row.storage_key))return;
-        const oldRaw=nativeSet.getItem(row.storage_key);
-        const old=safeParse(oldRaw);
-        const prepared=propertyFilterValue(old,pid());
-        const merged=mergeCloudValue(old,row.data,pid(),prepared.scoped);
-        nativeSet.setItem(row.storage_key,JSON.stringify(merged));
-      });
-      /* Cloud pull updates storage only. UI rendering is intentionally NOT
-         triggered here; rendering while a user is typing in Property Settings
-         replaces the active form controls and causes the page to flicker/reload.
-         The normal PMS save/navigation flow owns UI rendering. */
-      return true;
-    }catch(e){
-      console.warn('Cloud pull failed:',e?.message||e);
-      return false;
-    }finally{cloudBusy=false}
-  }
-  async function cloudPushAll(){
-    if(!pid())return;
-    const c=client(); if(!c)return;
-    const nativeSet=window.__signatureNativeLocalStorage||localStorage;
-    const uid=await authUserId(); if(!uid)return;
-    let cloudKeys=new Set();
-    try{
-      const {data,error}=await c.from(CLOUD_TABLE).select('storage_key').eq('property_id',pid());
-      if(error)throw error;
-      (data||[]).forEach(r=>cloudKeys.add(String(r.storage_key||'')));
-    }catch(e){
-      console.warn('Cloud key inventory failed; refusing destructive bootstrap push:',e?.message||e);
-      return;
-    }
-    // Bootstrap rule: never overwrite an existing cloud record with browser data.
-    // Only keys that do not yet exist in Supabase are uploaded from this device.
-    for(let i=0;i<nativeSet.length;i++){
-      const key=nativeSet.key(i);
-      if(!isCloudKey(key)||cloudKeys.has(String(key)))continue;
-      try{await cloudUpsert(key,safeParse(nativeSet.getItem(key)))}catch(e){}
-    }
-  }
-  async function subscribeRealtime(){
-    try{
-      const c=client(); if(!c||!pid())return;
-      if(window.__signaturePMSCloudRecordChannel){
-        try{c.removeChannel(window.__signaturePMSCloudRecordChannel)}catch(e){}
-      }
-      const channel=c.channel('signature-pms-cloud-records-'+pid()+'-'+Date.now())
-        .on('postgres_changes',{event:'*',schema:'public',table:CLOUD_TABLE,filter:'property_id=eq.'+pid()},payload=>{
-          if(cloudBusy)return;
-          const row=payload?.new||payload?.old||{};
-          const key=String(row.storage_key||'');
-          if(!isCloudKey(key))return;
-          if(payload.eventType==='DELETE'){
-            const nativeSet=window.__signatureNativeLocalStorage||localStorage;
-            try{nativeSet.removeItem(key)}catch(e){}
-          }else if(payload.new?.data!==undefined){
-            const nativeSet=window.__signatureNativeLocalStorage||localStorage;
-            try{
-              const old=safeParse(nativeSet.getItem(key));
-              const prepared=propertyFilterValue(old,pid());
-              const merged=mergeCloudValue(old,payload.new.data,pid(),prepared.scoped);
-              nativeSet.setItem(key,JSON.stringify(merged));
-            }catch(e){}
-          }
-          /* Realtime cloud updates must never re-render the active page.
-             They only update the backing local cache. This is critical for
-             Property Settings and Rate Plans while the user is typing. */
-        }).subscribe(status=>console.log('Signature PMS cloud records realtime:',status));
-      window.__signaturePMSCloudRecordChannel=channel;
-    }catch(e){console.warn('Cloud realtime subscription skipped:',e?.message||e)}
-  }
-  function installPatch(){
-    if(cloudPatchInstalled)return;
-    cloudPatchInstalled=true;
-    const nativeSet=localStorage.setItem.bind(localStorage);
-    const nativeRemove=localStorage.removeItem.bind(localStorage);
-    window.__signatureNativeLocalStorage=localStorage;
-    localStorage.setItem=function(key,value){
-      nativeSet(key,value);
-      if(isCloudKey(key) && !cloudBusy && pid()) Promise.resolve().then(()=>cloudUpsert(key,safeParse(value)));
-    };
-    localStorage.removeItem=function(key){
-      nativeRemove(key);
-      if(isCloudKey(key) && !cloudBusy && pid()) Promise.resolve().then(()=>cloudUpsert(key,[]));
-    };
-  }
-  async function afterLogin(){
-    installPatch();
-    await cloudPull();
-    await cloudPushAll();
-    await cloudPull();
-    /* v2.1.334 — hydrate transactional arrays after cloud pull.
-       Realtime intentionally avoids rerendering active forms, but after login
-       there is no active edit to protect. This makes Restaurant/POS orders
-       created by another user available immediately on the new session. */
-    try{
-      if(typeof loadCurrentPropertyData==='function' && pid()){
-        loadCurrentPropertyData();
-      }
-    }catch(e){console.warn('Post-login cloud transaction hydration skipped:',e);}
-    await subscribeRealtime();
-    try{setSupabaseCloudMessage('Cloud source of truth active — PMS data synced for this property.','success');}catch(e){}
-  }
-  window.signatureCloudSync={pull:cloudPull,pushAll:cloudPushAll,afterLogin,upsert:cloudUpsert,realtime:subscribeRealtime};
-  window.refreshFullCloudPMS=cloudPull;
-  installPatch();
-
-  function hook(name){
-    const original=window[name];
-    if(typeof original!=='function' || original.__cloudWrapped)return;
-    const wrapped=function(){
-      const result=original.apply(this,arguments);
-      Promise.resolve(result).then(()=>{
-        if(name==='switchProperty'||name==='hydrateCloudAfterLocalLogin'||name==='setSession') afterLogin();
-      }).catch(()=>{});
-      return result;
-    };
-    wrapped.__cloudWrapped=true;
-    window[name]=wrapped;
-  }
-  setTimeout(()=>{
-    ['switchProperty','hydrateCloudAfterLocalLogin','setSession'].forEach(hook);
-    if(typeof window.refreshFullCloudPMS==='function' && pid()) afterLogin();
-    cloudTimer=setInterval(()=>{if(pid()&&!document.hidden) cloudPull();},30000);
-  },1500);
-})();
-</script>
-
-<script id="v2-1-337-fnb-transaction-record-cloud-sync">
-/* v2.1.337 — F&B transaction cloud sync fix
-   Individual restaurant sales/payments are the ONLY cloud source for POS transactions.
-   Adds reliable publish retries + 5-second polling fallback, so same-property users
-   see new orders even when Supabase Realtime is unavailable. */
-(function(){
-  'use strict';
-  if(window.__signatureFnbTxnCloud337)return;
-  window.__signatureFnbTxnCloud337=true;
+  if(window.__signatureFnbCloud339)return;
+  window.__signatureFnbCloud339=true;
   const TABLE='pms_cloud_records';
   const SALE_PREFIX='signature_pms_fnb_sale_';
   const PAYMENT_PREFIX='signature_pms_fnb_payment_';
   const POLL_MS=5000;
+  let channel=null;
+  let lastProperty='';
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
-  async function uid(){try{const c=client();if(!c)return '';const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
-  function samePid(x){return String(x?.propertyId||'')===pid()}
+  async function userId(){try{const c=client();if(!c)return '';const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  function same(x){return x&&String(x.propertyId||'')===pid()}
   async function put(key,data){
-    const c=client(), propertyId=pid(), userId=await uid();
-    if(!c||!propertyId||!userId||!data)return false;
-    let last='';
-    for(let attempt=1;attempt<=3;attempt++){
-      try{
-        const {error}=await c.from(TABLE).upsert({property_id:propertyId,storage_key:key,data,updated_by:userId,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
-        if(!error)return true;
-        last=error.message||String(error);
-        console.warn('F&B transaction cloud save attempt '+attempt+' failed:',key,last);
-      }catch(e){last=e?.message||String(e);console.warn('F&B transaction cloud save attempt '+attempt+' exception:',key,last)}
-      if(attempt<3)await new Promise(r=>setTimeout(r,500*attempt));
-    }
-    try{setSupabaseCloudMessage('Restaurant transaction cloud save failed: '+last,'error')}catch(e){}
-    return false;
-  }
-  async function publishSale(sale){return sale&&samePid(sale)?put(SALE_PREFIX+String(sale.id),sale):false}
-  async function publishPayment(payment){return payment&&samePid(payment)?put(PAYMENT_PREFIX+String(payment.id),payment):false}
-  function mergeSales(incoming){
-    const arr=Array.isArray(sales)?sales:[];
-    const byId=new Map(arr.filter(s=>samePid(s)).map(s=>[String(s.id),s]));
-    incoming.filter(s=>s&&samePid(s)).forEach(s=>byId.set(String(s.id),s));
-    const others=arr.filter(s=>!samePid(s));
-    const merged=others.concat(Array.from(byId.values()));
-    sales.splice(0,sales.length,...merged);
-    try{(window.__signatureNativeLocalStorage||localStorage).setItem('signature_pms_sales',JSON.stringify(sales));}catch(e){}
-  }
-  function mergePayments(incoming){
-    const arr=Array.isArray(payments)?payments:[];
-    const byId=new Map(arr.filter(x=>samePid(x)).map(x=>[String(x.id),x]));
-    incoming.filter(x=>x&&samePid(x)).forEach(x=>byId.set(String(x.id),x));
-    const others=arr.filter(x=>!samePid(x));
-    const merged=others.concat(Array.from(byId.values()));
-    payments.splice(0,payments.length,...merged);
-    try{(window.__signatureNativeLocalStorage||localStorage).setItem('signature_pms_payments',JSON.stringify(payments));}catch(e){}
-  }
-  async function pullSales(){
-    const c=client(), propertyId=pid(), userId=await uid(); if(!c||!propertyId||!userId)return false;
-    const {data,error}=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',propertyId).like('storage_key',SALE_PREFIX+'%');
-    if(error){console.warn('F&B transaction cloud pull failed:',error.message);return false}
-    mergeSales((data||[]).map(r=>r.data)); return true;
-  }
-  async function pullPayments(){
-    const c=client(), propertyId=pid(), userId=await uid(); if(!c||!propertyId||!userId)return false;
-    const {data,error}=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',propertyId).like('storage_key',PAYMENT_PREFIX+'%');
-    if(error){console.warn('F&B payment cloud pull failed:',error.message);return false}
-    mergePayments((data||[]).map(r=>r.data)); return true;
-  }
-  function safeRender(){
+    const c=client(), p=pid(), u=await userId();
+    if(!c||!p||!u||!data)return false;
     try{
-      /* Never interrupt a user who is currently building a POS order. */
-      if(Array.isArray(window.posOrder)&&window.posOrder.length>0)return;
-      if(typeof renderAll==='function')renderAll();
-    }catch(e){}
+      const r=await c.from(TABLE).upsert({property_id:p,storage_key:key,data:data,updated_by:u,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      if(r.error) throw r.error;
+      return true;
+    }catch(e){
+      console.warn('F&B cloud save failed:',key,e?.message||e);
+      try{setSupabaseCloudMessage('Restaurant cloud save failed: '+(e?.message||e),'error')}catch(_e){}
+      return false;
+    }
   }
-  async function hydrate(render){
-    const a=await pullSales(), b=await pullPayments();
-    if(render&&a&&b)safeRender();
-    return !!(a&&b);
-  }
+  async function publishSale(sale){return same(sale)?put(SALE_PREFIX+String(sale.id),sale):false}
+  async function publishPayment(payment){return same(payment)?put(PAYMENT_PREFIX+String(payment.id),payment):false}
   async function publishForSale(saleId){
-    const sale=(Array.isArray(window.sales)?window.sales:[]).find(x=>String(x.id)===String(saleId));
+    const sale=sales.find(x=>String(x.id)===String(saleId)&&same(x));
     if(!sale)return false;
-    const saleOk=await publishSale(sale);
-    const pays=(Array.isArray(window.payments)?window.payments:[]).filter(x=>String(x.saleId||'')===String(saleId));
-    const payResults=await Promise.all(pays.map(p=>publishPayment(p)));
-    return saleOk&&payResults.every(Boolean);
+    const a=await publishSale(sale);
+    const pays=payments.filter(x=>String(x.saleId||'')===String(saleId)&&same(x));
+    const results=await Promise.all(pays.map(publishPayment));
+    return a&&results.every(Boolean);
+  }
+  function mergeSales(rows){
+    const incoming=rows.filter(same), ids=new Set(incoming.map(x=>String(x.id)));
+    const keep=sales.filter(x=>!same(x)||!ids.has(String(x.id)));
+    sales.splice(0,sales.length,...keep,...incoming);
+    try{localStorage.setItem('signature_pms_sales',JSON.stringify(sales));}catch(e){}
+  }
+  function mergePayments(rows){
+    const incoming=rows.filter(same), ids=new Set(incoming.map(x=>String(x.id)));
+    const keep=payments.filter(x=>!same(x)||!ids.has(String(x.id)));
+    payments.splice(0,payments.length,...keep,...incoming);
+    try{localStorage.setItem('signature_pms_payments',JSON.stringify(payments));}catch(e){}
+  }
+  async function pull(){
+    const c=client(), p=pid(), u=await userId();
+    if(!c||!p||!u)return false;
+    try{
+      const a=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',SALE_PREFIX+'%');
+      if(a.error)throw a.error;
+      const b=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PAYMENT_PREFIX+'%');
+      if(b.error)throw b.error;
+      mergeSales((a.data||[]).map(r=>r.data));
+      mergePayments((b.data||[]).map(r=>r.data));
+      /* Never redraw while a user has items selected in the POS cart. */
+      if(!Array.isArray(posOrder)||posOrder.length===0){try{if(typeof renderAll==='function')renderAll()}catch(e){}}
+      return true;
+    }catch(e){console.warn('F&B cloud pull failed:',e?.message||e);return false}
   }
   async function subscribe(){
-    const c=client();if(!c||!pid())return;
-    if(window.__signatureFnbTxnChannel){try{c.removeChannel(window.__signatureFnbTxnChannel)}catch(e){}}
-    const ch=c.channel('signature-pms-fnb-txn-'+pid()+'-'+Date.now())
-      .on('postgres_changes',{event:'*',schema:'public',table:TABLE,filter:'property_id=eq.'+pid()},payload=>{
-        const row=payload?.new||payload?.old||{};const key=String(row.storage_key||'');
-        if(payload.eventType==='DELETE'||payload.new?.data===undefined)return;
-        if(key.startsWith(SALE_PREFIX)){mergeSales([payload.new.data]);safeRender()}
-        else if(key.startsWith(PAYMENT_PREFIX)){mergePayments([payload.new.data]);safeRender()}
-      }).subscribe(status=>console.log('F&B transaction realtime:',status));
-    window.__signatureFnbTxnChannel=ch;
+    const c=client(),p=pid();if(!c||!p)return;
+    if(channel){try{c.removeChannel(channel)}catch(e){}channel=null}
+    channel=c.channel('signature-fnb-clean-'+p+'-'+Date.now())
+      .on('postgres_changes',{event:'*',schema:'public',table:TABLE,filter:'property_id=eq.'+p},payload=>{
+        const row=payload?.new||{};const key=String(row.storage_key||'');
+        if(payload.eventType==='DELETE')return;
+        if(key.startsWith(SALE_PREFIX))mergeSales([row.data]);
+        else if(key.startsWith(PAYMENT_PREFIX))mergePayments([row.data]);
+        else return;
+        if(!Array.isArray(posOrder)||posOrder.length===0){try{if(typeof renderAll==='function')renderAll()}catch(e){}}
+      }).subscribe(status=>console.log('Restaurant F&B cloud realtime:',status));
   }
-  window.signatureFnbTransactionCloud={publishSale,publishPayment,publishForSale,pullSales,pullPayments,hydrate,subscribe};
-  const hook=setInterval(()=>{
-    const sync=window.signatureCloudSync;if(!sync||sync.__fnb337Wrapped)return;
-    const original=sync.afterLogin;if(typeof original!=='function')return;
-    sync.afterLogin=async function(){const result=await original.apply(this,arguments);await hydrate(false);await subscribe();return result;};
-    sync.__fnb337Wrapped=true;clearInterval(hook);
-  },100);
-  setTimeout(()=>clearInterval(hook),15000);
-  let pollTimer=null;
-  function startPolling(){
-    if(pollTimer)clearInterval(pollTimer);
-    pollTimer=setInterval(async()=>{
-      if(document.hidden||!pid())return;
-      try{await hydrate(true)}catch(e){console.warn('F&B transaction polling failed:',e)}
-    },POLL_MS);
+  async function cycle(){
+    const p=pid();if(!p)return;
+    if(p!==lastProperty){lastProperty=p;await subscribe();}
+    await pull();
   }
-  startPolling();
-  window.addEventListener('beforeunload',()=>{if(pollTimer)clearInterval(pollTimer)});
+  window.signatureFnbTransactionCloud={publishSale,publishPayment,publishForSale,pull,subscribe};
+  setTimeout(cycle,3000);
+  setInterval(cycle,POLL_MS);
 })();
 </script>
 </body></html>
