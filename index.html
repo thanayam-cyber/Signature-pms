@@ -1170,7 +1170,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div class="section" id="purchasingRegisterSection">
-<div class="section-header"><h3>Purchase Register</h3><div class="toolbar"><input id="purchaseSearch" oninput="renderPurchaseRegister()" placeholder="Search supplier, invoice or reference..."><button class="btn btn-secondary" onclick="renderPurchaseRegister()">Refresh</button></input></div></div>
+<div class="section-header"><h3>Purchase Register</h3><div class="toolbar"><input id="purchaseSearch" oninput="renderPurchaseRegister()" placeholder="Search supplier, invoice or reference..."><button class="btn btn-secondary" onclick="signaturePurchaseRegisterRefresh()">Refresh</button></input></div></div>
 <div class="table-wrap"><table>
 <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Supplier</th><th>PO Reference</th><th>Invoice</th><th>Payment</th><th>Amount</th><th>Status</th></tr></thead>
 <tbody id="purchaseRegisterTable"><tr><td class="empty" colspan="9">No purchase records.</td></tr></tbody>
@@ -19065,7 +19065,8 @@ async function hydrateSupabaseRooms(){
 /* SUPABASE CLOUD — STEP 4.1 STORES / INVENTORY */
 (function(){
   const TABLE='property_store_records';
-  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
+  /* v2.1.371: Articles are intentionally excluded from legacy property_store_records. Articles use pms_cloud_records only. */
+  const TYPES={grns:'signature_pms_grns',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
   const KEYS=Object.values(TYPES);
   const typeForKey=k=>Object.keys(TYPES).find(t=>TYPES[t]===k)||null;
   const readKey=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
@@ -19110,6 +19111,88 @@ async function hydrateSupabaseRooms(){
   }
   const boot=async()=>{bind();bindNavigation();if(typeof currentPropertyId!=='undefined'&&currentPropertyId)await window.hydrateSupabaseStores();else setTimeout(()=>window.hydrateSupabaseStores(),1200);};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();[500,1500,3000].forEach(ms=>setTimeout(()=>{bind();bindNavigation();},ms));
+})();
+</script>
+<script id="v2-1-365-purchasing-supplier-canonical-cloud-safe">
+/* v2.1.365 — Supplier Master canonical cloud source. Purchasing only. Restaurant POS untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV365SupplierCanonical)return;
+  window.__signatureV365SupplierCanonical=true;
+  const KEY='signature_pms_suppliers', TABLE='pms_cloud_records';
+  const prop=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const localRead=()=>{try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return[]}};
+  const localWrite=a=>{try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}};
+  async function ready(){
+    const c=client(), p=prop(); if(!c||!p)return null;
+    try{const s=await c.auth.getSession(); if(!s?.data?.session?.user)return null; return {c,p};}catch(e){return null}
+  }
+  async function pull(){
+    try{
+      const z=await ready(); if(!z)return false;
+      const {c,p}=z;
+      const q=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
+      if(q.error)throw q.error;
+      // Cloud row is authoritative when it exists. Never merge stale browser suppliers into it.
+      if(q.data && Array.isArray(q.data.data)){
+        const other=localRead().filter(x=>String(x?.propertyId||'')!==p);
+        const canonical=q.data.data.map(x=>({...x,propertyId:p}));
+        localWrite(other.concat(canonical));
+        try{if(typeof renderSuppliers==='function')renderSuppliers()}catch(e){}
+        try{if(typeof renderSupplierManagerList==='function')renderSupplierManagerList()}catch(e){}
+        try{if(typeof renderPurchasingModule==='function')renderPurchasingModule()}catch(e){}
+        return true;
+      }
+      return false;
+    }catch(e){console.warn('Supplier canonical cloud pull failed:',e);return false}
+  }
+  async function publish(list){
+    try{
+      const z=await ready(); if(!z)return false;
+      const {c,p}=z; const arr=(Array.isArray(list)?list:[]).filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}));
+      const sess=await c.auth.getSession(); const uid=sess?.data?.session?.user?.id||null;
+      const q=await c.from(TABLE).upsert({property_id:p,storage_key:KEY,data:arr,updated_by:uid,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      if(q.error)throw q.error;
+      localWrite(localRead().filter(x=>String(x?.propertyId||'')!==p).concat(arr));
+      return true;
+    }catch(e){console.warn('Supplier canonical cloud publish failed:',e);return false}
+  }
+  window.hydrateSupabasePurchaseSuppliers=pull;
+  window.syncSupabasePurchaseSuppliers=async function(){return publish(localRead().filter(x=>String(x?.propertyId||'')===prop()))};
+
+  function wrapSave(){
+    const fn=window.saveSupplierMaster;
+    if(typeof fn!=='function'||fn.__v365SupplierWrapped)return;
+    const w=async function(){
+      try{await pull();}catch(e){}
+      const result=fn.apply(this,arguments);
+      setTimeout(async()=>{try{await publish(localRead().filter(x=>String(x?.propertyId||'')===prop()));}catch(e){}},300);
+      return result;
+    };
+    w.__v365SupplierWrapped=true; window.saveSupplierMaster=w;
+  }
+  function wrapPO(){
+    const name=typeof window.openCreatePOFromPR==='function'?'openCreatePOFromPR':(typeof window.createPOFromPR==='function'?'createPOFromPR':null);
+    if(!name)return;
+    const fn=window[name]; if(fn.__v365SupplierPOWrapped)return;
+    const w=async function(){try{await pull()}catch(e){} return fn.apply(this,arguments)};
+    w.__v365SupplierPOWrapped=true; window[name]=w;
+  }
+  function nav(){
+    ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{
+      const fn=window[name]; if(typeof fn!=='function'||fn.__v365SupplierNav)return;
+      const w=function(){const r=fn.apply(this,arguments); [500,1500].forEach(ms=>setTimeout(pull,ms)); return r};
+      w.__v365SupplierNav=true; window[name]=w;
+    });
+  }
+  function boot(){
+    wrapSave(); nav(); wrapPO();
+    // Pull only after auth/property context exists. Never push local supplier cache during boot.
+    [800,1800,3500].forEach(ms=>setTimeout(pull,ms));
+    [900,2000,4000].forEach(ms=>setTimeout(()=>{wrapSave();nav();wrapPO()},ms));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
 <script id="v2-1-341-purchasing-po-cloud-source-of-truth">
@@ -21266,7 +21349,309 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.openPurchaseOrderFromPR=openDirect;
 })();
 </script>
-</body></html>
+
+<script id="v2-1-370-purchasing-articles-final-fix">
+/* v2.1.370 — Purchasing Articles final shared source-of-truth.
+   Uses ONLY pms_cloud_records / signature_pms_articles.
+   Login/Auth untouched. Restaurant POS untouched. Other Purchasing modules untouched.
+*/
+(function(){
+'use strict';
+if(window.__signatureV370ArticlesFinal)return;
+window.__signatureV370ArticlesFinal=true;
+const KEY='signature_pms_articles', CLOUD='pms_cloud_records';
+const pid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+const read=()=>{try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+const write=a=>{try{localStorage.setItem(KEY,JSON.stringify(a||[]));}catch(e){}};
+const norm=v=>String(v??'').trim().toLowerCase();
+function clean(list){
+ const p=pid(),out=[],byCode=new Map(),byName=new Map();
+ (Array.isArray(list)?list:[]).filter(x=>String(x?.propertyId||'')===p).forEach(x=>{
+  const r={...x,propertyId:p};
+  const c=norm(r.code),n=norm(r.name),hit=(c&&byCode.get(c))||(n&&byName.get(n));
+  if(!hit){out.push(r);if(c)byCode.set(c,r);if(n)byName.set(n,r);return;}
+  const merged={...hit,...r,propertyId:p,id:hit.id||r.id,code:r.code||hit.code,name:r.name||hit.name,
+   category:r.category||hit.category||'General',unit:r.unit||hit.unit||'pcs',
+   defaultCost:Number(r.defaultCost??hit.defaultCost??0),reorderLevel:Number(r.reorderLevel??hit.reorderLevel??0),
+   active:r.active!==undefined?r.active:hit.active!==false};
+  const i=out.indexOf(hit);if(i>=0)out[i]=merged;
+  if(c)byCode.set(c,merged);if(n)byName.set(n,merged);
+ });
+ return out;
+}
+const replaceMine=a=>{const p=pid();write(read().filter(x=>String(x?.propertyId||'')!==p).concat(clean(a)));};
+async function clientReady(){
+ const c=typeof initSupabaseClient==='function'?initSupabaseClient():null,p=pid();if(!c||!p)return null;
+ try{const s=await c.auth.getSession();if(!s?.data?.session?.user)return null;return{c,p,u:s.data.session.user.id};}catch(e){return null}
+}
+async function cloud(){const z=await clientReady();if(!z)return null;try{const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',KEY).maybeSingle();if(q.error)throw q.error;return Array.isArray(q.data?.data)?clean(q.data.data.map(x=>({...x,propertyId:z.p}))):null;}catch(e){console.warn('v370 article cloud read:',e?.message||e);return null;}}
+async function push(list){const z=await clientReady();if(!z)return false;const data=clean(list);try{const q=await z.c.from(CLOUD).upsert({property_id:z.p,storage_key:KEY,data,updated_by:z.u,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});if(q.error)throw q.error;replaceMine(data);return true;}catch(e){console.warn('v370 article cloud publish:',e?.message||e);return false;}}
+let busy=false;
+async function reconcile(){
+ if(busy||!pid())return false;busy=true;
+ try{
+  const local=clean(read());
+  replaceMine(local);
+  const cl=await cloud();
+  if(cl===null){
+    if(local.length) await push(local);
+    return false;
+  }
+  /* Union first: never lose an article that exists only on one user's browser. */
+  const merged=clean(cl.concat(local));
+  replaceMine(merged);
+  const cloudSig=JSON.stringify(cl.map(x=>({id:x.id,code:x.code,name:x.name,category:x.category,unit:x.unit,defaultCost:x.defaultCost,reorderLevel:x.reorderLevel,active:x.active})));
+  const mergedSig=JSON.stringify(merged.map(x=>({id:x.id,code:x.code,name:x.name,category:x.category,unit:x.unit,defaultCost:x.defaultCost,reorderLevel:x.reorderLevel,active:x.active})));
+  if(cloudSig!==mergedSig) await push(merged);
+  try{if(typeof renderArticles==='function')renderArticles();}catch(e){}
+  try{if(typeof renderArticleManagerList==='function')renderArticleManagerList();}catch(e){}
+  return true;
+ }finally{busy=false;}
+}
+window.signatureArticlesReconcile=reconcile;
+/* Save Article: original save remains responsible for local record creation; we publish after it. */
+function bindSave(){
+ const fn=window.saveArticleMaster;if(typeof fn!=='function'||fn.__v370)return;
+ const w=function(){const r=fn.apply(this,arguments);setTimeout(()=>reconcile(),500);return r;};w.__v370=true;window.saveArticleMaster=w;
+}
+function bindNav(){
+ ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{const fn=window[name];if(typeof fn!=='function'||fn.__v370Nav)return;const w=function(){const r=fn.apply(this,arguments);setTimeout(()=>reconcile(),1500);return r;};w.__v370Nav=true;window[name]=w;});
+}
+/* Open Articles is a strong synchronization point and does not alter POS. */
+const oldOpen=window.openArticleManager;
+if(typeof oldOpen==='function'&&!oldOpen.__v370Open){window.openArticleManager=function(){reconcile();return oldOpen.apply(this,arguments)};window.openArticleManager.__v370Open=true;}
+const boot=()=>{bindSave();bindNav();setTimeout(()=>reconcile(),2500);setTimeout(()=>reconcile(),6000);setTimeout(()=>{bindSave();bindNav();},700);};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+</body><script id="v2-1-360-po-open-button-final">
+/* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV360POOPENFINAL)return;
+  window.__signatureV360POOPENFINAL=true;
+
+  function safeRows(key){try{return typeof rows==='function'?(rows(key)||[]):[]}catch(e){return[]}}
+  function prop(){try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}}
+  function poLocal(){try{const a=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}}
+  function escSafe(v){try{return typeof esc==='function'?esc(v):String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}catch(e){return String(v??'')}}
+  function findLocal(pr,prId,poNo){
+    const all=poLocal().filter(x=>String(x?.propertyId||'')===prop());
+    return all.find(x=>prId&&String(x?.prId||'')===String(prId)) || all.find(x=>poNo&&String(x?.number||'')===String(poNo)) || null;
+  }
+  async function cloud(prId,poNo){
+    try{
+      const c=typeof initSupabaseClient==='function'?initSupabaseClient():null, propertyId=prop();
+      if(!c||!propertyId)return null;
+      const a=await c.from('property_store_records').select('record_data').eq('property_id',propertyId).eq('record_type','purchase_orders');
+      if(!a.error){for(const r of (Array.isArray(a.data)?a.data:[])){const x=r?.record_data||{};if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
+      const b=await c.from('pms_cloud_records').select('data').eq('property_id',propertyId).eq('storage_key','signature_pms_purchase_orders').maybeSingle();
+      if(!b.error){for(const x of (Array.isArray(b.data?.data)?b.data.data:[])){if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
+    }catch(e){console.warn('PO open cloud lookup:',e)}
+    return null;
+  }
+  function show(po){
+    const supplierId=po.supplierId, supplier=safeRows(typeof K!=='undefined'?K.sup:'').find(x=>String(x.id)===String(supplierId))||{};
+    const id='sigPOViewModal';
+    if(!document.getElementById(id))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${id}"><div class="modal-box"><div class="modal-header"><h3>Purchase Order</h3><button class="close-btn" onclick="document.getElementById('${id}').classList.remove('show')">×</button></div><div id="sigPOViewContent"></div></div></div>`);
+    const lines=Array.isArray(po.lines)?po.lines:[];
+    const total=Number(po.total||lines.reduce((a,l)=>a+Number(l.qty||0)*Number(l.unitCost||0),0));
+    document.getElementById('sigPOViewContent').innerHTML=`<div class="form-grid"><div class="form-group"><label>PO Number</label><input value="${escSafe(po.number||'')}" readonly></div><div class="form-group"><label>PO Date</label><input value="${escSafe(po.date||'')}" readonly></div><div class="form-group"><label>PR Reference</label><input value="${escSafe(po.prNumber||'')}" readonly></div><div class="form-group"><label>Status</label><input value="${escSafe(po.status||'Open')}" readonly></div><div class="form-group"><label>Supplier</label><input value="${escSafe(po.supplier||supplier.name||'')}" readonly></div><div class="form-group"><label>Department</label><input value="${escSafe(po.department||'')}" readonly></div></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Article</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${escSafe(l.articleCode||'')}</td><td>${escSafe(l.articleName||'')}</td><td>${escSafe(l.unit||'')}</td><td>${Number(l.qty||0)}</td><td>${typeof accMoney==='function'?accMoney(Number(l.unitCost||0)):Number(l.unitCost||0).toFixed(2)}</td><td>${typeof accMoney==='function'?accMoney(Number(l.qty||0)*Number(l.unitCost||0)):(Number(l.qty||0)*Number(l.unitCost||0)).toFixed(2)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="5" style="text-align:right"><strong>TOTAL</strong></td><td><strong>${typeof accMoney==='function'?accMoney(total):total.toFixed(2)}</strong></td></tr></tfoot></table></div><div style="margin-top:14px"><strong>Payment:</strong> ${escSafe(po.payment||'')} &nbsp; <strong>Notes:</strong> ${escSafe(po.notes||'')}</div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${id}').classList.remove('show')">Close</button></div>`;
+    document.getElementById(id).classList.add('show');
+  }
+  window.openPurchaseOrderFromPR=async function(prId){
+    try{
+      if(typeof requireModuleAction==='function' && !requireModuleAction('purchasing.po')){alert('You do not have permission to open Purchase Orders.');return;}
+      let pr=(typeof K!=='undefined'&&K.pr)?safeRows(K.pr).find(x=>String(x.id)===String(prId)):null;
+      try{if(typeof window.hydrateSupabasePurchaseSuppliers==='function')await window.hydrateSupabasePurchaseSuppliers()}catch(e){}
+      let poNo=pr?.poNumber||pr?.purchaseOrderNumber||'';
+      // Cross-user: the PR may exist only in the shared cloud, not in this browser's localStorage.
+      if(!pr){
+        try{
+          const c=client(), propertyId=prop();
+          if(c&&propertyId){
+            const q=await c.from('pms_cloud_records').select('data').eq('property_id',propertyId).eq('storage_key','signature_pms_purchase_requests').maybeSingle();
+            if(!q.error){
+              const arr=Array.isArray(q.data?.data)?q.data.data:[];
+              pr=arr.find(x=>String(x?.id||'')===String(prId))||null;
+              if(pr) poNo=pr.poNumber||pr.purchaseOrderNumber||'';
+            }
+          }
+        }catch(e){console.warn('Shared PR lookup:',e)}
+      }
+      // If the PR record itself is not cached, the PO can still be opened by its shared PR/PO relationship.
+      // Do not stop here: direct cloud lookup below can resolve the PO by PR id.
+      if(!pr) pr={id:prId,poNumber:poNo,purchaseOrderNumber:poNo};
+      let po=null;
+      try{if(typeof findExistingPOForPR==='function')po=findExistingPOForPR(pr)}catch(e){console.warn('local PO resolver:',e)}
+      if(!po)try{if(typeof getPOfromPR==='function')po=getPOfromPR(prId)}catch(e){console.warn('PO resolver:',e)}
+      if(!po)po=findLocal(pr,prId,poNo);
+      if(!po && typeof window.hydrateSupabasePurchaseOrders==='function')try{await window.hydrateSupabasePurchaseOrders()}catch(e){console.warn('PO hydrate:',e)}
+      if(!po)try{if(typeof findExistingPOForPR==='function')po=findExistingPOForPR(pr)}catch(e){}
+      if(!po)po=findLocal(pr,prId,poNo);
+      if(!po)po=await cloud(prId,poNo);
+      if(!po){alert('PO '+(poNo||'for this PR')+' is not available in the shared cloud yet. Please open this PR from the user who created the PO once to publish it.');return;}
+      show(po);
+    }catch(e){console.error('Open PO failed:',e);alert('Open PO failed: '+(e?.message||e));}
+  };
+})();
+</script>
+
+<script id="v2-1-367-purchasing-register-blink-fix">
+/* v2.1.367 — Purchasing Register blink fix.
+   Purchasing only. Restaurant POS untouched. Login/Auth untouched.
+   Cloud sync must not continuously re-render the Purchase Register. */
+(function(){
+  'use strict';
+  if(window.__signatureV367RegisterBlinkFix)return;
+  window.__signatureV367RegisterBlinkFix=true;
+
+  const CLOUD='pms_cloud_records';
+  const GRN_KEY='signature_pms_grns';
+  const PO_KEY='signature_pms_purchase_orders';
+  const prop=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const client=()=>{try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}};
+  const read=(k)=>{try{const a=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+  const write=(k,a)=>{try{localStorage.setItem(k,JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}};
+
+  async function auth(){
+    const c=client(),p=prop();
+    if(!c||!p)return null;
+    try{
+      const s=await c.auth.getSession();
+      if(!s?.data?.session?.user)return null;
+      return {c,p,u:s.data.session.user.id};
+    }catch(e){return null}
+  }
+
+  async function pull(key){
+    const z=await auth(); if(!z)return false;
+    try{
+      const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',key).maybeSingle();
+      if(q.error)throw q.error;
+      if(q.data && Array.isArray(q.data.data)){
+        const other=read(key).filter(x=>String(x?.propertyId||'')!==z.p);
+        const mine=q.data.data.map(x=>({...x,propertyId:z.p}));
+        write(key,other.concat(mine));
+        return true;
+      }
+    }catch(e){console.warn('Purchasing shared pull failed:',key,e)}
+    return false;
+  }
+
+  async function publish(key,list){
+    const z=await auth(); if(!z)return false;
+    try{
+      const arr=(Array.isArray(list)?list:[])
+        .filter(x=>String(x?.propertyId||z.p)===z.p)
+        .map(x=>({...x,propertyId:z.p}));
+      const q=await z.c.from(CLOUD).upsert({
+        property_id:z.p,storage_key:key,data:arr,
+        updated_by:z.u,updated_at:new Date().toISOString()
+      },{onConflict:'property_id,storage_key'});
+      if(q.error)throw q.error;
+      write(key,read(key).filter(x=>String(x?.propertyId||'')!==z.p).concat(arr));
+      return true;
+    }catch(e){console.warn('Purchasing shared publish failed:',key,e);return false}
+  }
+
+  async function hasCloudRow(key){
+    const z=await auth();if(!z)return false;
+    try{
+      const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',key).maybeSingle();
+      if(q.error)throw q.error;
+      return !!q.data;
+    }catch(e){return false}
+  }
+
+  async function ensure(key){
+    if(await hasCloudRow(key))return pull(key);
+    const p=prop();
+    const mine=read(key).filter(x=>String(x?.propertyId||'')===p);
+    if(mine.length)return publish(key,mine);
+    return false;
+  }
+
+  async function pullPOByNumber(poNumber){
+    const z=await auth();if(!z||!poNumber)return null;
+    try{
+      const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',PO_KEY).maybeSingle();
+      if(q.error)throw q.error;
+      const arr=Array.isArray(q.data?.data)?q.data.data:[];
+      const po=arr.find(x=>String(x?.number||'').trim().toLowerCase()===String(poNumber).trim().toLowerCase());
+      if(po){
+        const other=read(PO_KEY).filter(x=>String(x?.propertyId||'')!==z.p);
+        write(PO_KEY,other.concat(arr.map(x=>({...x,propertyId:z.p}))));
+        return {...po,propertyId:z.p};
+      }
+    }catch(e){console.warn('Shared PO number lookup failed:',e)}
+    return null;
+  }
+
+  /* GRN modal: resolve the shared PO list, but do NOT render repeatedly. */
+  const oldOpen=window.openGRNModal;
+  if(typeof oldOpen==='function'&&!oldOpen.__v367Wrapped){
+    window.openGRNModal=async function(){
+      try{await ensure(PO_KEY);await ensure(GRN_KEY)}catch(e){}
+      return oldOpen.apply(this,arguments);
+    };
+    window.openGRNModal.__v367Wrapped=true;
+  }
+
+  /* GRN save: resolve PO first, then publish resulting GRN + PO state. */
+  const oldSave=window.saveGRN;
+  if(typeof oldSave==='function'&&!oldSave.__v367Wrapped){
+    window.saveGRN=async function(){
+      try{
+        const input=document.getElementById('grPO');
+        const poNo=String(input?.value||'').trim();
+        if(poNo){
+          const po=await pullPOByNumber(poNo);
+          if(po){
+            const arr=read(PO_KEY);
+            if(!arr.some(x=>String(x?.id||'')===String(po.id)))write(PO_KEY,arr.concat(po));
+          }
+        }
+      }catch(e){console.warn('GRN shared PO pre-resolve:',e)}
+
+      const result=await oldSave.apply(this,arguments);
+      /* Sync only; never call renderPurchaseRegister here. */
+      [500,1500,3000].forEach(ms=>setTimeout(async()=>{
+        try{
+          await publish(GRN_KEY,read(GRN_KEY).filter(x=>String(x?.propertyId||'')===prop()));
+          await publish(PO_KEY,read(PO_KEY).filter(x=>String(x?.propertyId||'')===prop()));
+        }catch(e){}
+      },ms));
+      return result;
+    };
+    window.saveGRN.__v367Wrapped=true;
+  }
+
+  /* Manual Purchase Register Refresh ONLY.
+     Cloud pull completes first, then the table renders once. */
+  window.signaturePurchaseRegisterRefresh=async function(){
+    const btn=document.querySelector('#purchasingRegisterSection button[onclick*="signaturePurchaseRegisterRefresh"]');
+    const oldText=btn?.textContent;
+    if(btn){btn.disabled=true;btn.textContent='Refreshing...';}
+    try{
+      await pull(PO_KEY);
+      await pull(GRN_KEY);
+      if(typeof window.renderPurchaseRegister==='function')window.renderPurchaseRegister();
+    }catch(e){console.warn('Purchase Register refresh failed:',e)}
+    finally{
+      if(btn){btn.disabled=false;btn.textContent=oldText||'Refresh';}
+    }
+  };
+
+  /* Seed/pull once after the authenticated page is ready, without re-rendering.
+     This does not create a visual refresh loop. */
+  const quietSync=()=>{
+    setTimeout(async()=>{try{await ensure(PO_KEY);await ensure(GRN_KEY)}catch(e){}},1200);
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',quietSync);else quietSync();
+})();
+</script>
+</html>
 <style id="menu-management-button-hardening-v18">
 #restaurantMenuSection{position:relative!important;z-index:100!important;pointer-events:auto!important;}
 #restaurantMenuSection .section-header{position:relative!important;z-index:101!important;pointer-events:auto!important;}
@@ -23407,6 +23792,282 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     }catch(e){console.warn('Purchasing PO shared cloud sync skipped:',e)}
   }
   function boot(){[800,1800,3500,6000].forEach(ms=>setTimeout(publish,ms));}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+
+<script id="v2-1-362-po-publish-on-open-final">
+/* v2.1.362 — Purchasing only. If the PO creator has it locally, publish it BEFORE cross-user Open PO lookup. Restaurant POS untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV362POPUBLISHOPENFINAL)return;
+  window.__signatureV362POPUBLISHOPENFINAL=true;
+
+  const PO_KEY='signature_pms_purchase_orders';
+  const PR_KEY='signature_pms_purchase_requests';
+
+  function propertyId(){
+    try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');}
+    catch(e){return '';}
+  }
+  function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
+  function localPOs(){
+    try{const a=JSON.parse(localStorage.getItem(PO_KEY)||'[]');return Array.isArray(a)?a:[]}
+    catch(e){return []}
+  }
+  function localPRs(){
+    try{const a=JSON.parse(localStorage.getItem(PR_KEY)||'[]');return Array.isArray(a)?a:[]}
+    catch(e){return []}
+  }
+
+  async function publishPO(po){
+    const c=client(), pid=propertyId();
+    if(!c||!pid||!po)return false;
+    const record={...po,propertyId:pid};
+    let published=false;
+
+    // Primary transaction-level Purchasing store.
+    try{
+      const rid=String(record.id||('po_'+Date.now()));
+      const {error}=await c.from('property_store_records').upsert({
+        property_id:pid,
+        record_type:'purchase_orders',
+        record_id:rid,
+        record_data:record,
+        updated_at:new Date().toISOString()
+      },{onConflict:'property_id,record_type,record_id'});
+      if(!error)published=true;
+      else console.warn('PO property_store_records publish:',error);
+    }catch(e){console.warn('PO property_store_records publish exception:',e)}
+
+    // Shared keyed storage used by cross-user PR/PO lookup.
+    try{
+      const {data:old,error:rerr}=await c.from('pms_cloud_records')
+        .select('data')
+        .eq('property_id',pid)
+        .eq('storage_key',PO_KEY)
+        .maybeSingle();
+      if(rerr)throw rerr;
+      const existing=Array.isArray(old?.data)?old.data:[];
+      const map=new Map();
+      existing.forEach(x=>{if(x?.id)map.set(String(x.id),x)});
+      map.set(String(record.id),record);
+      const sess=await c.auth.getSession();
+      const uid=sess?.data?.session?.user?.id||null;
+      const {error}=await c.from('pms_cloud_records').upsert({
+        property_id:pid,
+        storage_key:PO_KEY,
+        data:[...map.values()],
+        updated_by:uid,
+        updated_at:new Date().toISOString()
+      },{onConflict:'property_id,storage_key'});
+      if(error)throw error;
+      published=true;
+      console.log('PO shared cloud published:',record.number||record.id);
+    }catch(e){console.warn('PO pms_cloud_records publish:',e)}
+
+    // Also publish the PO reference back into the shared PR array.
+    try{
+      const prs=localPRs().filter(x=>String(x?.propertyId||'')===pid);
+      const target=prs.find(x=>String(x?.id||'')===String(record.prId||''));
+      if(target){
+        target.poId=record.id;
+        target.poNumber=record.number;
+        target.purchaseOrderNumber=record.number;
+        target.status='PO Created';
+        const {data:old,error:rerr}=await c.from('pms_cloud_records').select('data')
+          .eq('property_id',pid).eq('storage_key',PR_KEY).maybeSingle();
+        if(!rerr){
+          const existing=Array.isArray(old?.data)?old.data:[];
+          const map=new Map();
+          existing.forEach(x=>{if(x?.id)map.set(String(x.id),x)});
+          map.set(String(target.id),{...target,propertyId:pid});
+          const sess=await c.auth.getSession();
+          await c.from('pms_cloud_records').upsert({
+            property_id:pid,
+            storage_key:PR_KEY,
+            data:[...map.values()],
+            updated_by:sess?.data?.session?.user?.id||null,
+            updated_at:new Date().toISOString()
+          },{onConflict:'property_id,storage_key'});
+        }
+      }
+    }catch(e){console.warn('PR PO reference publish:',e)}
+    return published;
+  }
+
+  async function publishAllLocalPOs(){
+    const pid=propertyId();
+    if(!pid)return;
+    const list=localPOs().filter(x=>String(x?.propertyId||'')===pid);
+    for(const po of list){try{await publishPO(po)}catch(e){console.warn('PO publish retry:',e)}}
+  }
+
+  // Explicitly expose this so the Open button can publish the creator's local PO first.
+  window.publishPurchaseOrderToSharedCloud=publishPO;
+
+  // Re-wrap the current Open PO function. Admin/creator: publish first. Reception: then read shared cloud.
+  const previousOpen=window.openPurchaseOrderFromPR;
+  if(typeof previousOpen==='function'){
+    window.openPurchaseOrderFromPR=async function(prId){
+      try{
+        const pid=propertyId();
+        const all=localPOs().filter(x=>String(x?.propertyId||'')===pid);
+        let po=all.find(x=>String(x?.prId||'')===String(prId));
+        if(!po){
+          try{
+            const prs=typeof K!=='undefined'&&K.pr&&typeof rows==='function'?rows(K.pr):[];
+            const pr=prs.find(x=>String(x?.id||'')===String(prId));
+            const poNo=pr?.poNumber||pr?.purchaseOrderNumber||'';
+            if(poNo)po=all.find(x=>String(x?.number||'')===String(poNo));
+          }catch(e){}
+        }
+        if(po){
+          // Critical fix: creator publishes the actual PO before another user tries to open it.
+          await publishPO(po);
+        }
+      }catch(e){console.warn('PO publish-on-open:',e)}
+      return previousOpen(prId);
+    };
+  }
+
+  // Also publish existing local POs after login/property context becomes available.
+  function boot(){
+    [1000,2500,5000,9000].forEach(ms=>setTimeout(()=>publishAllLocalPOs(),ms));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+<script id="v2-1-369-purchasing-articles-canonical-fix">
+/* v2.1.369 — Purchasing Article Master canonical shared fix.
+   Purchasing Articles only. Login/Auth untouched. Restaurant POS untouched.
+   Cloud row: pms_cloud_records / signature_pms_articles.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV369ArticlesCanonical)return;
+  window.__signatureV369ArticlesCanonical=true;
+  const KEY='signature_pms_articles';
+  const CLOUD='pms_cloud_records';
+  const LEGACY='property_store_records';
+  const pid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const read=()=>{try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+  const write=a=>{try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}};
+  const norm=v=>String(v??'').trim().toLowerCase();
+  const scoped=a=> (Array.isArray(a)?a:[]).filter(x=>String(x?.propertyId||'')===pid()).map(x=>({...x,propertyId:pid()}));
+  const dedupe=list=>{
+    const out=[],codeMap=new Map(),nameMap=new Map();
+    scoped(list).forEach(x=>{
+      const code=norm(x.code),name=norm(x.name);
+      const hit=(code&&codeMap.get(code))||(name&&nameMap.get(name));
+      if(!hit){
+        const r={...x,propertyId:pid()};out.push(r);
+        if(code)codeMap.set(code,r);if(name)nameMap.set(name,r);return;
+      }
+      // Preserve the newest/richer values while removing duplicates.
+      const merged={...hit,...x,propertyId:pid(),
+        code:String(x.code||hit.code||''),name:String(x.name||hit.name||''),
+        category:x.category||hit.category||'General',unit:x.unit||hit.unit||'pcs',
+        defaultCost:Number(x.defaultCost??hit.defaultCost??0),
+        reorderLevel:Number(x.reorderLevel??hit.reorderLevel??0),
+        active:x.active!==undefined?x.active:hit.active!==false};
+      const i=out.indexOf(hit);if(i>=0)out[i]=merged;
+      if(code)codeMap.set(code,merged);if(name)nameMap.set(name,merged);
+    });
+    return out;
+  };
+  const sig=a=>JSON.stringify((Array.isArray(a)?a:[]).map(x=>({id:x.id,code:x.code,name:x.name,category:x.category,unit:x.unit,defaultCost:x.defaultCost,reorderLevel:x.reorderLevel,active:x.active})).sort((a,b)=>String(a.code).localeCompare(String(b.code))));
+  const client=()=>{try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}};
+  async function auth(){
+    const c=client(),p=pid();if(!c||!p)return null;
+    try{const s=await c.auth.getSession();const u=s?.data?.session?.user;if(!u)return null;return{c,p,u:u.id}}catch(e){return null}
+  }
+  async function cloudRead(){
+    const z=await auth();if(!z)return null;
+    try{
+      const q=await z.c.from(CLOUD).select('data,updated_at').eq('property_id',z.p).eq('storage_key',KEY).maybeSingle();
+      if(q.error)throw q.error;
+      if(q.data&&Array.isArray(q.data.data))return dedupe(q.data.data.map(x=>({...x,propertyId:z.p})));
+    }catch(e){console.warn('Articles cloud read failed:',e?.message||e)}
+    return null;
+  }
+  async function legacyRead(){
+    const z=await auth();if(!z)return [];
+    try{
+      const q=await z.c.from(LEGACY).select('record_data,record_id,updated_at').eq('property_id',z.p).eq('record_type','articles');
+      if(q.error)throw q.error;
+      return (q.data||[]).map(r=>({...r.record_data,propertyId:z.p}));
+    }catch(e){return[]}
+  }
+  async function publish(list){
+    const z=await auth();if(!z)return false;
+    const data=dedupe(list);
+    try{
+      const q=await z.c.from(CLOUD).upsert({property_id:z.p,storage_key:KEY,data,updated_by:z.u,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      if(q.error)throw q.error;
+      const all=read().filter(x=>String(x?.propertyId||'')!==z.p).concat(data);write(all);
+      return true;
+    }catch(e){console.warn('Articles cloud publish failed:',e?.message||e);return false}
+  }
+  function repaint(){
+    try{if(typeof renderArticles==='function')renderArticles()}catch(e){}
+    try{if(typeof renderArticleManagerList==='function')renderArticleManagerList()}catch(e){}
+  }
+  async function hydrate(){
+    const p=pid();if(!p)return false;
+    const before=scoped(read());
+    const cloud=await cloudRead();
+    // IMPORTANT: never replace local data with cloud data blindly.
+    // Merge both sides first so a locally-created article (e.g. ART-004) survives.
+    const legacy=cloud===null?await legacyRead():[];
+    const merged=dedupe((cloud||[]).concat(legacy).concat(before));
+    if(!merged.length)return false;
+    const changed=sig(before)!==sig(merged);
+    if(changed){
+      write(read().filter(x=>String(x?.propertyId||'')!==p).concat(merged));
+      repaint();
+    }
+    // Publish the merged canonical list whenever it differs from cloud or when cloud was absent.
+    const cloudSig=cloud===null?'':sig(cloud);
+    if(cloud===null || cloudSig!==sig(merged))await publish(merged);
+    return true;
+  }
+  window.hydrateSupabasePurchaseArticles=hydrate;
+  window.syncSupabasePurchaseArticles=async()=>publish(scoped(read()));
+
+  function wrapSave(){
+    const fn=window.saveArticleMaster;
+    if(typeof fn!=='function'||fn.__v369ArticlesWrapped)return;
+    const w=async function(){
+      const p=pid();
+      try{
+        // Merge cloud + current local cache BEFORE the original save runs.
+        const cloud=await cloudRead();
+        if(cloud){
+          const local=scoped(read());
+          const merged=dedupe(cloud.concat(local));
+          write(read().filter(x=>String(x?.propertyId||'')!==p).concat(merged));
+        }
+      }catch(e){}
+      const result=fn.apply(this,arguments);
+      // After the original Save Article adds the new row, publish the complete canonical list.
+      setTimeout(async()=>{try{await publish(dedupe(read())) ;repaint();}catch(e){}},300);
+      return result;
+    };
+    w.__v369ArticlesWrapped=true;window.saveArticleMaster=w;
+  }
+  function tryNavHooks(){
+    ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{
+      const fn=window[name];
+      if(typeof fn!=='function'||fn.__v369ArticleNav)return;
+      const w=function(){const r=fn.apply(this,arguments);setTimeout(()=>hydrate(),800);return r};
+      w.__v369ArticleNav=true;window[name]=w;
+    });
+  }
+  function boot(){
+    wrapSave();tryNavHooks();
+    [900,2200,4500].forEach(ms=>setTimeout(()=>{try{wrapSave();tryNavHooks();hydrate()}catch(e){}},ms));
+  }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
