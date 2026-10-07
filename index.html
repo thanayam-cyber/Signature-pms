@@ -14885,16 +14885,29 @@ window.addPurchaseRequestLine=function(){const host=document.getElementById('prL
 window.savePurchaseRequest=function(){if(!requireModuleAction("purchasing.request"))return;const dept=document.getElementById('prDept').value.trim();const lines=[...document.querySelectorAll('#prLines .pr-line')].map(x=>({articleId:x.querySelector('.pr-art').value,qty:Number(x.querySelector('.pr-qty').value||0),unitCost:Number(x.querySelector('.pr-cost').value||0)})).filter(x=>x.qty>0);if(!dept||!lines.length){alert('Enter department and at least one article.');return;}const art=rows(K.art);lines.forEach(l=>{const a=art.find(x=>x.id===l.articleId);l.articleCode=a?.code;l.articleName=a?.name;l.unit=a?.unit;});const total=lines.reduce((s,x)=>s+x.qty*x.unitCost,0);const r={id:id('pr'),propertyId:currentPropertyId,number:'PR-'+Date.now(),date:today(),requiredDate:document.getElementById('prDate').value||today(),department:dept,priority:document.getElementById('prPriority').value,requestedBy:user(),notes:document.getElementById('prNotes').value.trim(),lines,total,status:'Submitted',createdAt:new Date().toISOString()};const a=rows(K.pr);a.push(r);saveProp(K.pr,a);document.getElementById('sigPRModal').classList.remove('show');renderPR();alert('Purchase Request submitted.');};
 window.approvePurchaseRequest=function(rid){if(!requireModuleAction("purchasing.request"))return;const a=rows(K.pr),r=a.find(x=>x.id===rid);if(!r)return;r.status='Approved';r.approvedBy=user();r.approvedAt=new Date().toISOString();saveProp(K.pr,a);renderPR();};
 window.renderPR=renderPR;
+function findExistingPOForPR(pr){
+ try{
+   const raw=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');
+   const all=Array.isArray(raw)?raw:[];
+   const pid=String(currentPropertyId||'');
+   return all.find(po=>String(po?.propertyId||'')===pid && (String(po?.prId||'')===String(pr?.id||'') || (String(po?.prNumber||'')!=='' && String(po?.prNumber||'')===String(pr?.number||''))))||null;
+ }catch(e){return null;}
+}
+
 function renderPR(){
  const e=document.getElementById('purchaseRequestTable');
  if(!e)return;
  const a=rows(K.pr).sort((x,y)=>String(y.createdAt||y.date||'').localeCompare(String(x.createdAt||x.date||'')));
  e.innerHTML=a.length?a.map(r=>{
-   const total=Number(r.total||0), poRef=r.poNumber||r.purchaseOrderNumber||'';
-   let action=`<button class="btn btn-secondary btn-small" onclick="openPurchaseRequestDetails('${esc(r.id)}')">Open</button>`;
-   if(r.status==='Submitted' && hasModuleAction('purchasing.request')) action+=` <button class="btn btn-primary btn-small" onclick="approvePurchaseRequest('${esc(r.id)}')">Approve</button>`;
-   else if(r.status==='Approved'&&!poRef && hasModuleAction('purchasing.po')) action+=` <button class="btn btn-success btn-small" onclick="createPOFromPR('${esc(r.id)}')">Create PO</button>`;
-   else if(poRef && hasModuleAction('purchasing.po')) action+=` <button class="btn btn-success btn-small" onclick="openPurchaseOrderFromPR('${esc(r.id)}')">Open ${esc(poRef)}</button>`;
+   const total=Number(r.total||0), existingPO=findExistingPOForPR(r), poRef=r.poNumber||r.purchaseOrderNumber||existingPO?.number||'';
+   let action='';
+   if(poRef && hasModuleAction('purchasing.po')){
+     action=`<button class="btn btn-success btn-small" onclick="openPurchaseOrderFromPR('${esc(r.id)}')">Open ${esc(poRef)}</button>`;
+   }else{
+     action=`<button class="btn btn-secondary btn-small" onclick="openPurchaseRequestDetails('${esc(r.id)}')">Open</button>`;
+     if(r.status==='Submitted' && hasModuleAction('purchasing.request')) action+=` <button class="btn btn-primary btn-small" onclick="approvePurchaseRequest('${esc(r.id)}')">Approve</button>`;
+     else if(r.status==='Approved'&&!poRef && hasModuleAction('purchasing.po')) action+=` <button class="btn btn-success btn-small" onclick="createPOFromPR('${esc(r.id)}')">Create PO</button>`;
+   }
    return `<tr><td>${esc(r.date||'')}</td><td><strong>${esc(r.number||'')}</strong></td><td>${esc(r.department||'')}</td><td>${esc(r.requestedBy||'')}</td><td>${Array.isArray(r.lines)?r.lines.length:0}</td><td>${typeof accMoney==='function'?accMoney(total):total.toFixed(2)}</td><td class="sig-status">${esc(r.status||'Submitted')}</td><td>${action}</td></tr>`;
  }).join(''):`<tr><td colspan="8" class="empty">No purchase requests.</td></tr>`;
 }
@@ -14905,9 +14918,16 @@ window.getPOfromPR=function(prId){
  let all=[];try{all=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');}catch(e){all=[];}
  return all.find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.number)===String(poNo))||null;
 };
-window.openPurchaseOrderFromPR=function(prId){
+window.openPurchaseOrderFromPR=async function(prId){
  if(!requireModuleAction('purchasing.po'))return;
- const po=getPOfromPR(prId); if(!po){alert('Purchase Order not found.');return;}
+ let po=getPOfromPR(prId);
+ /* Reception/Admin may have the PR cloud state before the PO has finished
+    hydrating into this browser. Pull the cloud PO once before declaring it missing. */
+ if(!po && typeof window.hydrateSupabasePurchaseOrders==='function'){
+   try{ await window.hydrateSupabasePurchaseOrders(); }catch(e){ console.warn('PO cloud refresh before open failed:',e); }
+   po=getPOfromPR(prId);
+ }
+ if(!po){alert('Purchase Order not found. Please use Purchasing → Cloud Refresh and try again.');return;}
  const supplier=rows(K.sup).find(x=>x.id===po.supplierId)||{};
  const idm='sigPOViewModal';
  if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Purchase Order</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div id="sigPOViewContent"></div></div></div>`);
@@ -14963,7 +14983,7 @@ window.openPurchaseRequestDetails=function(rid){
  if(!r){alert('Purchase Request not found.');return;}
  const idm='sigPRDetailsModal';
  if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Purchase Request Details</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div id="sigPRDetailsContent"></div></div></div>`);
- const lines=Array.isArray(r.lines)?r.lines:[], po=r.poNumber||r.purchaseOrderNumber||'';
+ const lines=Array.isArray(r.lines)?r.lines:[], existingPO=findExistingPOForPR(r), po=r.poNumber||r.purchaseOrderNumber||existingPO?.number||'';
  const canPO=r.status==='Approved'&&!po&&hasModuleAction('purchasing.po');
  document.getElementById('sigPRDetailsContent').innerHTML=`
  <div class="form-grid">
@@ -15025,7 +15045,11 @@ window.savePOFromPR=function(prId){
  all.push(po);
  localStorage.setItem(poStoreKey,JSON.stringify(all));
  const prs=rows(K.pr),stored=prs.find(x=>x.id===pr.id);if(stored){stored.poId=po.id;stored.poNumber=po.number;stored.purchaseOrderNumber=po.number;stored.status='PO Created';stored.poCreatedAt=po.createdAt;stored.poCreatedBy=po.createdBy;saveProp(K.pr,prs);}
- document.getElementById('sigCreatePOFromPRModal').classList.remove('show');renderPR();if(typeof renderPurchasingModule==='function')renderPurchasingModule();if(typeof renderPurchaseRegister==='function')renderPurchaseRegister();alert('Purchase Order '+po.number+' created from '+pr.number+'.');
+ document.getElementById('sigCreatePOFromPRModal').classList.remove('show');renderPR();if(typeof renderPurchasingModule==='function')renderPurchasingModule();if(typeof renderPurchaseRegister==='function')renderPurchaseRegister();
+ /* PO creation also updates the PR reference in cloud so every user sees
+    the same PR -> PO state, not only the PO record itself. */
+ try{if(typeof window.syncSupabasePurchaseRequests==='function'){[0,250,750,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseRequests(),ms));}}catch(e){console.warn('PR cloud sync after PO creation skipped:',e);}
+ alert('Purchase Order '+po.number+' created from '+pr.number+'.');
 };
 /* GRN: the old file referenced openGRNModal but did not define it. This implementation stores GRNs and posts Inventory/AP journals in base currency. */
 window.openGRNModal=function(){if(!requireModuleAction("purchasing.grn"))return;ensureDefaults();const idm='sigGRNModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Goods Received Note (GRN)</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Supplier *</label><select id="grSupplier"><option value="">Select supplier</option></select></div><div class="form-group"><label>GRN Date</label><input id="grDate" type="date"></div><div class="form-group"><label>PO / Reference</label><input id="grPO"></div><div class="form-group"><label>Supplier Invoice</label><input id="grInvoice"></div><div class="form-group"><label>Payment</label><select id="grPayment"><option>Credit</option><option>Cash</option><option>Bank</option></select></div><div class="form-group"><label>Notes</label><input id="grNotes"></div></div><div id="grLines"></div><button class="btn btn-secondary" onclick="addGRNLine()">+ Add Article</button><div class="summary-box" style="margin-top:15px"><strong>Total: <span id="grTotal">0.00</span></strong><div class="sig-mini-note">GRN value is posted to Inventory Assets. Credit GRNs create Accounts Payable; cash/bank GRNs credit the selected payment account.</div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveGRN()">Post GRN</button></div></div></div>`);const sup=document.getElementById('grSupplier');sup.innerHTML='<option value="">Select supplier</option>'+rows(K.sup).filter(x=>x.active).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');document.getElementById('grDate').value=today();document.getElementById('grLines').innerHTML='';addGRNLine();document.getElementById(idm).classList.add('show');};
@@ -19087,112 +19111,6 @@ async function hydrateSupabaseRooms(){
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();[500,1500,3000].forEach(ms=>setTimeout(()=>{bind();bindNavigation();},ms));
 })();
 </script>
-<script id="v2-1-343-purchasing-pr-cloud-source-of-truth">
-/* =========================================================
-   v2.1.344 — PURCHASE REQUEST CLOUD SOURCE OF TRUTH
-   Targeted fix only for Purchasing PRs.
-   - PRs are stored in property_store_records as purchase_requests.
-   - Additive/upsert-only: never delete another user's PR from cloud.
-   - Save + approve both publish immediately.
-   - Login/property switch hydrates PRs for the same property.
-   - Restaurant POS is untouched.
-========================================================= */
-(function(){
-  'use strict';
-  if(window.__signatureV343PurchasingPRCloud)return;
-  window.__signatureV343PurchasingPRCloud=true;
-  const PR_KEY='signature_pms_purchase_requests';
-  const TABLE='property_store_records';
-  const prop=()=>String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
-  const read=()=>{try{const v=JSON.parse(localStorage.getItem(PR_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
-  const write=v=>{try{localStorage.setItem(PR_KEY,JSON.stringify(Array.isArray(v)?v:[]));return true;}catch(e){return false;}};
-  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
-  async function user(c){const r=await c.auth.getUser();if(r.error)throw r.error;return r.data?.user||null;}
-
-  window.syncSupabasePurchaseRequests=async function(){
-    try{
-      const c=client(),propertyId=prop();
-      if(!c||!propertyId)return false;
-      if(!await user(c))return false;
-      const localMine=read().filter(x=>String(x?.propertyId||'')===propertyId);
-      if(!localMine.length)return true;
-      const now=new Date().toISOString();
-      const rows=localMine.map((record,i)=>({
-        property_id:propertyId,
-        record_type:'purchase_requests',
-        record_id:String(record?.id||('purchase_requests_'+i)),
-        record_data:{...record,propertyId},
-        updated_at:record?.updatedAt||record?.createdAt||now
-      }));
-      const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});
-      if(error)throw error;
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Requests synchronized to cloud.','success');
-      return true;
-    }catch(e){
-      console.warn('Purchase Request cloud sync failed:',e);
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Request cloud sync failed: '+(e?.message||e),'error');
-      return false;
-    }
-  };
-
-  window.hydrateSupabasePurchaseRequests=async function(){
-    try{
-      const c=client(),propertyId=prop();
-      if(!c||!propertyId)return false;
-      if(!await user(c))return false;
-      const {data,error}=await c.from(TABLE).select('record_id,record_data,updated_at').eq('property_id',propertyId).eq('record_type','purchase_requests');
-      if(error)throw error;
-      const cloud=data||[],local=read();
-      const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
-      const localMine=local.filter(x=>String(x?.propertyId||'')===propertyId);
-      const cmap=new Map(cloud.map(r=>[String(r.record_id),r]));
-      const merged=[];
-      cloud.forEach(r=>{
-        const cr=r.record_data||{},lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
-        const lu=Date.parse(String(lr?.updatedAt||lr?.createdAt||'')),cu=Date.parse(String(r.updated_at||''));
-        merged.push(lr&&Number.isFinite(lu)&&Number.isFinite(cu)&&lu>cu?lr:{...cr,propertyId});
-      });
-      localMine.forEach(l=>{if(!cmap.has(String(l?.id||'')))merged.push(l);});
-      write(other.concat(merged));
-      try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Requests refreshed from cloud.','success');
-      return true;
-    }catch(e){
-      console.warn('Purchase Request cloud hydration failed:',e);
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Request cloud refresh failed: '+(e?.message||e),'error');
-      return false;
-    }
-  };
-
-  function wrap(name){
-    const fn=window[name];
-    if(typeof fn!=='function'||fn.__v344PRWrapped)return;
-    const wrapped=function(){
-      const result=fn.apply(this,arguments);
-      [150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseRequests(),ms));
-      return result;
-    };
-    wrapped.__v344PRWrapped=true;window[name]=wrapped;
-  }
-  function nav(name){
-    const fn=window[name];
-    if(typeof fn!=='function'||fn.__v344PRNavWrapped)return;
-    const wrapped=function(){
-      const result=fn.apply(this,arguments);
-      [300,1000,2500].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseRequests(),ms));
-      return result;
-    };
-    wrapped.__v344PRNavWrapped=true;window[name]=wrapped;
-  }
-  function boot(){
-    wrap('savePurchaseRequest');wrap('approvePurchaseRequest');
-    nav('switchProperty');nav('hydrateCloudAfterLocalLogin');
-    [500,1200,2500,4000].forEach(ms=>setTimeout(()=>{wrap('savePurchaseRequest');wrap('approvePurchaseRequest');nav('switchProperty');nav('hydrateCloudAfterLocalLogin');},ms));
-    [1200,2500,4000].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseRequests(),ms));
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-})();
-</script>
 <script id="v2-1-341-purchasing-po-cloud-source-of-truth">
 /* =========================================================
    v2.1.341 — PURCHASING PO CLOUD SOURCE OF TRUTH (SAFE)
@@ -21130,6 +21048,215 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.signatureFnbTransactionCloud={publishSale,publishPayment,publishForSale,pull,subscribe};
   setTimeout(cycle,3000);
   setInterval(cycle,POLL_MS);
+})();
+</script>
+<script id="v2-1-350-purchasing-pr-cloud-race-fix">
+/* v2.1.350 — PURCHASE REQUEST CLOUD RACE FIX
+   PR only. Restaurant POS and PO logic untouched.
+   Keeps newly-created local PRs pending until their cloud write succeeds,
+   so a background pull can never make a fresh PR disappear.
+*/
+(function(){
+  'use strict';
+  if(window.__signaturePMSPurchasingPR350)return;
+  window.__signaturePMSPurchasingPR350=true;
+  const TABLE='pms_cloud_records';
+  const KEY='signature_pms_purchase_requests';
+  const pending=new Map();
+  let syncBusy=false;
+  const pid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const client=()=>{try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}};
+  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  function localAll(){try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
+  function localMine(){const p=pid();return localAll().filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}))}
+  function putLocal(v){try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(v)?v:[]));return true}catch(e){return false}}
+  function merge(...lists){
+    const m=new Map();
+    lists.flat().forEach(x=>{if(x?.id)m.set(String(x.id),x)});
+    return [...m.values()];
+  }
+  function pendingRows(){return [...pending.values()].filter(x=>String(x?.propertyId||pid())===pid())}
+  async function sync(){
+    if(syncBusy)return false;
+    const c=client(),p=pid(); if(!c||!p)return false;
+    const u=await uid(c); if(!u)return false;
+    syncBusy=true;
+    try{
+      const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
+      if(error)throw error;
+      const cloud=Array.isArray(data?.data)?data.data:[];
+      const merged=merge(cloud,localMine(),pendingRows());
+      const {error:upErr}=await c.from(TABLE).upsert({
+        property_id:p,storage_key:KEY,data:merged,updated_by:u,updated_at:new Date().toISOString()
+      },{onConflict:'property_id,storage_key'});
+      if(upErr)throw upErr;
+      const all=localAll().filter(x=>String(x?.propertyId||p)!==p);
+      putLocal(all.concat(merged));
+      merged.forEach(x=>{if(pending.has(String(x.id)))pending.delete(String(x.id))});
+      try{if(typeof window.renderPurchasingModule==='function')window.renderPurchasingModule()}catch(e){}
+      return true;
+    }catch(e){
+      console.warn('PR cloud sync 350 failed:',e?.message||e);
+      return false;
+    }finally{syncBusy=false}
+  }
+  async function pull(){
+    const c=client(),p=pid(); if(!c||!p)return false;
+    try{
+      const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
+      if(error)throw error;
+      if(!data)return true;
+      const cloud=Array.isArray(data.data)?data.data:[];
+      // IMPORTANT: pending PRs stay visible while their cloud write is in progress.
+      const merged=merge(cloud,pendingRows());
+      const all=localAll().filter(x=>String(x?.propertyId||p)!==p);
+      putLocal(all.concat(merged.map(x=>({...x,propertyId:p}))));
+      try{if(typeof window.renderPurchasingModule==='function')window.renderPurchasingModule()}catch(e){}
+      // If anything is pending, immediately retry the cloud write after the pull.
+      if(pending.size) setTimeout(sync,50);
+      return true;
+    }catch(e){console.warn('PR cloud pull 350 failed:',e?.message||e);return false}
+  }
+  window.syncSupabasePurchaseRequests=sync;
+  window.hydrateSupabasePurchaseRequests=pull;
+  function markPendingFromLocal(){
+    const mine=localMine();
+    mine.forEach(x=>{
+      if(!x?.id)return;
+      const created=Date.parse(x.createdAt||'');
+      // Only mark the newest locally-created PRs; existing cloud rows are not requeued.
+      if(pending.has(String(x.id))) pending.set(String(x.id),x);
+    });
+  }
+  function wrapSave(){
+    const fn=window.savePurchaseRequest;
+    if(typeof fn!=='function'||fn.__pr350)return;
+    const wrapped=function(){
+      const before=new Set(localMine().map(x=>String(x.id)));
+      const r=fn.apply(this,arguments);
+      const after=localMine();
+      after.filter(x=>!before.has(String(x.id))).forEach(x=>pending.set(String(x.id),x));
+      // Immediate + retry. Do not wait for the 5-second polling cycle.
+      [0,100,300,700,1500,3000].forEach(ms=>setTimeout(sync,ms));
+      return r;
+    };
+    wrapped.__pr350=true; window.savePurchaseRequest=wrapped;
+  }
+  function wrapApprove(){
+    const fn=window.approvePurchaseRequest;
+    if(typeof fn!=='function'||fn.__pr350approve)return;
+    const wrapped=function(){
+      const r=fn.apply(this,arguments);
+      // Approval changes the PR record, so force the full current PR array to cloud.
+      [0,150,500,1200].forEach(ms=>setTimeout(sync,ms));
+      return r;
+    };
+    wrapped.__pr350approve=true; window.approvePurchaseRequest=wrapped;
+  }
+  function wrapNav(name){
+    const fn=window[name];
+    if(typeof fn!=='function'||fn.__pr350nav)return;
+    const wrapped=function(){
+      const r=fn.apply(this,arguments);
+      [300,900,1800].forEach(ms=>setTimeout(pull,ms));
+      return r;
+    };
+    wrapped.__pr350nav=true; window[name]=wrapped;
+  }
+  function boot(){
+    wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin');
+    [300,800,1500,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin')},ms));
+    [700,1800,3500].forEach(ms=>setTimeout(pull,ms));
+    setInterval(()=>{if(pid()&&!document.hidden)pull()},5000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+<script id="v2-1-354-purchasing-po-direct-cloud-open">
+/* v2.1.355 — PO OPEN FINAL CLOUD FALLBACK
+   Purchasing only. If the PR is visible but the PO is not in localStorage,
+   fetch the PO directly from cloud, cache it locally, then open it.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV355POOpenFinal)return;
+  window.__signatureV355POOpenFinal=true;
+
+  const PO_KEY='signature_pms_purchase_orders';
+  const prop=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const read=()=>{try{const x=JSON.parse(localStorage.getItem(PO_KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}};
+  const write=x=>{try{localStorage.setItem(PO_KEY,JSON.stringify(Array.isArray(x)?x:[]));}catch(e){console.warn('PO local cache write failed',e)}};
+
+  async function cachePO(po,propertyId){
+    if(!po)return null;
+    const merged={...po,propertyId};
+    const all=read();
+    const other=all.filter(x=>String(x?.propertyId||'')!==propertyId);
+    const mine=all.filter(x=>String(x?.propertyId||'')===propertyId && String(x?.id||'')!==String(merged.id||'') && String(x?.number||'')!==String(merged.number||''));
+    write(other.concat(mine,merged));
+    return merged;
+  }
+  function matchesPO(po,prId,poNo){
+    if(!po)return false;
+    return (prId&&String(po.prId||'')===String(prId)) || (poNo&&String(po.number||'')===String(poNo));
+  }
+  async function directCloudPO(prId,poNo){
+    const c=client(), propertyId=prop();
+    if(!c||!propertyId)return null;
+    try{
+      // Primary Purchasing cloud store.
+      const {data,error}=await c.from('property_store_records')
+        .select('record_id,record_data,updated_at')
+        .eq('property_id',propertyId)
+        .eq('record_type','purchase_orders');
+      if(error)throw error;
+      for(const row of (Array.isArray(data)?data:[])){
+        const po=row?.record_data||{};
+        if(matchesPO(po,prId,poNo))return await cachePO(po,propertyId);
+      }
+    }catch(e){console.warn('Primary PO cloud lookup failed:',e)}
+    try{
+      // Legacy/general cloud store fallback. Some older PO records may be stored as a keyed array.
+      const {data,error}=await c.from('pms_cloud_records')
+        .select('storage_key,data,updated_at')
+        .eq('property_id',propertyId)
+        .eq('storage_key','signature_pms_purchase_orders')
+        .maybeSingle();
+      if(!error && data){
+        const arr=Array.isArray(data.data)?data.data:[];
+        const po=arr.find(x=>matchesPO(x,prId,poNo));
+        if(po)return await cachePO(po,propertyId);
+      }
+    }catch(e){console.warn('Legacy PO cloud lookup failed:',e)}
+    return null;
+  }
+
+  async function openDirect(prId){
+    if(!requireModuleAction('purchasing.po'))return;
+    const pr=rows(K.pr).find(x=>String(x.id)===String(prId));
+    if(!pr){alert('Purchase Request not found.');return;}
+    let po=getPOfromPR(prId);
+    if(!po){
+      po=await directCloudPO(prId,pr.poNumber||pr.purchaseOrderNumber||'');
+    }
+    if(!po && typeof window.hydrateSupabasePurchaseOrders==='function'){
+      try{await window.hydrateSupabasePurchaseOrders();}catch(e){console.warn('PO hydrate failed:',e)}
+      po=getPOfromPR(prId);
+    }
+    if(!po){
+      po=await directCloudPO(prId,pr.poNumber||pr.purchaseOrderNumber||'');
+    }
+    if(!po){alert('Purchase Order not found in the cloud for '+(pr.poNumber||pr.purchaseOrderNumber||'this Purchase Request')+'.');return;}
+    const supplier=rows(K.sup).find(x=>String(x.id)===String(po.supplierId))||{};
+    const idm='sigPOViewModal';
+    if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Purchase Order</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div id="sigPOViewContent"></div></div></div>`);
+    const lines=Array.isArray(po.lines)?po.lines:[];
+    const total=Number(po.total||lines.reduce((a,l)=>a+Number(l.qty||0)*Number(l.unitCost||0),0));
+    document.getElementById('sigPOViewContent').innerHTML=`<div id="sigPOPrintable"><div class="form-grid"><div class="form-group"><label>PO Number</label><input value="${esc(po.number||'')}" readonly></div><div class="form-group"><label>PO Date</label><input value="${esc(po.date||'')}" readonly></div><div class="form-group"><label>PR Reference</label><input value="${esc(po.prNumber||'')}" readonly></div><div class="form-group"><label>Status</label><input value="${esc(po.status||'Open')}" readonly></div><div class="form-group"><label>Supplier</label><input value="${esc(po.supplier||supplier.name||'')}" readonly></div><div class="form-group"><label>Supplier Email</label><input value="${esc(supplier.email||'')}" readonly></div><div class="form-group"><label>Department</label><input value="${esc(po.department||'')}" readonly></div></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Article</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.articleCode||'')}</td><td>${esc(l.articleName||'')}</td><td>${esc(l.unit||'')}</td><td>${Number(l.qty||0)}</td><td>${typeof accMoney==='function'?accMoney(Number(l.unitCost||0)):Number(l.unitCost||0).toFixed(2)}</td><td>${typeof accMoney==='function'?accMoney(Number(l.qty||0)*Number(l.unitCost||0)):(Number(l.qty||0)*Number(l.unitCost||0)).toFixed(2)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="5" style="text-align:right"><strong>TOTAL</strong></td><td><strong>${typeof accMoney==='function'?accMoney(total):total.toFixed(2)}</strong></td></tr></tfoot></table></div><div style="margin-top:14px"><strong>Payment:</strong> ${esc(po.payment||'')} &nbsp; <strong>Notes:</strong> ${esc(po.notes||'')}</div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button></div>`;
+    document.getElementById(idm).classList.add('show');
+  }
+  window.openPurchaseOrderFromPR=openDirect;
 })();
 </script>
 </body></html>
