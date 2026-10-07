@@ -19040,7 +19040,7 @@ async function hydrateSupabaseRooms(){
 /* SUPABASE CLOUD — STEP 4.1 STORES / INVENTORY */
 (function(){
   const TABLE='property_store_records';
-  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',purchase_requests:'signature_pms_purchase_requests',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
+  const TYPES={articles:'signature_pms_articles',suppliers:'signature_pms_suppliers',grns:'signature_pms_grns',purchase_requests:'signature_pms_purchase_requests',purchase_orders:'signature_pms_purchase_orders',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
   const KEYS=Object.values(TYPES);
   const typeForKey=k=>Object.keys(TYPES).find(t=>TYPES[t]===k)||null;
   const readKey=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
@@ -19077,7 +19077,7 @@ async function hydrateSupabaseRooms(){
     }catch(e){console.warn('Supabase Stores hydration skipped:',e);setMsg('Stores remain local; cloud refresh failed: '+(e?.message||e),'error');return false;}
   };
   function wrap(name){const fn=window[name];if(typeof fn!=='function'||fn.__storesCloudWrapped)return;const wrapped=function(){const result=fn.apply(this,arguments);setTimeout(()=>window.syncSupabaseStores(),250);return result;};wrapped.__storesCloudWrapped=true;window[name]=wrapped;}
-  function bind(){['saveSupplierMaster','saveArticleMaster','savePurchaseRequest','saveGRN','stSaveIssue','stSaveWaste','stSaveOpening','stSaveCount','stSaveSettings','stSaveRecipe','stDeleteRecipe','stSaveReqSetting','stSaveReq','stApproveReq','stRejectReq','stCancelReq','stCloseReq','stSaveIssueReq','stReqPR'].forEach(wrap);}
+  function bind(){['saveSupplierMaster','saveArticleMaster','savePurchaseRequest','savePOFromPR','saveGRN','stSaveIssue','stSaveWaste','stSaveOpening','stSaveCount','stSaveSettings','stSaveRecipe','stDeleteRecipe','stSaveReqSetting','stSaveReq','stApproveReq','stRejectReq','stCancelReq','stCloseReq','stSaveIssueReq','stReqPR'].forEach(wrap);}
   function wrapAfter(name,after){const fn=window[name];if(typeof fn!=='function'||fn.__storesCloudAfterWrapped)return;const wrapped=function(){const result=fn.apply(this,arguments);setTimeout(after,350);return result;};wrapped.__storesCloudAfterWrapped=true;window[name]=wrapped;}
   function bindNavigation(){
     wrapAfter('switchProperty',()=>window.hydrateSupabaseStores());
@@ -19085,6 +19085,214 @@ async function hydrateSupabaseRooms(){
   }
   const boot=async()=>{bind();bindNavigation();if(typeof currentPropertyId!=='undefined'&&currentPropertyId)await window.hydrateSupabaseStores();else setTimeout(()=>window.hydrateSupabaseStores(),1200);};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();[500,1500,3000].forEach(ms=>setTimeout(()=>{bind();bindNavigation();},ms));
+})();
+</script>
+<script id="v2-1-340-purchasing-po-cloud-fix">
+/* =========================================================
+   v2.1.340 — PURCHASING PO CLOUD SOURCE OF TRUTH
+   Targeted fix:
+   - Purchase Orders use the existing property_store_records cloud layer.
+   - Manager/Reception-created POs are published to Supabase.
+   - Admin login/property refresh hydrates the same PO set locally.
+   - Existing Purchasing/Stores/Restaurant logic remains unchanged.
+========================================================= */
+(function(){
+  'use strict';
+  if(window.__signatureV340PurchasingPOCloudFix)return;
+  window.__signatureV340PurchasingPOCloudFix=true;
+
+  const PO_KEY='signature_pms_purchase_orders';
+  const TABLE='property_store_records';
+
+  function prop(){
+    return String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
+  }
+  function readPOs(){
+    try{
+      const v=JSON.parse(localStorage.getItem(PO_KEY)||'[]');
+      return Array.isArray(v)?v:[];
+    }catch(e){return [];}
+  }
+  function writePOs(v){
+    try{localStorage.setItem(PO_KEY,JSON.stringify(Array.isArray(v)?v:[]));return true;}
+    catch(e){console.warn('Purchasing PO local write failed:',e);return false;}
+  }
+  async function getClient(){
+    return typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  }
+  async function getAuth(c){
+    const {data:{session},error}=await c.auth.getSession();
+    if(error)throw error;
+    return session?.user||null;
+  }
+
+  window.syncSupabasePurchaseOrders=async function(){
+    try{
+      const c=await getClient();
+      const propertyId=prop();
+      if(!c||!propertyId)return false;
+      const u=await getAuth(c);
+      if(!u)return false;
+
+      const mine=readPOs().filter(x=>String(x?.propertyId||'')===propertyId);
+      const now=new Date().toISOString();
+      const rows=mine.map((record,i)=>({
+        property_id:propertyId,
+        record_type:'purchase_orders',
+        record_id:String(record?.id||('purchase_orders_'+i)),
+        record_data:{...record,propertyId},
+        updated_at:record?.updatedAt||now
+      }));
+
+      if(rows.length){
+        const {error}=await c.from(TABLE).upsert(
+          rows,
+          {onConflict:'property_id,record_type,record_id'}
+        );
+        if(error)throw error;
+      }
+
+      const {data:existing,error:readError}=await c.from(TABLE)
+        .select('record_id')
+        .eq('property_id',propertyId)
+        .eq('record_type','purchase_orders');
+      if(readError)throw readError;
+
+      const keep=new Set(rows.map(r=>String(r.record_id)));
+      for(const row of (existing||[])){
+        const id=String(row.record_id);
+        if(!keep.has(id)){
+          const {error}=await c.from(TABLE)
+            .delete()
+            .eq('property_id',propertyId)
+            .eq('record_type','purchase_orders')
+            .eq('record_id',id);
+          if(error)throw error;
+        }
+      }
+
+      if(typeof setSupabaseCloudMessage==='function'){
+        setSupabaseCloudMessage('Purchasing Purchase Orders synchronized to cloud.','success');
+      }
+      return true;
+    }catch(e){
+      console.warn('Purchasing PO cloud sync skipped:',e);
+      if(typeof setSupabaseCloudMessage==='function'){
+        setSupabaseCloudMessage(
+          'Purchase Orders remain local; cloud sync failed: '+(e?.message||e),
+          'error'
+        );
+      }
+      return false;
+    }
+  };
+
+  window.hydrateSupabasePurchaseOrders=async function(){
+    try{
+      const c=await getClient();
+      const propertyId=prop();
+      if(!c||!propertyId)return false;
+      const u=await getAuth(c);
+      if(!u)return false;
+
+      const {data,error}=await c.from(TABLE)
+        .select('record_id,record_data,updated_at')
+        .eq('property_id',propertyId)
+        .eq('record_type','purchase_orders');
+      if(error)throw error;
+
+      const cloud=data||[];
+      const local=readPOs();
+      const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
+      const localMine=local.filter(x=>String(x?.propertyId||'')===propertyId);
+      const cmap=new Map(cloud.map(r=>[String(r.record_id),r]));
+      const merged=[];
+
+      cloud.forEach(r=>{
+        const cr=r.record_data||{};
+        const lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
+        const localUpdated=Date.parse(String(lr?.updatedAt||lr?.createdAt||''));
+        const cloudUpdated=Date.parse(String(r.updated_at||''));
+        if(lr && Number.isFinite(localUpdated) && Number.isFinite(cloudUpdated) && localUpdated>cloudUpdated){
+          merged.push(lr);
+        }else{
+          merged.push({...cr,propertyId});
+        }
+      });
+
+      // Preserve a locally-created PO if it has not been published yet.
+      localMine.forEach(l=>{
+        if(!cmap.has(String(l?.id||'')))merged.push(l);
+      });
+
+      writePOs(other.concat(merged));
+
+      if(typeof renderPurchasingModule==='function'){
+        try{renderPurchasingModule();}catch(e){}
+      }
+      if(typeof renderPurchaseRegister==='function'){
+        try{renderPurchaseRegister();}catch(e){}
+      }
+
+      if(typeof setSupabaseCloudMessage==='function'){
+        setSupabaseCloudMessage('Purchasing Purchase Orders refreshed from cloud.','success');
+      }
+      return true;
+    }catch(e){
+      console.warn('Purchasing PO cloud hydration skipped:',e);
+      if(typeof setSupabaseCloudMessage==='function'){
+        setSupabaseCloudMessage(
+          'Purchase Orders cloud refresh failed: '+(e?.message||e),
+          'error'
+        );
+      }
+      return false;
+    }
+  };
+
+  function wrapSave(){
+    const names=['savePOFromPR'];
+    names.forEach(name=>{
+      const fn=window[name];
+      if(typeof fn!=='function'||fn.__v340POCloudWrapped)return;
+      const wrapped=function(){
+        const result=fn.apply(this,arguments);
+        setTimeout(()=>window.syncSupabasePurchaseOrders(),350);
+        return result;
+      };
+      wrapped.__v340POCloudWrapped=true;
+      window[name]=wrapped;
+    });
+  }
+
+  function bindNavigation(){
+    const navNames=['switchProperty','hydrateCloudAfterLocalLogin'];
+    navNames.forEach(name=>{
+      const fn=window[name];
+      if(typeof fn!=='function'||fn.__v340POCloudNavWrapped)return;
+      const wrapped=function(){
+        const result=fn.apply(this,arguments);
+        setTimeout(()=>window.hydrateSupabasePurchaseOrders(),500);
+        return result;
+      };
+      wrapped.__v340POCloudNavWrapped=true;
+      window[name]=wrapped;
+    });
+  }
+
+  function boot(){
+    wrapSave();
+    bindNavigation();
+    if(prop())setTimeout(()=>window.hydrateSupabasePurchaseOrders(),900);
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);
+  else boot();
+
+  [500,1500,3000].forEach(ms=>setTimeout(()=>{
+    wrapSave();
+    bindNavigation();
+  },ms));
 })();
 </script>
 <script>
