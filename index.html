@@ -6853,7 +6853,7 @@ function openExperienceModal(experienceId=null){
     document.getElementById("experienceModal").classList.add("show");
 }
 function closeExperienceModal(){document.getElementById("experienceModal")?.classList.remove("show");editingExperienceId=null;}
-function saveExperience(){
+async function saveExperience(){
     if(editingExperienceId ? !requireModuleAction("experiences.edit") : !requireModuleAction("experiences.create")) return;
     if(!settings) return;
     const name=document.getElementById("experienceName").value.trim();
@@ -6863,13 +6863,39 @@ function saveExperience(){
     if(editingExperienceId){const idx=settings.experiences.findIndex(x=>x.id===editingExperienceId);if(idx>=0)settings.experiences[idx]=item;}
     else settings.experiences.push(item);
     saveData();closeExperienceModal();renderAll();
+
+    // Experiences live inside the property's cloud settings_data.
+    // saveData() is local-only, so explicitly publish the updated property config.
+    try{
+        const cloudSaver=window.__signatureSavePropertyConfigToCloud;
+        if(typeof cloudSaver!=="function") throw new Error("Property configuration cloud saver is unavailable.");
+        const ok=await cloudSaver();
+        if(!ok) throw new Error("Cloud save was not confirmed.");
+        if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Experience saved and synchronized to cloud.','success');
+    }catch(err){
+        console.error('Experience cloud save failed:',err);
+        if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Experience saved locally, but cloud save failed: '+(err?.message||err),'error');
+        alert('Experience was saved locally, but the cloud update failed.\n\n'+(err?.message||err));
+    }
 }
-function deleteExperience(id){
+async function deleteExperience(id){
     if(!requireModuleAction("experiences.delete")) return;
     if(!settings) return;
     const e=(settings.experiences||[]).find(x=>x.id===id); if(!e) return;
     if(!confirm("Delete experience "+e.name+"?")) return;
     settings.experiences=(settings.experiences||[]).filter(x=>x.id!==id);saveData();renderAll();
+
+    try{
+        const cloudSaver=window.__signatureSavePropertyConfigToCloud;
+        if(typeof cloudSaver!=="function") throw new Error("Property configuration cloud saver is unavailable.");
+        const ok=await cloudSaver();
+        if(!ok) throw new Error("Cloud save was not confirmed.");
+        if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Experience deleted and synchronized to cloud.','success');
+    }catch(err){
+        console.error('Experience delete cloud save failed:',err);
+        if(typeof setSupabaseCloudMessage==='function') setSupabaseCloudMessage('Experience deleted locally, but cloud save failed: '+(err?.message||err),'error');
+        alert('Experience was deleted locally, but the cloud update failed.\n\n'+(err?.message||err));
+    }
 }
 
 function postExperienceToFolio(experienceId){
