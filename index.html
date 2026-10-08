@@ -2404,16 +2404,18 @@ function addExperienceToFolio(reservationId,experienceId){
     f.experienceItems.push({id:Date.now(),experienceId:e.id,name:e.name,amount:price,addedAt:localDateTime(),addedBy:currentUser?.username||currentUser?.role||"User"});
     f.total=getFolioTotal(reservationId);
     saveData();
-    // v2.1.392: publish the updated folio/experience charge to Supabase so
+    // v2.1.393: publish the updated folio/experience charge to Supabase so
     // other users (especially Admin Accounting) see the same posted charge.
     if(typeof syncReservationToSupabase==='function' && navigator.onLine){
-        Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(err=>console.warn("Experience cloud sync failed",err));
+        Promise.resolve().then(()=>syncReservationToSupabase(r)).then(ok=>{
+            if(!ok) setSupabaseCloudMessage("Experience charge saved locally, but cloud sync was not confirmed. Please use Cloud Refresh and retry if needed.","error");
+        }).catch(err=>console.warn("Experience cloud sync failed",err));
     }
     try{
         const ref="EXP-"+String(e.id)+"-"+String(r.id)+"-"+Date.now();
         const already=journalEntries().some(j=>String(j.reference)===ref);
         if(!already){
-            const amt=toAccountingAmount(price,r);
+            const amt=Number(price||0);
             postJournal(accountingBusinessDate(),ref,"Experience charge — "+e.name,[
                 {account:"Accounts Receivable",debit:amt,credit:0},
                 {account:"Other Operating Revenue",debit:0,credit:amt}
@@ -14167,7 +14169,7 @@ function dailyRevenueRows(date){
       const itemDate=accIsoDate(item.addedAt||item.createdAt||'');
       const amount=Number(item.amount||0);
       if(itemDate===d && amount>0){
-        rows.push({date:d,source:'Experience',revenueSource:'Experience Revenue',reference:'EXP-'+String(item.id||f.id),description:(r?.guestName||'Guest')+' — '+String(item.name||'Experience'),amount:toAccountingAmount(amount,r||f),account:'Experience / Recreation Revenue'});
+        rows.push({date:d,source:'Experience',revenueSource:'Experience Revenue',reference:'EXP-'+String(item.id||f.id),description:(r?.guestName||'Guest')+' — '+String(item.name||'Experience'),amount:Number(amount||0),account:'Experience / Recreation Revenue'});
       }
     });
     const updated=accIsoDate(f.updatedAt||f.createdAt||'');
@@ -19047,7 +19049,7 @@ async function hydrateSupabaseReservations(){
         }
         saveData();
 
-        // v2.1.392: repair/publish any locally posted experience charges that
+        // v2.1.393: repair/publish any locally posted experience charges that
         // pre-date this fix, so the current Reception folio reaches Admin too.
         if(typeof syncReservationToSupabase==='function' && navigator.onLine){
             const experienceReservations=reservations.filter(r=>{
