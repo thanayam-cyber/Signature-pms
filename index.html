@@ -24954,3 +24954,86 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
+
+
+<script id="v2-1-407-payroll-accounting-journal-cloud-fix">
+/* v2.1.407 — PAYROLL -> ACCOUNTING JOURNAL CLOUD FIX
+   Ensures PAY-YYYY-MM journals created by Payroll are explicitly published to
+   pms_cloud_records and pulled back into the Accounting Journal list on every
+   Admin/Reception window. Payroll calculation/status logic is untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV407PayrollJournalCloud)return;
+  window.__signatureV407PayrollJournalCloud=true;
+  const TABLE='pms_cloud_records';
+  const PREFIX='signature_pms_accounting_journal_';
+  const JOURNAL_KEY='signature_pms_accounting_journals';
+  const pid=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const localJournals=()=>{try{const v=JSON.parse(localStorage.getItem(JOURNAL_KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return[];}};
+  const writeJournals=v=>{try{localStorage.setItem(JOURNAL_KEY,JSON.stringify(v));return true;}catch(e){return false;}};
+  async function session(){
+    const c=client(),p=pid(); if(!c||!p)return null;
+    try{const q=await c.auth.getSession(),u=q?.data?.session?.user;if(!u)return null;return {c,p,u};}catch(e){return null;}
+  }
+  function isPayrollJournal(j){return j&&String(j.reference||'').startsWith('PAY-')&&String(j.source||'')==='Payroll';}
+  function storageKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()));}
+  async function publishPayrollJournals(){
+    const z=await session();if(!z)return false;
+    const rows=localJournals().filter(j=>String(j?.propertyId||z.p)===z.p&&isPayrollJournal(j));
+    for(const j of rows){
+      const payload={property_id:z.p,storage_key:storageKey(j),data:{...j,propertyId:z.p},updated_by:z.u?.id||null,updated_at:new Date().toISOString()};
+      const q=await z.c.from(TABLE).upsert(payload,{onConflict:'property_id,storage_key'});
+      if(q.error)throw q.error;
+    }
+    return true;
+  }
+  async function pullAccountingJournals(){
+    const z=await session();if(!z)return false;
+    const q=await z.c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',z.p).like('storage_key',PREFIX+'%');
+    if(q.error)throw q.error;
+    const cloud=(q.data||[]).map(r=>r?.data).filter(Boolean).filter(j=>String(j?.propertyId||z.p)===z.p);
+    const all=localJournals(),other=all.filter(j=>String(j?.propertyId||z.p)!==z.p),mine=all.filter(j=>String(j?.propertyId||z.p)===z.p);
+    const map=new Map();
+    [...mine,...cloud].forEach(j=>{
+      const k=String(j?.id||j?.reference||'');if(!k)return;
+      const old=map.get(k);
+      if(!old||String(j.updatedAt||j.postedAt||'')>=String(old.updatedAt||old.postedAt||''))map.set(k,j);
+    });
+    const merged=[...map.values()];
+    writeJournals(other.concat(merged));
+    try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+    return true;
+  }
+  async function syncPayrollJournal(){
+    try{
+      await publishPayrollJournals();
+      await pullAccountingJournals();
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Payroll journal synchronized to Accounting cloud.','success');
+      return true;
+    }catch(e){
+      console.warn('Payroll Accounting Journal cloud sync failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Payroll posted locally, but Accounting Journal cloud sync failed: '+(e?.message||e),'error');
+      return false;
+    }
+  }
+  window.syncPayrollAccountingJournalCloud=syncPayrollJournal;
+
+  const oldPost=window.postPayroll;
+  if(typeof oldPost==='function'){
+    window.postPayroll=async function(){
+      const result=oldPost.apply(this,arguments);
+      await new Promise(r=>setTimeout(r,500));
+      await syncPayrollJournal();
+      return result;
+    };
+  }
+
+  async function boot(){
+    await new Promise(r=>setTimeout(r,2500));
+    try{await pullAccountingJournals();}catch(e){console.warn('Accounting journal initial cloud pull failed:',e);}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+  setInterval(()=>{if(!document.hidden)pullAccountingJournals().catch(()=>{});},8000);
+})();
+</script>
