@@ -22194,6 +22194,96 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   setInterval(tick,10000);
 })();
 </script>
+
+<script id="v2-1-406-hr-payroll-explicit-cloud">
+/* v2.1.406 — Payroll explicit cloud source of truth.
+   Payroll save/approve/post/pay are explicitly synchronized to Supabase so
+   Admin and Reception see the same payroll records. Other modules untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV406PayrollCloud)return;
+  window.__signatureV406PayrollCloud=true;
+  const KEY='signature_pms_hr_payroll';
+  const TABLE='pms_cloud_records';
+  const pid=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const localRead=()=>{try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
+  async function session(){
+    const c=client(),p=pid(); if(!c||!p)return null;
+    const q=await c.auth.getSession();
+    const u=q?.data?.session?.user;
+    if(!u)return null;
+    return {c,p,u};
+  }
+  async function push(){
+    const z=await session(); if(!z)return false;
+    const data=localRead().filter(x=>String(x?.propertyId||'')===z.p).map(x=>({...x,propertyId:z.p}));
+    const q=await z.c.from(TABLE).upsert({
+      property_id:z.p,
+      storage_key:KEY,
+      data,
+      updated_by:z.u?.id||null,
+      updated_at:new Date().toISOString()
+    },{onConflict:'property_id,storage_key'});
+    if(q.error)throw q.error;
+    return true;
+  }
+  async function pull(){
+    const z=await session(); if(!z)return false;
+    const q=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key',KEY).maybeSingle();
+    if(q.error)throw q.error;
+    if(!q.data)return false;
+    const all=localRead();
+    const other=all.filter(x=>String(x?.propertyId||'')!==z.p);
+    const cloud=Array.isArray(q.data.data)?q.data.data:[];
+    localStorage.setItem(KEY,JSON.stringify(other.concat(cloud.map(x=>({...x,propertyId:z.p})))));
+    return true;
+  }
+  async function sync(message){
+    try{
+      const ok=await push();
+      if(ok&&typeof setSupabaseCloudMessage==='function'&&message)setSupabaseCloudMessage(message,'success');
+      return ok;
+    }catch(e){
+      console.warn('Payroll explicit cloud save failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Payroll saved locally, but cloud save failed: '+(e?.message||e),'error');
+      return false;
+    }
+  }
+  async function refresh(){
+    try{
+      const ok=await pull();
+      if(ok&&typeof renderPayroll==='function')renderPayroll();
+      return ok;
+    }catch(e){
+      console.warn('Payroll explicit cloud refresh failed:',e);
+      return false;
+    }
+  }
+  window.syncPayrollToCloud=sync;
+  window.refreshPayrollFromCloud=refresh;
+
+  function wrap(name,message){
+    const old=window[name];
+    if(typeof old!=='function')return;
+    window[name]=async function(){
+      const result=old.apply(this,arguments);
+      await new Promise(r=>setTimeout(r,200));
+      await sync(message);
+      if(typeof renderPayroll==='function')renderPayroll();
+      return result;
+    };
+  }
+  wrap('runPayroll','Payroll calculated and synchronized to Supabase cloud.');
+  wrap('approvePayroll','Payroll approval synchronized to Supabase cloud.');
+  wrap('postPayroll','Payroll posting status synchronized to Supabase cloud.');
+  wrap('payPayroll','Payroll payment status synchronized to Supabase cloud.');
+
+  // Initial cloud load plus a short polling cycle for Admin/Reception cross-window visibility.
+  setTimeout(refresh,1800);
+  setInterval(()=>{if(!document.hidden)refresh();},7000);
+})();
+</script>
 </body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
