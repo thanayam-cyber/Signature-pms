@@ -22492,7 +22492,37 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
-</script></body><script id="v2-1-360-po-open-button-final">
+</script><script id="v2-1-412-fnb-cashier-shift-open-persist-final-fix">
+(function(){
+  'use strict';
+  if(window.__signatureV412FnbShiftOpenFinal)return;
+  window.__signatureV412FnbShiftOpenFinal=true;
+  const KEY='signature_pms_fnb_cashier_shifts_v231';
+  const TABLE='pms_cloud_records';
+  function propertyId(){try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}}
+  function localRows(){try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return []}}
+  function render(){try{if(typeof fnbRefreshCashierShift==='function')fnbRefreshCashierShift()}catch(e){}}
+  async function publishExact(){
+    const c=typeof initSupabaseClient==='function'?initSupabaseClient():null; const p=propertyId();
+    if(!c||!p)return false;
+    const ses=await c.auth.getSession(); const user=ses?.data?.session?.user; if(!user)return false;
+    const rows=localRows().filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}));
+    const q=await c.from(TABLE).upsert({property_id:p,storage_key:KEY,data:rows,updated_by:user.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+    if(q.error)throw q.error; return true;
+  }
+  function bind(){
+    const fn=window.fnbOpenCashierShift; if(typeof fn!=='function'||fn.__v412)return;
+    const w=function(){
+      const before=localRows().length; const result=fn.apply(this,arguments);
+      setTimeout(async()=>{try{if(localRows().length>=before){await publishExact();render();}}catch(e){console.warn('F&B cashier shift final open publish failed:',e);render();}},250);
+      return result;
+    };
+    w.__v412=true; window.fnbOpenCashierShift=w;
+  }
+  [300,1200,2500,4500].forEach(ms=>setTimeout(bind,ms));
+})();
+</script>
+</body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
   'use strict';
