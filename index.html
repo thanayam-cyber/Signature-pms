@@ -22314,8 +22314,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(q.error)throw q.error;
     if(!q.data)return false;
     const cloud=Array.isArray(q.data.data)?q.data.data:[];
-    const local=read(key).filter(x=>String(x?.propertyId||'')!==z.p);
-    write(key,local.concat(cloud.map(x=>({...x,propertyId:z.p}))));
+    /* Merge cloud with local instead of blindly replacing local. This prevents
+       a just-opened cashier shift from disappearing while the cloud write is
+       still completing. For matching IDs, local state wins until publish runs. */
+    const all=read(key);
+    const localOther=all.filter(x=>String(x?.propertyId||'')!==z.p);
+    const localMine=all.filter(x=>String(x?.propertyId||'')===z.p);
+    const byId=new Map();
+    cloud.forEach(x=>{const row={...x,propertyId:z.p};byId.set(String(row.id||JSON.stringify(row)),row);});
+    localMine.forEach(x=>{const row={...x,propertyId:z.p};byId.set(String(row.id||JSON.stringify(row)),row);});
+    write(key,localOther.concat(Array.from(byId.values())));
     return true;
   }
   async function push(key){
@@ -22378,6 +22386,37 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrate(true);});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+<script id="v2-1-410-fnb-cashier-shift-open-persist-fix">
+/* v2.1.410 — Cashier Shift Open persistence. Existing shift status is preserved.
+   After Open Shift is confirmed, publish the newly-created Open row immediately,
+   then hydrate from the cloud. */
+(function(){
+  'use strict';
+  if(window.__signatureV410FnbShiftOpenFix)return;
+  window.__signatureV410FnbShiftOpenFix=true;
+  function bind(){
+    const fn=window.fnbOpenCashierShift;
+    if(typeof fn!=='function'||fn.__v410)return;
+    const w=function(){
+      const before=(()=>{try{return JSON.parse(localStorage.getItem('signature_pms_fnb_cashier_shifts_v231')||'[]');}catch(e){return[];}})();
+      const r=fn.apply(this,arguments);
+      setTimeout(async()=>{
+        try{
+          if(window.signatureFnbClosingCloud&&typeof window.signatureFnbClosingCloud.publishShift==='function'){
+            await window.signatureFnbClosingCloud.publishShift();
+            await new Promise(res=>setTimeout(res,100));
+            if(typeof window.signatureFnbClosingCloud.hydrate==='function')await window.signatureFnbClosingCloud.hydrate(true);
+          }
+        }catch(e){console.warn('F&B cashier shift open persistence failed:',e);}
+      },350);
+      return r;
+    };
+    w.__v410=true;
+    window.fnbOpenCashierShift=w;
+  }
+  [250,1000,2500].forEach(ms=>setTimeout(bind,ms));
 })();
 </script>
 </body><script id="v2-1-360-po-open-button-final">
