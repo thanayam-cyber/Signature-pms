@@ -22574,6 +22574,91 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   [300,1000,2000,4000].forEach(ms=>setTimeout(bind,ms));
 })();
 </script>
+<script id="v2-1-414-fnb-cashier-shift-cloud-key-fix">
+(function(){
+  'use strict';
+  if(window.__signatureV414FnbShiftCloudKey)return;
+  window.__signatureV414FnbShiftCloudKey=true;
+  const TABLE='pms_cloud_records';
+  const PROPKEY='signature_pms_fnb_cashier_shifts';
+  const LEGACY='signature_pms_fnb_cashier_shifts_v231';
+  const prop=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const read=(k)=>{try{const a=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+  const write=(k,a)=>{try{localStorage.setItem(k,JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}};
+  async function auth(){
+    const c=client(),p=prop(); if(!c||!p)return null;
+    const s=await c.auth.getSession(); if(s.error)throw s.error;
+    const u=s.data?.session?.user; return u?{c,p,u}:null;
+  }
+  function localMine(){const p=prop();return read(LEGACY).filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}));}
+  function mergeIntoLocal(cloud){
+    const p=prop(), other=read(LEGACY).filter(x=>String(x?.propertyId||'')!==p);
+    const map=new Map();
+    (Array.isArray(cloud)?cloud:[]).forEach(x=>map.set(String(x?.id||JSON.stringify(x)),{...x,propertyId:p}));
+    localMine().forEach(x=>map.set(String(x?.id||JSON.stringify(x)),x));
+    write(LEGACY,other.concat([...map.values()]));
+  }
+  async function publish(){
+    const a=await auth(); if(!a)return false;
+    const rows=localMine();
+    const q=await a.c.from(TABLE).upsert({property_id:a.p,storage_key:PROPKEY,data:rows,updated_by:a.u.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+    if(q.error)throw q.error;
+    return true;
+  }
+  async function pull(){
+    const a=await auth(); if(!a)return false;
+    const q=await a.c.from(TABLE).select('data,updated_at').eq('property_id',a.p).eq('storage_key',PROPKEY).maybeSingle();
+    if(q.error)throw q.error;
+    if(!q.data)return false;
+    mergeIntoLocal(Array.isArray(q.data.data)?q.data.data:[]);
+    try{if(typeof fnbRefreshCashierShift==='function')fnbRefreshCashierShift()}catch(e){}
+    return true;
+  }
+  async function ensure(){
+    try{
+      const a=await auth(); if(!a)return;
+      const q=await a.c.from(TABLE).select('data').eq('property_id',a.p).eq('storage_key',PROPKEY).maybeSingle();
+      if(q.error)throw q.error;
+      if(!q.data){ await publish(); return; }
+      /* Exact cloud key is authoritative. Pull it before normal publish so an
+         existing shift is not lost when the page/window opens. */
+      mergeIntoLocal(Array.isArray(q.data.data)?q.data.data:[]);
+      try{if(typeof fnbRefreshCashierShift==='function')fnbRefreshCashierShift()}catch(e){}
+    }catch(e){console.warn('F&B cashier shift exact cloud key sync failed:',e)}
+  }
+  window.signatureFnbCashierShiftCloudKey={publish,pull,ensure,storageKey:PROPKEY};
+  function bindOpen(){
+    const fn=window.fnbOpenCashierShift;
+    if(typeof fn!=='function'||fn.__v414)return;
+    const w=function(){
+      const r=fn.apply(this,arguments);
+      setTimeout(async()=>{try{await publish();await pull()}catch(e){console.warn('F&B cashier shift open cloud sync failed:',e)}},500);
+      return r;
+    };
+    w.__v414=true;window.fnbOpenCashierShift=w;
+  }
+  function bindClose(){
+    const fn=window.fnbCloseCashierShift;
+    if(typeof fn!=='function'||fn.__v414)return;
+    const w=function(){
+      const r=fn.apply(this,arguments);
+      setTimeout(async()=>{try{await publish();await pull()}catch(e){console.warn('F&B cashier shift close cloud sync failed:',e)}},500);
+      return r;
+    };
+    w.__v414=true;window.fnbCloseCashierShift=w;
+  }
+  function boot(){
+    bindOpen();bindClose();
+    [300,1000,2500,4500].forEach(ms=>setTimeout(()=>{bindOpen();bindClose();},ms));
+    [1200,3500].forEach(ms=>setTimeout(ensure,ms));
+    setInterval(()=>{if(!document.hidden)ensure()},5000);
+    window.addEventListener('focus',ensure);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensure()});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
 </body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
