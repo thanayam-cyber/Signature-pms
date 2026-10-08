@@ -22748,21 +22748,44 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         .eq('property_id',cloudPropertyId);
       if(error) throw error;
       const rows=data||[];
-      reservations=rows.map(r=>({...(r.reservation_data||{}),id:String(r.id),propertyId:String(currentPropertyId),bookingNo:r.booking_no||r.reservation_data?.bookingNo||'',status:r.status||r.reservation_data?.status||'Reserved'}));
-      /* Remove local child records for reservations no longer present in cloud. */
+
+      /* v2.1.394 — Cloud reservation rows also contain the linked folio,
+         POS sales and payments under reservation_data.__cloudFolio/
+         __cloudSales/__cloudPayments. The authoritative loader previously
+         restored only the reservation itself, so Admin could see the booking
+         but lose Experience Charges, Restaurant charges and payments.
+         Restore these linked records from the same cloud row. */
+      const cloudReservations=rows.map(r=>({
+        ...(r.reservation_data||{}),
+        id:String(r.id),
+        propertyId:String(currentPropertyId),
+        bookingNo:r.booking_no||r.reservation_data?.bookingNo||'',
+        status:r.status||r.reservation_data?.status||'Reserved'
+      }));
+
+      const cloudFolios=cloudReservations.map(r=>r.__cloudFolio).filter(Boolean);
+      const cloudSales=cloudReservations.flatMap(r=>Array.isArray(r.__cloudSales)?r.__cloudSales:[]);
+      const cloudPayments=cloudReservations.flatMap(r=>Array.isArray(r.__cloudPayments)?r.__cloudPayments:[]);
+
+      reservations=cloudReservations;
+
+      /* Cloud is authoritative for reservations. Replace linked child records
+         for these reservations with the cloud versions, while retaining
+         unrelated/local child records belonging to other reservations. */
       const ids=new Set(reservations.map(r=>String(r.id)));
-      folios=Array.isArray(folios)?folios.filter(f=>!f.reservationId||ids.has(String(f.reservationId))):[];
-      sales=Array.isArray(sales)?sales.filter(x=>!x.reservationId||ids.has(String(x.reservationId))):[];
-      payments=Array.isArray(payments)?payments.filter(x=>!x.reservationId||ids.has(String(x.reservationId))):[];
-      /* Do not call renderAll() here. Reservation auto-sync runs every few
-         seconds; rendering the whole PMS here made User Management appear to
-         auto-refresh even when the user/property list had not changed. The
-         caller will render only when the reservation fingerprint changes. */
+      folios=Array.isArray(folios)?folios.filter(f=>!f.reservationId||!ids.has(String(f.reservationId))):[];
+      sales=Array.isArray(sales)?sales.filter(x=>!x.reservationId||!ids.has(String(x.reservationId))):[];
+      payments=Array.isArray(payments)?payments.filter(x=>!x.reservationId||!ids.has(String(x.reservationId))):[];
+
+      if(cloudFolios.length) folios.push(...cloudFolios);
+      if(cloudSales.length) sales.push(...cloudSales);
+      if(cloudPayments.length) payments.push(...cloudPayments);
+
       saveData();
-      setSupabaseCloudMessage('Cloud reservations are the source of truth: '+rows.length+' reservation(s) loaded.','success');
+      setSupabaseCloudMessage('Cloud reservations are the source of truth: '+rows.length+' reservation(s) loaded, with linked folios and transactions.','success');
       return true;
     }catch(err){
-      console.error('v2.1.193 authoritative reservation read failed:',err);
+      console.error('v2.1.394 authoritative reservation read failed:',err);
       setSupabaseCloudMessage('Cloud reservation read failed: '+(err?.message||err),'error');
       return false;
     }
