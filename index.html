@@ -6650,7 +6650,7 @@ function viewPOSMenuRecipe(id){
     const pct=price>0?d.perPortion/price*100:NaN;
     const S=(typeof sset==='function')?sset():{targetFoodCostPct:30};
     const lines=(rc.ingredients||[]).map(g=>{const a=A.find(x=>String(x.id)===String(g.articleId)); const c=d.lines.find(x=>x.article&&String(x.article.id)===String(g.articleId)); return '<tr><td>'+escapeHtml(a?.name||g.articleId)+'</td><td>'+num(g.qty)+'</td><td>'+num(g.wastePct)+'%</td><td style="text-align:right">'+money(c?.cost||0)+'</td></tr>';}).join('');
-    openM('posMenuRecipeView','Recipe — '+escapeHtml(item.name),'<div style="font-size:12px;color:#475569;margin-bottom:10px">'+escapeHtml(item.outletName||'')+' · '+escapeHtml(item.category||'General')+' · Selling price: <strong>'+money(item.price)+'</strong></div><div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><span class="badge badge-blue">'+(rc.ingredients||[]).length+' ingredients</span><span class="badge '+(rc.active!==false?'badge-green':'badge-yellow')+'">'+(rc.active!==false?'Active':'Inactive')+'</span><span>Portions: <strong>'+num(rc.portions||1)+'</strong></span></div><div class="table-wrap"><table><thead><tr><th>Ingredient</th><th>Qty</th><th>Waste</th><th style="text-align:right">Cost</th></tr></thead><tbody>'+lines+'</tbody></table></div><div style="margin-top:12px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#f8faf9;font-size:13px">Total recipe cost: <strong>'+money(d.total)+'</strong> · Cost/portion: <strong>'+money(d.perPortion)+'</strong> · Food Cost: '+pctBadge(pct,S.targetFoodCostPct)+' · Margin: <strong>'+money(price-d.perPortion)+'</strong></div>', '<button class="btn btn-secondary" onclick="stClose(\'posMenuRecipeView\')">Close</button><button class="btn btn-primary" onclick="stClose(\'posMenuRecipeView\');stOpenRecipe(\''+escapeHtml(item.outletId)+'\',\''+escapeHtml(item.id)+'\')">Edit Recipe</button>',900);
+    openM('posMenuRecipeView','Recipe — '+escapeHtml(item.name),'<div style="font-size:12px;color:#475569;margin-bottom:10px">'+escapeHtml(item.outletName||'')+' · '+escapeHtml(item.category||'General')+' · Selling price: <strong>'+money(price)+'</strong></div><div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><span class="badge badge-blue">'+(rc.ingredients||[]).length+' ingredients</span><span class="badge '+(rc.active!==false?'badge-green':'badge-yellow')+'">'+(rc.active!==false?'Active':'Inactive')+'</span><span>Portions: <strong>'+num(rc.portions||1)+'</strong></span></div><div class="table-wrap"><table><thead><tr><th>Ingredient</th><th>Qty</th><th>Waste</th><th style="text-align:right">Cost</th></tr></thead><tbody>'+lines+'</tbody></table></div><div style="margin-top:12px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#f8faf9;font-size:13px">Total recipe cost: <strong>'+money(d.total)+'</strong> · Cost/portion: <strong>'+money(d.perPortion)+'</strong> · Food Cost: '+pctBadge(pct,S.targetFoodCostPct)+' · Margin: <strong>'+money(price-d.perPortion)+'</strong></div>', '<button class="btn btn-secondary" onclick="stClose(\'posMenuRecipeView\')">Close</button><button class="btn btn-primary" onclick="stClose(\'posMenuRecipeView\');stOpenRecipe(\''+escapeHtml(item.outletId)+'\',\''+escapeHtml(item.id)+'\')">Edit Recipe</button>',900);
 }
 
 function togglePOSMenuItem(id){
@@ -17361,7 +17361,7 @@ window.stRenderRecipes=function(){
     const totalCost=detail?detail.total:0;
     const active=rc?(rc.active!==false):false;
     const targetPrice=rc&&cost>0&&Number(S.targetFoodCostPct)>0?cost*100/Number(S.targetFoodCostPct):0;
-    return '<tr><td>'+esc(i.outletName)+'</td><td><strong>'+esc(i.name)+'</strong></td><td>'+esc(i.category)+'</td><td style="text-align:right">'+money(i.price)+'</td><td style="text-align:right">'+(rc?bm(totalCost):'—')+'</td><td style="text-align:right">'+(rc?bm(cost):'—')+'</td><td style="text-align:right">'+(rc?pctBadge(pct,S.targetFoodCostPct):'—')+'</td><td style="text-align:right">'+(rc?bm(priceB-cost):'—')+'</td><td style="text-align:right">'+(rc?bm(targetPrice):'—')+'</td><td>'+(rc?'<span class="badge badge-green">'+(rc.ingredients||[]).length+' ingredient(s)</span>':'<span class="badge badge-red">No recipe</span>')+'</td><td>'+(rc?(active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-yellow">Inactive</span>'):'—')+'</td><td>'+(rc?'<button class="btn btn-secondary btn-small" onclick="stOpenRecipe(\''+esc(i.outletId)+'\',\''+esc(i.id)+'\')">Edit</button> <button class="btn btn-secondary btn-small" onclick="stDuplicateRecipe(\''+esc(i.outletId)+'\',\''+esc(i.id)+'\')">Duplicate</button>':'<button class="btn btn-secondary btn-small" onclick="stOpenRecipe(\''+esc(i.outletId)+'\',\''+esc(i.id)+'\')">Add Recipe</button>')+'</td></tr>';
+    return '<tr><td>'+esc(i.outletName)+'</td><td><strong>'+esc(i.name)+'</strong></td><td>'+esc(i.category)+'</td><td style="text-align:right">'+money(priceB)+'</td><td style="text-align:right">'+(rc?bm(totalCost):'—')+'</td><td style="text-align:right">'+(rc?bm(cost):'—')+'</td><td style="text-align:right">'+(rc?pctBadge(pct,S.targetFoodCostPct):'—')+'</td><td style="text-align:right">'+(rc?bm(priceB-cost):'—')+'</td><td style="text-align:right">'+(rc?bm(targetPrice):'—')+'</td><td>'+(rc?'<span class="badge badge-green">'+(rc.ingredients||[]).length+' ingredient(s)</span>':'<span class="badge badge-red">No recipe</span>')+'</td><td>'+(rc?(active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-yellow">Inactive</span>'):'—')+'</td><td>'+(rc?'<button class="btn btn-secondary btn-small" onclick="stOpenRecipe(\''+esc(i.outletId)+'\',\''+esc(i.id)+'\')">Edit</button> <button class="btn btn-secondary btn-small" onclick="stDuplicateRecipe(\''+esc(i.outletId)+'\',\''+esc(i.id)+'\')">Duplicate</button>':'<button class="btn btn-secondary btn-small" onclick="stOpenRecipe(\''+esc(i.outletId)+'\',\''+esc(i.id)+'\')">Add Recipe</button>')+'</td></tr>';
   }).join(''):'<tr><td colspan="11" class="empty">No menu items match. Menu items are created in Settings → Restaurant Menu.</td></tr>';
 };
 let RC_CTX=null;
@@ -17373,7 +17373,7 @@ window.stOpenRecipe=function(outletId,itemId){
   const rc=findRecipeForMenuItem(item);
   RC_CTX={item,st:stockState(),A:allArts().filter(a=>a.active!==false)};
   openM('stRecipeModal','Recipe — '+esc(item.name),
-   '<div style="font-size:12px;color:#475569;margin-bottom:8px">'+esc(item.outletName)+' · '+esc(item.category)+' · selling price <strong>'+money(item.price)+'</strong> ('+bm(item.price*fx())+')</div>'
+   '<div style="font-size:12px;color:#475569;margin-bottom:8px">'+esc(item.outletName)+' · '+esc(item.category)+' · selling price <strong>'+bm(item.price*fx())+'</strong></div>'
    +'<div class="form-grid"><div class="form-group"><label>Portions this recipe makes</label><input id="strPortions" type="number" min="1" step="1" value="'+(rc?num(rc.portions)||1:1)+'" oninput="stRecCalc()"/></div><div class="form-group"><label>Notes</label><input id="strNotes" value="'+esc(rc?.notes||'')+'" placeholder="Optional"/></div><div class="form-group" style="display:flex;align-items:center;gap:8px"><label><input id="strActive" type="checkbox" style="width:auto" '+(rc?(rc.active!==false?'checked':''):'checked')+'/> Recipe Active</label></div></div>'
    +'<div style="display:grid;grid-template-columns:2.6fr 1fr .9fr 1fr 40px;gap:8px;font-size:11px;font-weight:600;color:#475569;margin-top:8px"><span>Ingredient (article)</span><span>Qty per recipe</span><span>Waste %</span><span style="text-align:right">Cost</span><span></span></div>'
    +'<div id="strLines"></div><button class="btn btn-secondary btn-small" type="button" onclick="stRecAddRow()">+ Add ingredient</button>'
@@ -21950,6 +21950,153 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   window.signatureAccountingJournalCloud={sync:cycle};
   setTimeout(cycle,2500);
   setInterval(cycle,POLL_MS);
+})();
+</script>
+<script id="v2-1-402-hr-payroll-cloud">
+/* v2.1.402 — HR & PAYROLL CLOUD SOURCE OF TRUTH
+   Admin / Manager / Reception users share the same HR records through
+   pms_cloud_records. Purchasing, Stores/Recipes, Restaurant POS and Login
+   are intentionally untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV402HRCloud)return;
+  window.__signatureV402HRCloud=true;
+  const TABLE='pms_cloud_records';
+  const KEYS=[
+    'signature_pms_hr_employees',
+    'signature_pms_hr_attendance',
+    'signature_pms_hr_payroll',
+    'signature_pms_hr_leave',
+    'signature_pms_hr_overtime',
+    'signature_pms_hr_shifts',
+    'signature_pms_hr_roster',
+    'signature_pms_hr_documents',
+    'signature_pms_hr_performance',
+    'signature_pms_hr_benefits',
+    'signature_pms_hr_advances',
+    'signature_pms_hr_exit',
+    'signature_pms_hr_training'
+  ];
+  const prop=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const localRead=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
+  const localWrite=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(Array.isArray(v)?v:[]));return true;}catch(e){return false;}};
+  const mine=x=>String(x?.propertyId||'')===prop();
+  let hydrating=false, timers={};
+  function render(){
+    try{if(typeof renderHR==='function')renderHR();}catch(e){}
+    try{if(typeof hrRenderShiftMaster==='function')hrRenderShiftMaster();}catch(e){}
+    try{if(typeof hrRenderRosterTable==='function')hrRenderRosterTable();}catch(e){}
+    try{if(typeof renderLeaveBalance==='function')renderLeaveBalance();}catch(e){}
+  }
+  async function ready(){
+    const c=client(),p=prop();
+    if(!c||!p)return null;
+    try{const s=await c.auth.getSession();if(!s?.data?.session?.user)return null;return {c,p,u:s.data.session.user};}
+    catch(e){return null;}
+  }
+  async function pullKey(z,key){
+    const q=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key',key).maybeSingle();
+    if(q.error)throw q.error;
+    if(!q.data)return false;
+    const cloud=Array.isArray(q.data.data)?q.data.data:[];
+    const other=localRead(key).filter(x=>!mine(x));
+    localWrite(key,other.concat(cloud.map(x=>({...x,propertyId:z.p}))));
+    return true;
+  }
+  async function pushKey(z,key){
+    const arr=localRead(key).filter(mine).map(x=>({...x,propertyId:z.p}));
+    const q=await z.c.from(TABLE).upsert({
+      property_id:z.p,
+      storage_key:key,
+      data:arr,
+      updated_by:z.u?.id||null,
+      updated_at:new Date().toISOString()
+    },{onConflict:'property_id,storage_key'});
+    if(q.error)throw q.error;
+    return true;
+  }
+  async function hydrate(){
+    const z=await ready();if(!z)return false;
+    hydrating=true;
+    try{
+      let found=0;
+      for(const key of KEYS){if(await pullKey(z,key))found++;}
+      render();
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('HR & Payroll cloud refreshed. '+found+'/'+KEYS.length+' shared records loaded.','success');
+      return true;
+    }catch(e){
+      console.warn('HR/Payroll cloud pull failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('HR & Payroll cloud refresh failed: '+(e?.message||e),'error');
+      return false;
+    }finally{hydrating=false;}
+  }
+  async function publish(){
+    const z=await ready();if(!z||hydrating)return false;
+    try{
+      for(const key of KEYS)await pushKey(z,key);
+      return true;
+    }catch(e){
+      console.warn('HR/Payroll cloud save failed:',e);
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('HR & Payroll cloud save failed: '+(e?.message||e),'error');
+      return false;
+    }
+  }
+  function schedule(key){
+    if(!KEYS.includes(key)||hydrating)return;
+    clearTimeout(timers[key]);
+    timers[key]=setTimeout(()=>publish(),350);
+  }
+  const originalSet=Storage.prototype.setItem;
+  Storage.prototype.setItem=function(key,value){
+    const r=originalSet.call(this,key,value);
+    if(this===window.localStorage&&KEYS.includes(String(key)))schedule(String(key));
+    return r;
+  };
+  window.syncSupabaseHRPayroll=publish;
+  window.hydrateSupabaseHRPayroll=hydrate;
+  window.__signatureHRPayrollCloudKeys=KEYS.slice();
+  async function boot(){
+    await hydrate();
+    setInterval(()=>{if(!document.hidden&&!hydrating)hydrate();},15000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+<script id="v2-1-403-hr-employee-explicit-cloud">
+/* v2.1.403 — HR Employee explicit cloud save/refresh.
+   Fixes Reception -> Admin employee visibility without changing other modules. */
+(function(){
+  'use strict';
+  if(window.__signatureV403HREmployeeCloud)return;
+  window.__signatureV403HREmployeeCloud=true;
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const oldSave=window.saveEmployee;
+  if(typeof oldSave==='function'){
+    window.saveEmployee=async function(){
+      oldSave();
+      try{
+        if(typeof window.syncSupabaseHRPayroll==='function'){
+          await wait(500);
+          const ok=await window.syncSupabaseHRPayroll();
+          if(!ok && typeof setSupabaseCloudMessage==='function')
+            setSupabaseCloudMessage('Employee saved locally, but cloud sync was not confirmed. Please refresh HR and retry.','error');
+          else if(ok && typeof setSupabaseCloudMessage==='function')
+            setSupabaseCloudMessage('Employee saved and synchronized to Supabase cloud.','success');
+        }
+      }catch(e){
+        console.warn('HR employee explicit cloud sync failed:',e);
+        if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Employee saved locally, but cloud sync failed: '+(e?.message||e),'error');
+      }
+    };
+  }
+  // Faster cross-user refresh for HR/Payroll. The existing cloud block remains authoritative.
+  const refresh=()=>{
+    if(document.hidden)return;
+    try{if(typeof window.hydrateSupabaseHRPayroll==='function')window.hydrateSupabaseHRPayroll();}catch(e){}
+  };
+  setTimeout(refresh,2500);
+  setInterval(refresh,7000);
 })();
 </script>
 </body><script id="v2-1-360-po-open-button-final">
