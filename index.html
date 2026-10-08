@@ -25685,3 +25685,71 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
 })();
 </script>
 
+
+<script id="v2-1-417-other-charges-lkr-fix">
+/* v2.1.417 — Daily Revenue Summary: Other Charges are already stored in LKR.
+   The folio extras value is a PMS base-currency (LKR) amount. Do not apply the
+   guest reservation FX rate a second time. Example: LKR 20,000 must remain
+   LKR 20,000, not LKR 6,640,000 at a 332 rate.
+   Targeted to Revenue Summary only; Guest Folio, POS, Purchasing, Payroll,
+   Accounting and login flow are untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV417OtherChargesLkr)return;
+  window.__signatureV417OtherChargesLkr=true;
+
+  function numText(id){
+    const e=document.getElementById(id);
+    if(!e)return 0;
+    const n=Number(String(e.textContent||'').replace(/[^0-9.-]/g,''));
+    return Number.isFinite(n)?n:0;
+  }
+
+  function rawOtherChargesLKR(){
+    const selected=String(document.getElementById('reportDate')?.value||localDateString()).slice(0,10);
+    return (Array.isArray(reservations)?reservations:[])
+      .filter(r=>String(r?.checkIn||'').slice(0,10)===selected)
+      .reduce((sum,r)=>{
+        const f=typeof getFolio==='function'?getFolio(r.id):null;
+        return sum+Number(f?.extras||0);
+      },0);
+  }
+
+  function correctSummary(){
+    try{
+      const other=rawOtherChargesLKR();
+      const accommodation=numText('dailyAccommodation');
+      const restaurant=numText('dailyRestaurant');
+      const discounts=numText('dailyDiscounts');
+      const total=accommodation+restaurant+other-discounts;
+      const otherEl=document.getElementById('dailyOther');
+      const totalEl=document.getElementById('dailyRevenue');
+      if(otherEl)otherEl.textContent=reportMoney(other);
+      if(totalEl)totalEl.textContent=reportMoney(total);
+    }catch(e){
+      console.warn('v2.1.417 Other Charges LKR correction failed:',e);
+    }
+  }
+
+  function bind(){
+    if(typeof window.renderReports!=='function')return;
+    if(window.renderReports.__v417)return;
+    const original=window.renderReports;
+    const wrapped=function(){
+      const result=original.apply(this,arguments);
+      setTimeout(correctSummary,0);
+      return result;
+    };
+    wrapped.__v417=true;
+    window.renderReports=wrapped;
+  }
+
+  function boot(){
+    bind();
+    [500,1500,3000].forEach(ms=>setTimeout(bind,ms));
+    [1000,2500].forEach(ms=>setTimeout(correctSummary,ms));
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
