@@ -25613,3 +25613,75 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
+<script id="v2-1-416-fnb-cashier-shift-closed-message-fix">
+/* v2.1.416 — Clear UI when Daily Closing blocks a new cashier shift.
+   No business rule changed. A closed outlet/date remains locked; this patch
+   makes the reason visible instead of leaving the user with only an empty table. */
+(function(){
+  'use strict';
+  if(window.__signatureV416FnbClosedMessage)return;
+  window.__signatureV416FnbClosedMessage=true;
+
+  function showBlocked(outlet,date){
+    try{
+      const box=document.getElementById('reportFNBCashierShift');
+      if(!box)return;
+      const name=(document.getElementById('fnbCashierOutletSelect')?.selectedOptions?.[0]?.textContent||'Selected outlet').trim();
+      const d=(typeof formatDate==='function'?formatDate(date):date);
+      box.innerHTML='<tr><td colspan="14" style="padding:14px 10px">'+
+        '<div style="border:1px solid #e2b94b;border-radius:8px;padding:12px 14px;background:#fff8df">'+
+        '<strong>Daily Closing Already Completed</strong><br>'+
+        '<span style="display:block;margin-top:5px">'+escapeHtml(name)+' is already closed for '+escapeHtml(d)+'.</span>'+
+        '<span style="display:block;margin-top:4px">A new cashier shift cannot be opened for this outlet and business date.</span>'+
+        '</div></td></tr>';
+    }catch(e){console.warn('F&B closed-shift message render failed:',e)}
+  }
+
+  function bind(){
+    const old=window.fnbOpenCashierShift;
+    if(typeof old!=='function'||old.__v416)return;
+    if(old.__v416Wrapped)return;
+    const w=async function(){
+      const date=String(document.getElementById('reportDate')?.value||
+        (typeof cashierBusinessDate==='function'?cashierBusinessDate():'')||
+        (typeof localDateString==='function'?localDateString():'')).slice(0,10);
+      const outlet=String(document.getElementById('fnbCashierOutletSelect')?.value||'');
+      try{
+        if(typeof window.signatureV415DailyClosed==='function' && await window.signatureV415DailyClosed(outlet,date)){
+          showBlocked(outlet,date);
+          return;
+        }
+      }catch(e){}
+      return old.apply(this,arguments);
+    };
+    w.__v416=true;
+    w.__v416Wrapped=true;
+    window.fnbOpenCashierShift=w;
+  }
+
+  function exposeChecker(){
+    if(typeof window.signatureV415DailyClosed==='function')return;
+    window.signatureV415DailyClosed=async function(outlet,date){
+      const p=String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+      const local=(()=>{try{const a=JSON.parse(localStorage.getItem('signature_pms_fnb_closings')||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}})();
+      const hit=a=>Array.isArray(a)&&a.some(x=>String(x?.propertyId||p)===p&&String(x?.outletId||'')===String(outlet)&&String(x?.date||'').slice(0,10)===String(date)&&String(x?.status||'').toLowerCase()==='closed');
+      if(hit(local))return true;
+      try{
+        const c=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+        if(!c||!p)return false;
+        const q=await c.from('pms_cloud_records').select('data').eq('property_id',p).eq('storage_key','signature_pms_fnb_closings').maybeSingle();
+        if(q.error||!q.data)return false;
+        return hit(Array.isArray(q.data.data)?q.data.data:[]);
+      }catch(e){return false}
+    };
+  }
+
+  function boot(){
+    exposeChecker();
+    bind();
+    [500,1500,3000].forEach(ms=>setTimeout(()=>{exposeChecker();bind()},ms));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+
