@@ -25005,10 +25005,47 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
     return true;
   }
+  function payrollRows(){
+    try{
+      if(typeof rows==='function') return rows('signature_pms_hr_payroll');
+      const v=JSON.parse(localStorage.getItem('signature_pms_hr_payroll')||'[]');
+      return Array.isArray(v)?v:[];
+    }catch(e){return [];}
+  }
+  function ensureExistingPostedPayrollJournals(){
+    const p=pid(); if(!p)return false;
+    const all=localJournals();
+    const mine=all.filter(j=>String(j?.propertyId||p)===p);
+    let changed=false;
+    const periods=[...new Set(payrollRows().filter(x=>String(x?.propertyId||p)===p&&['Posted','Paid'].includes(String(x?.status||''))).map(x=>String(x.period||'')).filter(x=>/^\d{4}-\d{2}$/.test(x)))];
+    periods.forEach(period=>{
+      const ref='PAY-'+period;
+      if(mine.some(j=>String(j?.reference||'')===ref&&String(j?.source||'')==='Payroll'))return;
+      const rec=payrollRows().filter(x=>String(x?.propertyId||p)===p&&String(x?.period||'')===period&&['Posted','Paid'].includes(String(x?.status||'')));
+      const total=rec.reduce((sum,x)=>sum+Number(x?.netPay||0),0);
+      if(total<=0)return;
+      mine.push({
+        id:'je_payroll_repair_'+period+'_'+Date.now().toString(36),
+        propertyId:p, date:period+'-01', reference:ref,
+        description:'Payroll '+period, source:'Payroll',
+        lines:[{account:'Payroll & Staff Cost',debit:total,credit:0},{account:'Salary Payable',debit:0,credit:total}],
+        postedBy:currentUser?.username||'Admin',
+        repairedFromPostedPayroll:true, updatedAt:new Date().toISOString()
+      });
+      changed=true;
+    });
+    if(changed)writeJournals(all.filter(j=>String(j?.propertyId||p)!==p).concat(mine));
+    return changed;
+  }
   async function syncPayrollJournal(){
     try{
+      /* Repair only a missing accounting journal for payroll that is already
+         Posted/Paid. This NEVER recalculates or changes payroll status. */
+      ensureExistingPostedPayrollJournals();
       await publishPayrollJournals();
       await pullAccountingJournals();
+      try{if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}
+      try{if(typeof renderGeneralLedger==='function')renderGeneralLedger();}catch(e){}
       if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Payroll journal synchronized to Accounting cloud.','success');
       return true;
     }catch(e){
@@ -25031,9 +25068,9 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
 
   async function boot(){
     await new Promise(r=>setTimeout(r,2500));
-    try{await pullAccountingJournals();}catch(e){console.warn('Accounting journal initial cloud pull failed:',e);}
+    try{await syncPayrollJournal();}catch(e){console.warn('Accounting journal initial payroll sync failed:',e);}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  setInterval(()=>{if(!document.hidden)pullAccountingJournals().catch(()=>{});},8000);
+  setInterval(()=>{if(!document.hidden)syncPayrollJournal().catch(()=>{});},8000);
 })();
 </script>
