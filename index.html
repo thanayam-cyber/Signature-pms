@@ -14360,9 +14360,11 @@ function arGuestLedgerRows(asOf){
     const ci=String(r.checkIn||r.date||'').slice(0,10), co=String(r.checkOut||'').slice(0,10);
     if(ci && ci>asOf) return;
     const fp=getFinancialPosition(r.id);
-    const charges=toAccountingAmount(fp.folioTotal,r);
+    /* AR folio totals are already normalized to the PMS base currency (LKR).
+       Do not apply the reservation FX rate a second time. */
+    const charges=Number(fp.folioTotal||0);
     const paymentsFor=payments.filter(p=>p.reservationId===r.id && paymentIsReceived(p));
-    const paid=paymentsFor.reduce((sum,p)=>sum+toAccountingAmount(Number(p.amount||0),r),0);
+    const paid=paymentsFor.reduce((sum,p)=>sum+Number(paymentAmountLKR(p,r)||0),0);
     const balance=charges-paid;
     if(Math.abs(balance)<0.01) return;
     const age=arAgeDays(co,asOf);
@@ -14384,9 +14386,9 @@ function arDetailHTML(reservationId,asOf){
     ['Tax',Number(f.taxes||0)],
     ['Discounts',-Number(f.discounts||0)]
   ].filter(x=>Math.abs(x[1])>0.001);
-  charges.forEach(x=>rows.push({date:ci||asOf,ref:'FOLIO',description:x[0],debit:toAccountingAmount(x[1],r),credit:0}));
+  charges.forEach(x=>{ const amt=x[0]==='Accommodation' ? reservationAmountLKR(r,x[1]) : Number(x[1]||0); rows.push({date:ci||asOf,ref:'FOLIO',description:x[0],debit:amt,credit:0}); });
   payments.filter(p=>p.reservationId===reservationId&&paymentIsReceived(p)).forEach(p=>{
-    const amt=toAccountingAmount(Math.abs(Number(p.amount||0)),r);
+    const amt=Number(paymentAmountLKR(p,r)||0);
     rows.push({date:paymentDateOnly(p)||asOf,ref:p.reference||p.id||'',description:(p.type||'Payment')+' — '+(p.method||'Other'),debit:0,credit:paymentIsRefund(p)?-amt:amt});
   });
   rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
@@ -14478,7 +14480,7 @@ function saveCityLedgerPayment(){
 function printCityLedgerStatement(id){const a=accRead('signature_pms_city_ledger_accounts').find(x=>x.id===id);if(!a)return;showCityLedgerDetail(id);const d=document.getElementById('cityLedgerDetail');reportShell('City Ledger Statement',d?.innerHTML||'');}
 function transferARToCityLedger(reservationId){
   const r=reservations.find(x=>x.id===reservationId);if(!r)return;const company=String(r.companyName||r.company||r.corporateName||'').trim();if(!company){alert('This reservation has no company name. Add a company name before transferring.');return;}
-  const fp=getFinancialPosition(r.id),charges=toAccountingAmount(fp.folioTotal,r),paid=payments.filter(p=>p.reservationId===r.id&&paymentIsReceived(p)).reduce((n,p)=>n+toAccountingAmount(Number(p.amount||0),r),0),balance=charges-paid;if(balance<=0.009){alert('There is no outstanding balance to transfer.');return;}
+  const fp=getFinancialPosition(r.id),charges=Number(fp.folioTotal||0),paid=payments.filter(p=>p.reservationId===r.id&&paymentIsReceived(p)).reduce((n,p)=>n+Number(paymentAmountLKR(p,r)||0),0),balance=charges-paid;if(balance<=0.009){alert('There is no outstanding balance to transfer.');return;}
   const all=accRead('signature_pms_city_ledger_accounts');let a=all.find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.company).toLowerCase()===company.toLowerCase());if(!a){a={id:accId('cl'),propertyId:currentPropertyId,company,accountNumber:'CL-'+Date.now().toString().slice(-6),reservationIds:[],transactions:[]};all.push(a);}if(!a.reservationIds.includes(r.id))a.reservationIds.push(r.id);a.transactions.push({date:String(r.checkOut||accountingBusinessDate()).slice(0,10),reference:r.confirmationNumber||r.id,description:'Transferred guest balance — '+(r.guestName||'Guest'),debit:balance,credit:0,reservationId:r.id});accWrite('signature_pms_city_ledger_accounts',all);r.cityLedgerAccountId=a.id;r.cityLedgerTransferredAt=new Date().toISOString();saveData();renderARGuestLedger();renderCityLedger();alert('Outstanding balance transferred to '+company+' city ledger.');
 }
 window.printCityLedgerStatement=printCityLedgerStatement; window.transferARToCityLedger=transferARToCityLedger;
