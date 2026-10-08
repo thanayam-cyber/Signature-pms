@@ -14214,6 +14214,14 @@ function dailyRevenueExperienceDelta(date){
   const totals=dailyRevenueTotals(date);
   return Math.max(0,Number(totals['Experience / Recreation Revenue']||0)-Number(dailyRevenuePostedExperience(date)||0));
 }
+function dailyRevenueFNBDelta(date){
+  const totals=dailyRevenueTotals(date);
+  const posted=dailyRevenuePostedFNB(date);
+  return {
+    'Restaurant Revenue':Math.max(0,Number(totals['Restaurant Revenue']||0)-Number(posted['Restaurant Revenue']||0)),
+    'Bar Revenue':Math.max(0,Number(totals['Bar Revenue']||0)-Number(posted['Bar Revenue']||0))
+  };
+}
 function dailyRevenueHasUnpostedFNB(date){
   const d=dailyRevenueFNBDelta(date);
   return d['Restaurant Revenue']>0.009 || d['Bar Revenue']>0.009;
