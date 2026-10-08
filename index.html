@@ -11188,7 +11188,103 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div></body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div>
+<script id="v2-1-404-hr-attendance-leave-roster-cloud-fix">
+/* v2.1.404 — HR Attendance / Leave / Roster explicit cloud sync.
+   Fixes cross-user visibility and prevents roster editing from being overwritten
+   by the background cloud refresh. Other modules intentionally untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV404HRCloud)return;
+  window.__signatureV404HRCloud=true;
+  const KEYS={att:'signature_pms_hr_attendance',leave:'signature_pms_hr_leave',roster:'signature_pms_hr_roster'};
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const safe=(fn,fb)=>{try{return fn()}catch(e){return fb}};
+  let dirty=new Set(), syncing=false;
+  const mark=k=>dirty.add(k);
+  const clear=k=>dirty.delete(k);
+  const cloud=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const pid=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  async function session(){const c=cloud(),p=pid();if(!c||!p)return null;const q=await c.auth.getSession();const u=q?.data?.session?.user;if(!u)return null;return {c,p,u};}
+  function local(k){return safe(()=>JSON.parse(localStorage.getItem(k)||'[]'),[])}
+  async function push(k){
+    const z=await session(); if(!z)return false;
+    const data=local(k).filter(x=>String(x.propertyId||'')===z.p).map(x=>({...x,propertyId:z.p}));
+    const q=await z.c.from('pms_cloud_records').upsert({property_id:z.p,storage_key:k,data,updated_by:z.u.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+    if(q.error)throw q.error; clear(k); return true;
+  }
+  async function pull(k){
+    if(dirty.has(k))return false;
+    const z=await session(); if(!z)return false;
+    const q=await z.c.from('pms_cloud_records').select('data,updated_at').eq('property_id',z.p).eq('storage_key',k).maybeSingle();
+    if(q.error)throw q.error;
+    if(!q.data)return false;
+    const localAll=local(k),other=localAll.filter(x=>String(x.propertyId||'')!==z.p),cloudRows=Array.isArray(q.data.data)?q.data.data:[];
+    localStorage.setItem(k,JSON.stringify(other.concat(cloudRows.map(x=>({...x,propertyId:z.p})))));
+    return true;
+  }
+  async function sync(k){
+    try{mark(k);const ok=await push(k);if(ok&&typeof renderHR==='function')renderHR();return ok;}
+    catch(e){console.warn('HR cloud sync failed',k,e);if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('HR cloud sync failed: '+(e?.message||e),'error');return false;}
+  }
+  async function refresh(k){try{const ok=await pull(k);if(ok&&typeof renderHR==='function')renderHR();return ok;}catch(e){console.warn('HR cloud refresh failed',k,e);return false;}}
+  window.syncHRKeyToCloud=sync;
+  window.refreshHRKeyFromCloud=refresh;
+  window.syncHRCoreCloud=async()=>{for(const k of Object.values(KEYS))await sync(k);return true;};
+
+  // Attendance: save locally first, then explicitly wait for cloud confirmation.
+  const oldAtt=window.saveTeamAttendance;
+  if(typeof oldAtt==='function')window.saveTeamAttendance=async function(){
+    oldAtt();
+    await sleep(150);
+    await sync(KEYS.att);
+    if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Attendance saved and synchronized to Supabase.','success');
+  };
+
+  // Leave: the original function writes both Leave and the generated Leave attendance.
+  const oldLeave=window.saveLeaveRequest;
+  if(typeof oldLeave==='function')window.saveLeaveRequest=async function(){
+    oldLeave();
+    await sleep(150);
+    await sync(KEYS.leave);
+    await sync(KEYS.att);
+    if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Leave and attendance records synchronized to Supabase.','success');
+  };
+
+  // Roster: preserve the user's in-progress selections while background refresh runs.
+  const oldRender=window.hrRenderRosterTable;
+  if(typeof oldRender==='function'){
+    window.hrRenderRosterTable=function(){
+      if(window.__signatureRosterEditing===true)return;
+      return oldRender.apply(this,arguments);
+    };
+  }
+  const oldSet=window.hrSetRoster;
+  if(typeof oldSet==='function'){
+    window.hrSetRoster=function(){window.__signatureRosterEditing=true;return oldSet.apply(this,arguments);};
+  }
+  const oldSaveRoster=window.hrSaveRoster;
+  if(typeof oldSaveRoster==='function')window.hrSaveRoster=async function(){
+    try{
+      oldSaveRoster();
+      await sleep(150);
+      await sync(KEYS.roster);
+      window.__signatureRosterEditing=false;
+      if(typeof hrRenderRosterTable==='function')hrRenderRosterTable();
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Roster saved and synchronized to Supabase.','success');
+    }catch(e){window.__signatureRosterEditing=false;throw e;}
+  };
+
+  // Background refresh: never overwrite active roster editing. Refresh core HR data every 10s.
+  async function tick(){
+    if(document.hidden||window.__signatureRosterEditing)return;
+    for(const k of Object.values(KEYS))await refresh(k);
+  }
+  setTimeout(tick,2500);
+  setInterval(tick,10000);
+})();
+</script>
+</body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
