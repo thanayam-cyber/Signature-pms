@@ -1231,6 +1231,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="kpi"><span>Room Revenue</span><strong id="dailyPostRoom">LKR0.00</strong></div>
 <div class="kpi"><span>Restaurant Revenue</span><strong id="dailyPostRestaurant">LKR0.00</strong></div>
 <div class="kpi"><span>Bar Revenue</span><strong id="dailyPostBar">LKR0.00</strong></div>
+<div class="kpi"><span>Experience Revenue</span><strong id="dailyPostExperience">LKR0.00</strong></div>
 <div class="kpi"><span>Other Revenue</span><strong id="dailyPostOther">LKR0.00</strong></div>
 <div class="kpi"><span>Service Charge / Tax</span><strong id="dailyPostTax">LKR0.00</strong></div>
 </div>
@@ -2403,6 +2404,11 @@ function addExperienceToFolio(reservationId,experienceId){
     f.experienceItems.push({id:Date.now(),experienceId:e.id,name:e.name,amount:price,addedAt:localDateTime(),addedBy:currentUser?.username||currentUser?.role||"User"});
     f.total=getFolioTotal(reservationId);
     saveData();
+    // v2.1.392: publish the updated folio/experience charge to Supabase so
+    // other users (especially Admin Accounting) see the same posted charge.
+    if(typeof syncReservationToSupabase==='function' && navigator.onLine){
+        Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(err=>console.warn("Experience cloud sync failed",err));
+    }
     try{
         const ref="EXP-"+String(e.id)+"-"+String(r.id)+"-"+Date.now();
         const already=journalEntries().some(j=>String(j.reference)===ref);
@@ -14155,10 +14161,18 @@ function dailyRevenueRows(date){
     rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,r||x),account:revenueAccount});
   });
   accProp(folios||[]).forEach(f=>{
-    const updated=String(f.updatedAt||f.createdAt||'').slice(0,10);
+    const r=reservations.find(z=>z.id===f.reservationId);
+    const items=Array.isArray(f.experienceItems)?f.experienceItems:[];
+    items.forEach(item=>{
+      const itemDate=accIsoDate(item.addedAt||item.createdAt||'');
+      const amount=Number(item.amount||0);
+      if(itemDate===d && amount>0){
+        rows.push({date:d,source:'Experience',revenueSource:'Experience Revenue',reference:'EXP-'+String(item.id||f.id),description:(r?.guestName||'Guest')+' — '+String(item.name||'Experience'),amount:toAccountingAmount(amount,r||f),account:'Experience / Recreation Revenue'});
+      }
+    });
+    const updated=accIsoDate(f.updatedAt||f.createdAt||'');
     const other=Number(f.extras||0);
-    if(updated===d && other>0){
-      const r=reservations.find(z=>z.id===f.reservationId);
+    if(updated===d && other>0 && !items.some(item=>accIsoDate(item.addedAt||item.createdAt||'')===d && Number(item.amount||0)>0)){
       rows.push({date:d,source:'Folio',revenueSource:'Folio Extra',reference:r?.bookingNo||f.id,description:r?.guestName||'Folio Extra',amount:toAccountingAmount(other,r||f),account:'Other Operating Revenue'});
     }
   });
@@ -14185,16 +14199,25 @@ function dailyRevenuePostedFNB(date){
   });
   return out;
 }
-function dailyRevenueFNBDelta(date){
-  const totals=dailyRevenueTotals(date), posted=dailyRevenuePostedFNB(date);
-  return {
-    'Restaurant Revenue':Math.max(0,Number(totals['Restaurant Revenue']||0)-Number(posted['Restaurant Revenue']||0)),
-    'Bar Revenue':Math.max(0,Number(totals['Bar Revenue']||0)-Number(posted['Bar Revenue']||0))
-  };
+function dailyRevenuePostedExperience(date){
+  let total=0;
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{
+      if(String(l.account||'')==='Experience / Recreation Revenue') total+=Number(l.credit||0);
+    });
+  });
+  return total;
+}
+function dailyRevenueExperienceDelta(date){
+  const totals=dailyRevenueTotals(date);
+  return Math.max(0,Number(totals['Experience / Recreation Revenue']||0)-Number(dailyRevenuePostedExperience(date)||0));
 }
 function dailyRevenueHasUnpostedFNB(date){
   const d=dailyRevenueFNBDelta(date);
   return d['Restaurant Revenue']>0.009 || d['Bar Revenue']>0.009;
+}
+function dailyRevenueHasUnpostedRevenue(date){
+  return dailyRevenueHasUnpostedFNB(date) || dailyRevenueExperienceDelta(date)>0.009;
 }
 function renderDailyRevenuePosting(){
   const tb=document.getElementById('dailyRevenuePostingTable'); if(!tb)return;
@@ -14203,11 +14226,11 @@ function renderDailyRevenuePosting(){
   if(dateEl){dateEl.max=current;if(!dateEl.value || dateEl.value>current)dateEl.value=current;}
   const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
-  set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);set('dailyPostTax',0);
-  const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d);
+  set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);set('dailyPostTax',0);
+  const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
   if(st){
-    if(posted && dailyRevenueHasUnpostedFNB(d)) st.innerHTML=`<strong>Additional F&B Revenue Ready to Post</strong> — Restaurant: ${accMoney(fnbDelta['Restaurant Revenue']||0)} · Bar: ${accMoney(fnbDelta['Bar Revenue']||0)}. These amounts were created after the earlier daily revenue posting.`;
+    if(posted && dailyRevenueHasUnpostedRevenue(d)) st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Restaurant: ${accMoney(fnbDelta['Restaurant Revenue']||0)} · Bar: ${accMoney(fnbDelta['Bar Revenue']||0)} · Experience: ${accMoney(experienceDelta||0)}. These amounts were created after the earlier daily revenue posting.`;
     else if(posted) st.innerHTML=`<strong>Already Posted</strong> — Revenue for business date ${escapeHtml(d)} is fully posted.`;
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
@@ -14221,6 +14244,7 @@ window.postDailyRevenue=function(){
   const alreadyPosted=dailyRevenueJournalExists(d);
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const fnbDelta=dailyRevenueFNBDelta(d);
+  const experienceDelta=dailyRevenueExperienceDelta(d);
   let lines=[];
   let gross=0;
   let ref='REV-'+d.replace(/-/g,'');
@@ -14229,9 +14253,10 @@ window.postDailyRevenue=function(){
     if(!dailyRevenueHasUnpostedFNB(d)){alert('Daily revenue for '+d+' has already been fully posted.');return;}
     if(fnbDelta['Restaurant Revenue']>0.009)lines.push({account:'Restaurant Revenue',debit:0,credit:fnbDelta['Restaurant Revenue'],revenueSource:'Restaurant POS'});
     if(fnbDelta['Bar Revenue']>0.009)lines.push({account:'Bar Revenue',debit:0,credit:fnbDelta['Bar Revenue'],revenueSource:'Bar POS'});
+    if(experienceDelta>0.009)lines.push({account:'Experience / Recreation Revenue',debit:0,credit:experienceDelta,revenueSource:'Experience Revenue'});
     gross=lines.reduce((sum,x)=>sum+Number(x.credit||0),0);
-    ref='REV-FNB-'+d.replace(/-/g,'')+'-'+Date.now();
-    description='Daily F&B Revenue Posting (Incremental)';
+    ref='REV-INC-'+d.replace(/-/g,'')+'-'+Date.now();
+    description='Daily Revenue Posting (Incremental)';
   }else{
     gross=Object.values(totals).reduce((s,v)=>s+Number(v||0),0);
     if(gross<=0){alert('No revenue is available to post for business date '+d+'.');return;}
@@ -19021,6 +19046,18 @@ async function hydrateSupabaseReservations(){
             payments=payments.filter(x=>!byId.has(String(x.id))).concat(cloudPayments);
         }
         saveData();
+
+        // v2.1.392: repair/publish any locally posted experience charges that
+        // pre-date this fix, so the current Reception folio reaches Admin too.
+        if(typeof syncReservationToSupabase==='function' && navigator.onLine){
+            const experienceReservations=reservations.filter(r=>{
+                const f=getFolio(r.id);
+                return Array.isArray(f?.experienceItems) && f.experienceItems.length>0;
+            });
+            experienceReservations.forEach(r=>{
+                Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(err=>console.warn('Experience charge repair sync failed:',err));
+            });
+        }
 
         /* If a local void/refund repaired a stale cloud snapshot, publish the
            merged reservation now. This turns the local recovery into the shared
