@@ -2032,6 +2032,15 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- SIGNATURE PMS v2.1.387 — GUEST FOLIO LKR PAYMENT DISPLAY FIX -->
+<script>
+(function(){
+  'use strict';
+  /* Restaurant payments are settled/accounted in LKR. The folio list must not
+     format the LKR paid/balance values as USD. Payment history also must not
+     label an LKR settlement as the old guest-currency folio value. */
+})();
+</script>
 <script>
 /* v2.1.304 — Supabase loader fallback.
    Keep the stable PMS logic untouched; if jsDelivr is blocked/unavailable,
@@ -8690,17 +8699,15 @@ function getFolio(reservationId){
 function folioRestaurantLKR(reservationId){
     const r=reservations.find(x=>String(x.id||'')===String(reservationId||''));
     const cloudLinked=Array.isArray(r?.__cloudSales)?r.__cloudSales:[];
-    const localLinked=(sales||[]).filter(s=>
-        String(s.reservationId||'')===String(reservationId||'')
-    );
-    // Prefer the transaction records themselves. Cloud reservations carry the
-    // linked POS sales in __cloudSales, so this works even when the local sales
-    // array was not populated before the folio window was opened.
+    const localLinked=(sales||[]).filter(s=>String(s.reservationId||'')===String(reservationId||''));
+    // Rebuild the F&B folio amount from the actual linked POS transactions.
+    // This is deliberately idempotent: the stored folio.restaurant may already
+    // be LKR from an earlier render and must never be multiplied by the FX rate
+    // again (which previously caused the huge outstanding-balance value).
     const merged=[];
     const seen=new Set();
     [...localLinked,...cloudLinked].forEach(s=>{
-        if(!s || String(s.paymentMethod||'').toLowerCase()!=='room charge') return;
-        if(s.voided || s.isVoided || String(s.status||'')==='Voided') return;
+        if(!s || s.voided || s.isVoided || String(s.status||'')==='Voided') return;
         const id=String(s.id||'');
         if(id && seen.has(id)) return;
         if(id) seen.add(id);
@@ -8711,9 +8718,9 @@ function folioRestaurantLKR(reservationId){
     }
     const f=getFolio(reservationId);
     if(!f) return 0;
-    // Legacy folios may contain the original POS guest/display amount (for
-    // example USD 22) without a linked sale record. In that case the POS
-    // guest currency + posting rate is the only safe conversion available.
+    // Once getFolioTotal() has normalized the stored restaurant amount, keep it
+    // in LKR. Only legacy folios without that marker need the one-time FX conversion.
+    if(String(f.restaurantBaseCurrency||f.baseCurrency||'').toUpperCase()==='LKR') return Number(f.restaurant||0);
     const guestCur=String(settings?.guestCurrency||settings?.currency||'USD').toUpperCase();
     const baseCur=String(settings?.baseCurrency||'LKR').toUpperCase();
     if(guestCur!==baseCur && guestCur!=='LKR' && Number(f.restaurant||0)!==0){
@@ -8740,6 +8747,9 @@ function getFolioTotal(reservationId){
     if(f){
         if(Math.abs(Number(f.accommodation||0)-accommodationLKR)>0.001) f.accommodation=accommodationLKR;
         if(Math.abs(Number(f.restaurant||0)-restaurantLKR)>0.001) f.restaurant=restaurantLKR;
+        // Mark the normalized F&B folio value so later reads never apply FX twice.
+        f.restaurantBaseCurrency='LKR';
+        f.baseCurrency='LKR';
     }
     return accommodationLKR+restaurantLKR+extrasLKR+serviceLKR+taxesLKR-discountsLKR;
 }
@@ -9275,7 +9285,7 @@ function viewFolio(reservationId){
 
                         <td>
                             <strong>${accMoney(paymentAmountLKR(p,r))}</strong>
-                            ${String(r.currency||r.guestCurrency||'LKR').toUpperCase()!=='LKR' ? `<div style="font-size:11px;color:#6b7280">Folio value: ${money(p.amount)}</div>` : ''}
+                            ${String(r.currency||r.guestCurrency||'LKR').toUpperCase()!=='LKR' && !p?.settlementAmountLKR ? `<div style="font-size:11px;color:#6b7280">Guest-currency value: ${reservationMoney(r,p.amount)}</div>` : ''}
                         </td>
 
                     </tr>
@@ -10795,12 +10805,12 @@ function renderFolios(){
                 </td>
 
                 <td>
-                    ${reservationMoney(r,paid)}
+                    ${money(paid)}
                 </td>
 
                 <td>
                     <strong>
-                        ${reservationMoney(r,balance)}
+                        ${folioDisplayMoney(r,balance)}
                     </strong>
                     <div style="font-size:11px;color:#6b7280">
                         ${getFinancialStatus(r.id)}
@@ -12031,10 +12041,10 @@ else if(type==="inhouse"){const rows=reservations.filter(r=>r.status==="Checked-
 else if(type==="activity"){const rows=reservations.filter(r=>r.checkIn===selected||r.checkOut===selected||(r.status==="Checked-In"&&r.checkIn<selected&&r.checkOut>selected)).map(r=>[escapeHtml(r.checkIn===selected?"Arrival":r.checkOut===selected?"Departure":"In-House"),escapeHtml(r.guestName),escapeHtml(r.bookingNo),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),statusBadge(r.status)]);title="Activity List";body=reportRowsTable(["Activity","Guest","Booking","Room","Check-In","Check-Out","Status"],rows);}
 else if(type==="departures"){const rows=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),money(getPaymentsTotal(r.id)),money(getBalance(r.id)),statusBadge(r.status)]);title="Departure List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Paid","Balance","Status"],rows);}
 else if(type==="oos"){const rows=(getProperty()?.rooms||[]).filter(r=>r.housekeepingStatus==="oos").map(r=>[escapeHtml(r.name),escapeHtml(r.type),escapeHtml(r.oosReason||""),escapeHtml(r.maintenanceNote||""),"Out of Order"]);title="Out of Order Rooms";body=reportRowsTable(["Room","Type","Reason","Maintenance Note","Status"],rows);}
-else if(type==="reservations"){const rows=reservations.filter(r=>r.checkIn===selected||r.checkOut===selected||(r.checkIn<selected&&r.checkOut>selected)).map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),r.nights||0,money(r.total),money(getPaymentsTotal(r.id)),money(getBalance(r.id)),statusBadge(r.status)]);title="Reservations List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Nights","Total","Paid","Balance","Status"],rows);}
-else if(["creditcard","banktransfer","advance","dailycash","cashtransactions"].includes(type)){let list=pay;if(type==="creditcard")list=pay.filter(p=>p.method==="Card");if(type==="banktransfer")list=pay.filter(p=>p.method==="Bank Transfer");if(type==="advance")list=pay.filter(p=>p.type==="Deposit");if(type==="dailycash"||type==="cashtransactions")list=pay.filter(p=>p.method==="Cash");title=type==="creditcard"?"Credit Card Payments":type==="banktransfer"?"Bank Transfers":type==="advance"?"Advance Payments":type==="dailycash"?"Daily Cash":"Cash Transactions";body=reportRowsTable(["Date / Time","Reference","Guest","Booking","Type","Method","Amount","Received By"],list.map(p=>[escapeHtml(p.date||""),escapeHtml(p.reference||""),escapeHtml(p.guestName||""),escapeHtml(p.bookingNo||""),escapeHtml(p.type||""),escapeHtml(p.method||""),money(p.amount),escapeHtml(p.receivedBy||"")]));}
+else if(type==="reservations"){const rows=reservations.filter(r=>r.checkIn===selected||r.checkOut===selected||(r.checkIn<selected&&r.checkOut>selected)).map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),r.nights||0,reportMoney(reservationAmountLKR(r,Number(r.total||0))),reportMoney(getPaymentsTotal(r.id)),reportMoney(getBalance(r.id)),statusBadge(r.status)]);title="Reservations List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Nights","Total","Paid","Balance","Status"],rows);}
+else if(["creditcard","banktransfer","advance","dailycash","cashtransactions"].includes(type)){let list=pay;if(type==="creditcard")list=pay.filter(p=>p.method==="Card");if(type==="banktransfer")list=pay.filter(p=>p.method==="Bank Transfer");if(type==="advance")list=pay.filter(p=>p.type==="Deposit");if(type==="dailycash"||type==="cashtransactions")list=pay.filter(p=>p.method==="Cash");title=type==="creditcard"?"Credit Card Payments":type==="banktransfer"?"Bank Transfers":type==="advance"?"Advance Payments":type==="dailycash"?"Daily Cash":"Cash Transactions";body=reportRowsTable(["Date / Time","Reference","Guest","Booking","Type","Method","Amount","Received By"],list.map(p=>[escapeHtml(p.date||""),escapeHtml(p.reference||""),escapeHtml(p.guestName||""),escapeHtml(p.bookingNo||""),escapeHtml(p.type||""),escapeHtml(p.method||""),reportMoney(paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||"")))),escapeHtml(p.receivedBy||"")]));}
 else if(type==="dailychange"||type==="cashexpenses"){let list=pay.filter(p=>String(p.type||"").toLowerCase().includes(type==="dailychange"?"change":"expense"));title=type==="dailychange"?"Daily Cash Change":"Cash Expenses";body=reportRowsTable(["Date / Time","Reference","Guest","Details","Amount","Method","Received By"],list.map(p=>[escapeHtml(p.date||""),escapeHtml(p.reference||""),escapeHtml(p.guestName||""),escapeHtml(p.notes||p.details||""),money(p.amount),escapeHtml(p.method||""),escapeHtml(p.receivedBy||"")]));}
-else if(type==="nightaudit"){const a=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").length,d=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).length,h=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=selected&&r.checkOut>selected).length;const rev=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").reduce((x,r)=>x+reservationAmountLKR(r,Number(r.total||0)),0)+sales.filter(x=>String(x.date||x.businessDate||"").slice(0,10)===String(selected)&&!(typeof fnbSaleIsVoided==="function"&&fnbSaleIsVoided(x))).reduce((x,r)=>x+fnbSaleAmountLKR(r,Number(r.total||0)),0);title="Night Audit";body=`<div class="report-section"><div class="report-line"><span>Arrivals</span><strong>${a}</strong></div><div class="report-line"><span>Departures</span><strong>${d}</strong></div><div class="report-line"><span>In-House Guests</span><strong>${h}</strong></div><div class="report-line"><span>Accommodation + POS Revenue</span><strong>${reportMoney(rev)}</strong></div><div class="report-line"><span>Payments Received</span><strong>${reportMoney(pay.reduce((x,p)=>x+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),0))}</strong></div><div class="report-line"><strong>Outstanding Guest Balance</strong><strong>${reportMoney(reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((x,r)=>x+reservationAmountLKR(r,getBalance(r.id)),0))}</strong></div></div>`;}
+else if(type==="nightaudit"){const a=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").length,d=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).length,h=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=selected&&r.checkOut>selected).length;const rev=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").reduce((x,r)=>x+reservationAmountLKR(r,Number(r.total||0)),0)+sales.filter(x=>String(x.date||x.businessDate||"").slice(0,10)===String(selected)&&!(typeof fnbSaleIsVoided==="function"&&fnbSaleIsVoided(x))).reduce((x,r)=>x+fnbSaleAmountLKR(r,Number(r.total||0)),0);title="Night Audit";body=`<div class="report-section"><div class="report-line"><span>Arrivals</span><strong>${a}</strong></div><div class="report-line"><span>Departures</span><strong>${d}</strong></div><div class="report-line"><span>In-House Guests</span><strong>${h}</strong></div><div class="report-line"><span>Accommodation + POS Revenue</span><strong>${reportMoney(rev)}</strong></div><div class="report-line"><span>Payments Received</span><strong>${reportMoney(pay.reduce((x,p)=>x+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),0))}</strong></div><div class="report-line"><strong>Outstanding Guest Balance</strong><strong>${reportMoney(reservations.filter(r=>["Reserved","Checked-In"].includes(r.status)).reduce((x,r)=>x+Number(getBalance(r.id)||0),0))}</strong></div></div>`;}
 box.innerHTML=reportHeader(title,selected)+body+`<div style="margin-top:30px;display:flex;justify-content:space-between"><span>Prepared by: ${escapeHtml(currentUser?.username||"")}</span><span>Signature: ____________________</span></div>`;}
 function printDailyOnePage(){
     if(!canDo("reports.print")){alert("You do not have permission to print reports.");return;}
@@ -12759,6 +12769,9 @@ setTimeout(fnbRefreshCashierShift,0);
         paymentOther;
 
 
+    // getBalance() is already an LKR/base-currency value. Do not pass it
+    // through reservationAmountLKR() again, otherwise the FX rate is applied
+    // a second time and the outstanding balance becomes massively inflated.
     const outstanding=
         reservations
         .filter(
@@ -12767,7 +12780,7 @@ setTimeout(fnbRefreshCashierShift,0);
         )
         .reduce(
             (sum,r)=>
-                sum+reservationAmountLKR(r,getBalance(r.id)),
+                sum+Number(getBalance(r.id)||0),
             0
         );
 
