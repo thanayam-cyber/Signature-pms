@@ -11188,7 +11188,77 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div></body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script id="v2-1-397-accounting-journal-cloud-sync">
+/* v2.1.397 — ACCOUNTING JOURNAL CLOUD SYNC
+   Makes Daily Revenue / Daily Payments posting status property-wide.
+   Each journal is stored as its own pms_cloud_records row so Admin and
+   Reception cannot overwrite one another's accounting journal array. */
+(function(){
+  'use strict';
+  if(window.__signatureAccountingJournalCloud397)return;
+  window.__signatureAccountingJournalCloud397=true;
+  const TABLE='pms_cloud_records';
+  const PREFIX='signature_pms_accounting_journal_';
+  const POLL_MS=5000;
+  let lastProperty='';
+  let busy=false;
+  function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
+  function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
+  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  function localAll(){try{const v=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
+  function writeLocal(rows){try{localStorage.setItem('signature_pms_accounting_journals',JSON.stringify(rows));return true}catch(e){return false}}
+  function localMine(p){return localAll().filter(j=>String(j?.propertyId||p)===p)}
+  function journalKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()))}
+  function mergeJournals(localRows,cloudRows,p){
+    const map=new Map();
+    [...localRows,...cloudRows].forEach(j=>{
+      if(!j||String(j.propertyId||p)!==p)return;
+      const key=String(j.id||j.reference||'');
+      if(!key)return;
+      const old=map.get(key);
+      if(!old || String(j.updatedAt||j.postedAt||'')>=String(old.updatedAt||old.postedAt||'')) map.set(key,j);
+    });
+    return [...map.values()];
+  }
+  async function publishOne(c,p,u,j){
+    if(!j || String(j.propertyId||p)!==p)return false;
+    const payload={property_id:p,storage_key:journalKey(j),data:{...j,propertyId:p},updated_by:u,updated_at:new Date().toISOString()};
+    const r=await c.from(TABLE).upsert(payload,{onConflict:'property_id,storage_key'});
+    if(r.error)throw r.error;
+    return true;
+  }
+  async function cycle(){
+    if(busy)return;
+    const c=client(),p=pid();
+    if(!c||!p)return;
+    const u=await uid(c); if(!u)return;
+    if(lastProperty!==p)lastProperty=p;
+    busy=true;
+    try{
+      const local=localMine(p);
+      /* Publish local journals first. This includes older journals so a user
+         who logs in on another device can see the existing accounting state. */
+      for(const j of local){try{await publishOne(c,p,u,j)}catch(e){console.warn('Accounting journal cloud publish failed:',e?.message||e)}}
+      const q=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%');
+      if(q.error)throw q.error;
+      const cloud=(q.data||[]).map(r=>r.data).filter(Boolean);
+      const merged=mergeJournals(local,cloud,p);
+      if(merged.length!==local.length || JSON.stringify(merged)!==JSON.stringify(local)){
+        writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
+        try{if(typeof renderAccounting==='function')renderAccounting()}catch(e){}
+        try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting()}catch(e){}
+        try{if(typeof renderDailyPaymentPosting==='function')renderDailyPaymentPosting()}catch(e){}
+        try{if(typeof renderJournalReview==='function')renderJournalReview()}catch(e){}
+      }
+    }catch(e){console.warn('Accounting journal cloud sync failed:',e?.message||e)}
+    finally{busy=false}
+  }
+  window.signatureAccountingJournalCloud={sync:cycle};
+  setTimeout(cycle,2500);
+  setInterval(cycle,POLL_MS);
+})();
+</script>
+</body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
