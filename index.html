@@ -22522,6 +22522,58 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   [300,1200,2500,4500].forEach(ms=>setTimeout(bind,ms));
 })();
 </script>
+
+<script id="v2-1-413-fnb-cashier-shift-open-guard">
+(function(){
+  'use strict';
+  if(window.__signatureV413FnbShiftOpenGuard)return;
+  window.__signatureV413FnbShiftOpenGuard=true;
+  const KEY='signature_pms_fnb_cashier_shifts_v231';
+  const propertyId=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const read=()=>{try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+  const write=a=>{try{localStorage.setItem(KEY,JSON.stringify(a||[]));return true}catch(e){return false}};
+  const render=()=>{try{if(typeof fnbRefreshCashierShift==='function')fnbRefreshCashierShift()}catch(e){}};
+  function same(a,b){return String(a?.id||'')===String(b?.id||'');}
+  function protect(row){
+    if(!row||String(row.status||'')!=='Open')return;
+    const p=propertyId();
+    let active=true, ticks=0;
+    const timer=setInterval(async()=>{
+      ticks++;
+      try{
+        const rows=read();
+        const found=rows.some(x=>same(x,row));
+        if(!found && active){
+          const others=rows.filter(x=>String(x?.propertyId||'')!==p || !same(x,row));
+          others.push(row);
+          write(others);
+          render();
+          if(window.signatureFnbCashierShiftCloud?.publishThenHydrate){
+            try{await window.signatureFnbCashierShiftCloud.publishThenHydrate();}catch(e){}
+          }
+        }
+        if(ticks>=15){active=false;clearInterval(timer);}
+      }catch(e){if(ticks>=15){active=false;clearInterval(timer);}}
+    },1000);
+  }
+  function bind(){
+    const fn=window.fnbOpenCashierShift;
+    if(typeof fn!=='function'||fn.__v413)return;
+    const w=function(){
+      const before=read();
+      const result=fn.apply(this,arguments);
+      const after=read();
+      const p=propertyId();
+      const added=after.find(x=>String(x?.propertyId||'')===p && String(x?.status||'')==='Open' && !before.some(y=>same(x,y)));
+      if(added)protect(added);
+      return result;
+    };
+    w.__v413=true;
+    window.fnbOpenCashierShift=w;
+  }
+  [300,1000,2000,4000].forEach(ms=>setTimeout(bind,ms));
+})();
+</script>
 </body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
