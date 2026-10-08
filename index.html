@@ -22659,7 +22659,127 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
-</body><script id="v2-1-360-po-open-button-final">
+\n<script id="v2-1-418-night-audit-cashier-cloud-fix">
+/* v2.1.418 — Night Audit reads the property/business-date cashier closing from cloud.
+   The cashier close is property/date scoped; it is not tied to the logged-in Night Auditor.
+   Existing cashier records are preserved. No Login, POS, Purchasing, Payroll or Accounting logic is changed. */
+(function(){
+  'use strict';
+  if(window.__signatureV418NightAuditCashierCloud)return;
+  window.__signatureV418NightAuditCashierCloud=true;
+
+  const TABLE='pms_cloud_records';
+  const KEY='signature_pms_cashier_closings';
+  const prop=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const read=()=>{try{const a=JSON.parse(localStorage.getItem('signature_pms_cashier_closings')||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+  const write=a=>{try{localStorage.setItem('signature_pms_cashier_closings',JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+
+  async function auth(){
+    const c=client(),p=prop();
+    if(!c||!p)return null;
+    const ses=await c.auth.getSession();
+    if(ses.error)throw ses.error;
+    const user=ses.data?.session?.user;
+    return user?{c,p,user}:null;
+  }
+
+  async function cloudRows(){
+    const a=await auth(); if(!a)return null;
+    const q=await a.c.from(TABLE).select('data').eq('property_id',a.p).eq('storage_key',KEY).maybeSingle();
+    if(q.error)throw q.error;
+    return q.data ? (Array.isArray(q.data.data)?q.data.data:[]) : null;
+  }
+
+  async function publish(){
+    const a=await auth(); if(!a)return false;
+    const rows=read().filter(x=>String(x?.propertyId||a.p)===a.p).map(x=>({...x,propertyId:a.p}));
+    const q=await a.c.from(TABLE).upsert({
+      property_id:a.p,
+      storage_key:KEY,
+      data:rows,
+      updated_by:a.user.id||null,
+      updated_at:new Date().toISOString()
+    },{onConflict:'property_id,storage_key'});
+    if(q.error)throw q.error;
+    return true;
+  }
+
+  async function hydrate(){
+    const cloud=await cloudRows();
+    if(!Array.isArray(cloud))return false;
+    const p=prop();
+    const local=read();
+    const other=local.filter(x=>String(x?.propertyId||'')!==p);
+    const mine=cloud.map(x=>({...x,propertyId:p}));
+    write(other.concat(mine));
+    return true;
+  }
+
+  async function sync(){
+    try{
+      const z=await auth();
+      if(!z)return;
+      const local=read();
+      const localMine=local.filter(x=>String(x?.propertyId||z.p)===z.p);
+      const cloud=await cloudRows();
+      const cloudSafe=Array.isArray(cloud)?cloud:[];
+      /* Merge local + cloud so an existing Admin closing is never overwritten
+         by an empty Reception local store. */
+      const map=new Map();
+      [...cloudSafe,...localMine].forEach(x=>{
+        const id=String(x?.id||`${x?.date||''}_${x?.closedBy||''}`);
+        map.set(id,{...x,propertyId:z.p});
+      });
+      const merged=[...map.values()];
+      write(local.filter(x=>String(x?.propertyId||'')!==z.p).concat(merged));
+      if(localMine.length||cloudSafe.length){
+        const q=await z.c.from(TABLE).upsert({
+          property_id:z.p,storage_key:KEY,data:merged,
+          updated_by:z.user.id||null,updated_at:new Date().toISOString()
+        },{onConflict:'property_id,storage_key'});
+        if(q.error)throw q.error;
+      }
+      if(typeof naRender==='function')naRender();
+    }catch(e){
+      console.warn('Night Audit cashier closing cloud sync failed:',e);
+    }
+  }
+  function wrapCashierClose(){
+    const fn=window.closeCashierDay;
+    if(typeof fn!=='function'||fn.__v418)return;
+    const w=function(){
+      const result=fn.apply(this,arguments);
+      setTimeout(()=>sync(),350);
+      return result;
+    };
+    w.__v418=true;
+    window.closeCashierDay=w;
+  }
+
+  function wrapNightAudit(){
+    const fn=window.naRunAudit;
+    if(typeof fn!=='function'||fn.__v418)return;
+    const w=async function(){
+      try{await hydrate();}catch(e){console.warn('Night Audit cashier closing hydrate failed:',e);}
+      return fn.apply(this,arguments);
+    };
+    w.__v418=true;
+    window.naRunAudit=w;
+  }
+
+  function boot(){
+    sync();
+    wrapCashierClose();
+    wrapNightAudit();
+    [500,1500,3000,5000].forEach(ms=>setTimeout(()=>{sync();wrapCashierClose();wrapNightAudit();},ms));
+    window.addEventListener('focus',sync);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>\n</body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
   'use strict';
