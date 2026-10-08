@@ -11188,8 +11188,7 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div>
-</body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div></body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
@@ -11375,8 +11374,7 @@ function updateFNBTableGuest(){const t=fnbTableById(activeFNBTableId);if(!t)retu
 function sendFNBTableTickets(){
  if(!hasActionPermission("pos.kot")){alert("Access denied. Send KOT / BOT has not been assigned to your user account.");return;}
  const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}syncFNBActiveTable();const pending=t.items.map(i=>({...i,newQty:Math.max(0,Number(i.qty)-Number(i.sentQty||0))})).filter(i=>i.newQty>0);if(!pending.length){alert("No new items to send.");return;}const kot=pending.filter(i=>!fnbIsBarItem(i)),bot=pending.filter(i=>fnbIsBarItem(i));
- const printTicket=(type,rows,no)=>{const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to print KOT/BOT.");return;}const title=type==="BOT"?"BAR ORDER TICKET":"KITCHEN ORDER TICKET";w.document.write(`<html><head><title>${title} ${no}</title><style>body{font-family:Arial;padding:20px;max-width:360px;margin:auto}h1,h2{text-align:center}.line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #999}</style></head><body><h1>${title}</h1><h2>${escapeHtml(t.name)} · ${no}</h2><p>Guest: ${escapeHtml(t.guestName||'Walk-In')}<br>Time: ${escapeHtml(localDateTime())}</p>${rows.map(i=>`<div class="line"><span>${escapeHtml(i.name)}</span><strong>${i.newQty}</strong></div>`).join('')}<script>window.onload=function(){window.print();}<\/script>
-</body></html>`);w.document.close();};
+ const printTicket=(type,rows,no)=>{const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to print KOT/BOT.");return;}const title=type==="BOT"?"BAR ORDER TICKET":"KITCHEN ORDER TICKET";w.document.write(`<html><head><title>${title} ${no}</title><style>body{font-family:Arial;padding:20px;max-width:360px;margin:auto}h1,h2{text-align:center}.line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #999}</style></head><body><h1>${title}</h1><h2>${escapeHtml(t.name)} · ${no}</h2><p>Guest: ${escapeHtml(t.guestName||'Walk-In')}<br>Time: ${escapeHtml(localDateTime())}</p>${rows.map(i=>`<div class="line"><span>${escapeHtml(i.name)}</span><strong>${i.newQty}</strong></div>`).join('')}<script>window.onload=function(){window.print();}<\/script></body></html>`);w.document.close();};
  if(kot.length){const no=fnbNextTicket(t,"KOT");printTicket("KOT",kot,no);fnbEnsureHistory(t).push({no,type:"KOT",time:localDateTime(),items:kot.map(i=>({name:i.name,qty:i.newQty}))});kot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}if(bot.length){const no=fnbNextTicket(t,"BOT");printTicket("BOT",bot,no);fnbEnsureHistory(t).push({no,type:"BOT",time:localDateTime(),items:bot.map(i=>({name:i.name,qty:i.newQty}))});bot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}saveFNBTableData();posOrder=t.items.map(i=>({...i}));renderPOSOrder();refreshFNBTableService();}
 async function settleFNBTable(){
  if(!hasActionPermission("pos.close_table")){alert("Access denied. Close Table / Settle Bill has not been assigned to your user account.");return;}
@@ -11959,8 +11957,7 @@ function cashierShiftRefresh(){
 }
 bindCashierOpeningFloatPersistence();
 
-function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=cashierPaymentSummaryLKR(list),w=window.open('','_blank');if(!w)return;const cl=cashierClosingForBusinessDate(),sh=currentCashierShift()||cl;const expected=Number(sh?.openingFloat||0)+sum.cash-sum.cashRefunds;w.document.write(`<html><head><title>Cashier Report ${d}</title><style>body{font-family:Arial;padding:30px}.line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #ddd}</style></head><body><h2>Signature PMS — Daily Cashier Report</h2><div>Business Date: ${d}</div><div>Cashier: ${currentUser?.username||''}</div><div class='line'><span>Opening Float</span><strong>${accMoney(sh?.openingFloat||0)}</strong></div><div class='line'><span>Gross Received</span><strong>${accMoney(sum.gross)}</strong></div><div class='line'><span>Cash Received</span><strong>${accMoney(sum.cash)}</strong></div><div class='line'><span>Card</span><strong>${accMoney(sum.card)}</strong></div><div class='line'><span>Bank / Online</span><strong>${accMoney(sum.bank)}</strong></div><div class='line'><span>Refunds</span><strong>${accMoney(sum.refunds)}</strong></div><div class='line'><span>Net Collections</span><strong>${accMoney(sum.net)}</strong></div><div class='line'><span>Expected Cash</span><strong>${accMoney(cl?.expectedCash??expected)}</strong></div><div class='line'><span>Actual Cash</span><strong>${accMoney(cl?.actualCash??Number(document.getElementById('csActualCash')?.value||0))}</strong></div><div class='line'><span>Variance</span><strong>${accMoney(cl?.variance??(Number(document.getElementById('csActualCash')?.value||0)-expected))}</strong></div>
-</body></html>`);w.document.close();w.focus();w.print();}
+function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=cashierPaymentSummaryLKR(list),w=window.open('','_blank');if(!w)return;const cl=cashierClosingForBusinessDate(),sh=currentCashierShift()||cl;const expected=Number(sh?.openingFloat||0)+sum.cash-sum.cashRefunds;w.document.write(`<html><head><title>Cashier Report ${d}</title><style>body{font-family:Arial;padding:30px}.line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #ddd}</style></head><body><h2>Signature PMS — Daily Cashier Report</h2><div>Business Date: ${d}</div><div>Cashier: ${currentUser?.username||''}</div><div class='line'><span>Opening Float</span><strong>${accMoney(sh?.openingFloat||0)}</strong></div><div class='line'><span>Gross Received</span><strong>${accMoney(sum.gross)}</strong></div><div class='line'><span>Cash Received</span><strong>${accMoney(sum.cash)}</strong></div><div class='line'><span>Card</span><strong>${accMoney(sum.card)}</strong></div><div class='line'><span>Bank / Online</span><strong>${accMoney(sum.bank)}</strong></div><div class='line'><span>Refunds</span><strong>${accMoney(sum.refunds)}</strong></div><div class='line'><span>Net Collections</span><strong>${accMoney(sum.net)}</strong></div><div class='line'><span>Expected Cash</span><strong>${accMoney(cl?.expectedCash??expected)}</strong></div><div class='line'><span>Actual Cash</span><strong>${accMoney(cl?.actualCash??Number(document.getElementById('csActualCash')?.value||0))}</strong></div><div class='line'><span>Variance</span><strong>${accMoney(cl?.variance??(Number(document.getElementById('csActualCash')?.value||0)-expected))}</strong></div></body></html>`);w.document.close();w.focus();w.print();}
 
 
 /* =========================================================
@@ -12128,8 +12125,7 @@ function printDailyOnePage(){
         +ops+row1+row2+moves
         +"<div class='sub' style='margin-top:10px'>"+audit+"</div>"
         +"<div class='sig'><div>Prepared by</div><div>Checked by</div><div>Approved by</div></div>"
-        +"<div class='ft'>Signature PMS &amp; POS — Daily Report</div>
-</body></html>";
+        +"<div class='ft'>Signature PMS &amp; POS — Daily Report</div></body></html>";
     const w=window.open("","_blank");
     if(!w){alert("Please allow pop-ups in your browser to view the daily report.");return;}
     w.document.open();w.document.write(html);w.document.close();
@@ -14720,8 +14716,7 @@ function reportShell(title,body){
   const w=window.open("","_blank","width=1000,height=800");if(!w){alert("Please allow pop-ups to print reports.");return;}
   w.document.write(`<html><head><title>${escapeHtml(title)}</title><style>body{font-family:Arial;padding:25px;color:#17251d}h1{margin-bottom:5px}h2{margin-top:25px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f5f4}.right{text-align:right}.total{font-weight:bold}small{color:#666}@media print{.no-print{display:none}}
 #users .section{width:100%;max-width:none}#users .table-wrap{width:100%;overflow-x:auto}#users table{width:100%;min-width:900px}#users table th,#users table td{white-space:nowrap}#users table th:first-child,#users table td:first-child{min-width:160px}#users table th:last-child,#users table td:last-child{min-width:160px}#userModal .modal-box{max-width:900px;width:min(96vw,900px)}#userPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:repeat(3,minmax(0,1fr)) !important}@media(max-width:900px){#userPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}}@media(max-width:600px){#userPermissionsGrid,#userReportPermissionsGrid{grid-template-columns:1fr !important}}
-</style></head><body><h1>${escapeHtml(settings?.property||"Hotel")} — ${escapeHtml(title)}</h1><small>Printed: ${new Date().toLocaleString()}</small>${body}<script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
-</body></html>`);w.document.close();
+</style></head><body><h1>${escapeHtml(settings?.property||"Hotel")} — ${escapeHtml(title)}</h1><small>Printed: ${new Date().toLocaleString()}</small>${body}<script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script></body></html>`);w.document.close();
 }
 function accountingReportHTML(type){
   const rev=accountingRevenueTotal(), exp=totalManualExpenses(), profit=rev-exp;
@@ -15217,8 +15212,7 @@ window.printPurchaseOrder=function(poId){
  const itemRows=lines.map(l=>{const lt=Number(l.qty||0)*Number(l.unitCost||0);return `<tr><td>${esc(l.articleCode||'')}</td><td>${esc(l.articleName||'')}</td><td>${esc(l.unit||'')}</td><td style="text-align:right">${Number(l.qty||0)}</td><td style="text-align:right">${typeof accMoney==='function'?accMoney(l.unitCost||0):Number(l.unitCost||0).toFixed(2)}</td><td style="text-align:right">${typeof accMoney==='function'?accMoney(lt):lt.toFixed(2)}</td></tr>`}).join('');
  const w=window.open('','_blank','width=1000,height=800');
  if(!w){alert('Please allow pop-ups for Purchase Order printing.');return;}
- w.document.open();w.document.write(`<!doctype html><html><head><title>${esc(po.number||'Purchase Order')}</title><style>body{font-family:Arial,sans-serif;color:#17251d;padding:35px}h1{margin:0 0 5px;font-size:26px}h2{margin:0 0 18px;font-size:18px}table{width:100%;border-collapse:collapse;margin-top:22px}th,td{border:1px solid #cfd6d2;padding:9px}th{background:#f3f5f4;text-align:left}.right{text-align:right}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.box{border:1px solid #ddd;padding:10px}.total{text-align:right;font-weight:bold;font-size:16px}.footer{margin-top:35px;color:#666;font-size:12px}@media print{.no-print{display:none}body{padding:15px}}</style></head><body><h1>${esc((typeof settings!=='undefined'&&settings?.property)||'Hotel')}</h1><h2>PURCHASE ORDER</h2><div class="meta"><div class="box"><strong>PO Number:</strong> ${esc(po.number||'')}<br><strong>PO Date:</strong> ${esc(po.date||'')}<br><strong>PR Reference:</strong> ${esc(po.prNumber||'')}</div><div class="box"><strong>Supplier:</strong> ${esc(po.supplier||supplier.name||'')}<br><strong>Email:</strong> ${esc(supplier.email||'')}<br><strong>Department:</strong> ${esc(po.department||'')}</div></div><table><thead><tr><th>Code</th><th>Article</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${itemRows}</tbody><tfoot><tr><td colspan="5" class="total">TOTAL</td><td class="right"><strong>${typeof accMoney==='function'?accMoney(total):total.toFixed(2)}</strong></td></tr></tfoot></table><p><strong>Payment:</strong> ${esc(po.payment||'')} &nbsp; <strong>Status:</strong> ${esc(po.status||'Open')}</p><p><strong>Notes:</strong> ${esc(po.notes||'')}</p><div class="footer">Printed: ${new Date().toLocaleString()}</div><script>window.onload=function(){setTimeout(function(){window.focus();window.print()},300)}<\/script>
-</body></html>`);w.document.close();
+ w.document.open();w.document.write(`<!doctype html><html><head><title>${esc(po.number||'Purchase Order')}</title><style>body{font-family:Arial,sans-serif;color:#17251d;padding:35px}h1{margin:0 0 5px;font-size:26px}h2{margin:0 0 18px;font-size:18px}table{width:100%;border-collapse:collapse;margin-top:22px}th,td{border:1px solid #cfd6d2;padding:9px}th{background:#f3f5f4;text-align:left}.right{text-align:right}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.box{border:1px solid #ddd;padding:10px}.total{text-align:right;font-weight:bold;font-size:16px}.footer{margin-top:35px;color:#666;font-size:12px}@media print{.no-print{display:none}body{padding:15px}}</style></head><body><h1>${esc((typeof settings!=='undefined'&&settings?.property)||'Hotel')}</h1><h2>PURCHASE ORDER</h2><div class="meta"><div class="box"><strong>PO Number:</strong> ${esc(po.number||'')}<br><strong>PO Date:</strong> ${esc(po.date||'')}<br><strong>PR Reference:</strong> ${esc(po.prNumber||'')}</div><div class="box"><strong>Supplier:</strong> ${esc(po.supplier||supplier.name||'')}<br><strong>Email:</strong> ${esc(supplier.email||'')}<br><strong>Department:</strong> ${esc(po.department||'')}</div></div><table><thead><tr><th>Code</th><th>Article</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${itemRows}</tbody><tfoot><tr><td colspan="5" class="total">TOTAL</td><td class="right"><strong>${typeof accMoney==='function'?accMoney(total):total.toFixed(2)}</strong></td></tr></tfoot></table><p><strong>Payment:</strong> ${esc(po.payment||'')} &nbsp; <strong>Status:</strong> ${esc(po.status||'Open')}</p><p><strong>Notes:</strong> ${esc(po.notes||'')}</p><div class="footer">Printed: ${new Date().toLocaleString()}</div><script>window.onload=function(){setTimeout(function(){window.focus();window.print()},300)}<\/script></body></html>`);w.document.close();
 };
 window.sendPurchaseOrderToSupplier=function(poId){
  let all=[];try{all=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');}catch(e){all=[];}
@@ -17668,8 +17662,7 @@ function printDoc(title,inner){
   if(!w){alert('Please allow pop-ups in your browser to print.');return;}
   const css='@page{size:A4;margin:12mm}body{font-family:Arial,sans-serif;color:#17251d;font-size:11px}h1{font-size:18px;margin:0}h2{font-size:14px;margin:4px 0 10px}table{width:100%;border-collapse:collapse;margin:8px 0 14px}th,td{padding:4px 5px;border-bottom:1px solid #ddd;text-align:left;font-size:10.5px}th{background:#f3f6f4}.r{text-align:right}.hd{text-align:center;border-bottom:2px solid #17251d;padding-bottom:8px;margin-bottom:10px}.m{color:#555}.np{text-align:center;margin:10px}@media print{.np{display:none}}';
   w.document.open();
-  w.document.write('<html><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>'+css+'</style></head><body><div class="np"><button onclick="window.print()">Print</button></div><div class="hd"><h1>'+esc(settings?.property||'Signature PMS')+'</h1><h2>'+esc(title)+'</h2><div class="m">Generated: '+esc(localDateTime())+' · By: '+esc(uname())+'</div></div>'+inner+'
-</body></html>');
+  w.document.write('<html><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>'+css+'</style></head><body><div class="np"><button onclick="window.print()">Print</button></div><div class="hd"><h1>'+esc(settings?.property||'Signature PMS')+'</h1><h2>'+esc(title)+'</h2><div class="m">Generated: '+esc(localDateTime())+' · By: '+esc(uname())+'</div></div>'+inner+'</body></html>');
   w.document.close();
   setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
@@ -19327,55 +19320,118 @@ async function hydrateSupabaseRooms(){
 }
 </script>
 <script>
-/* SUPABASE CLOUD — STEP 4.1 STORES / INVENTORY */
+/* v2.1.400 — STORES + RECIPES CLOUD SOURCE OF TRUTH
+   Uses the existing pms_cloud_records table (same cloud pattern as the
+   working Purchasing supplier/article modules). Purchasing itself is not
+   modified here. */
 (function(){
-  const TABLE='property_store_records';
-  /* v2.1.371: Articles are intentionally excluded from legacy property_store_records. Articles use pms_cloud_records only. */
-  const TYPES={grns:'signature_pms_grns',stock_movements:'signature_pms_stock_movements',recipes:'signature_pms_recipes',settings:'signature_pms_stores_settings',requisitions:'signature_pms_store_requisitions'};
+  'use strict';
+  const TABLE='pms_cloud_records';
+  const TYPES={
+    stock_movements:'signature_pms_stock_movements',
+    recipes:'signature_pms_recipes',
+    settings:'signature_pms_stores_settings',
+    requisitions:'signature_pms_store_requisitions'
+  };
   const KEYS=Object.values(TYPES);
-  const typeForKey=k=>Object.keys(TYPES).find(t=>TYPES[t]===k)||null;
-  const readKey=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
   const prop=()=>String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
+  const read=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
+  const write=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(Array.isArray(v)?v:[]));return true;}catch(e){return false;}};
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
   const mine=x=>String(x?.propertyId||'')===prop();
-  const setMsg=(m,k='info')=>{try{setSupabaseCloudMessage(m,k);}catch(e){}};
-  async function client(){return typeof initSupabaseClient==='function'?initSupabaseClient():null;}
-  async function auth(c){const {data:{session},error}=await c.auth.getSession();if(error)throw error;return session?.user||null;}
-  window.syncSupabaseStores=async function(){
-    try{
-      const c=await client();if(!c||!prop())return false;const u=await auth(c);if(!u)return false;
-      const rows=[],now=new Date().toISOString();
-      KEYS.forEach(k=>{const type=typeForKey(k);readKey(k).filter(mine).forEach((record,i)=>{const id=String(record?.id||(`${type}_${i}`));rows.push({property_id:prop(),record_type:type,record_id:id,record_data:record,updated_at:now});});});
-      if(rows.length){const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});if(error)throw error;}
-      const {data:existing,error:readErr}=await c.from(TABLE).select('record_type,record_id').eq('property_id',prop());if(readErr)throw readErr;
-      const keep=new Set(rows.map(r=>r.record_type+'|'+r.record_id));
-      for(const r of (existing||[])){const k=String(r.record_type)+'|'+String(r.record_id);if(!keep.has(k)){const {error}=await c.from(TABLE).delete().eq('property_id',prop()).eq('record_type',r.record_type).eq('record_id',r.record_id);if(error)throw error;}}
-      setMsg('Stores / Inventory synchronized successfully.','success');return true;
-    }catch(e){console.warn('Supabase Stores sync skipped:',e);setMsg('Stores remain local; cloud sync failed: '+(e?.message||e),'error');return false;}
-  };
-  window.hydrateSupabaseStores=async function(){
-    try{
-      const c=await client();if(!c||!prop())return false;const u=await auth(c);if(!u)return false;
-      const {data,error}=await c.from(TABLE).select('record_type,record_id,record_data,updated_at').eq('property_id',prop());if(error)throw error;
-      const cloud=data||[];if(!cloud.length){await window.syncSupabaseStores();return true;}
-      const byType={};cloud.forEach(r=>(byType[r.record_type]||(byType[r.record_type]=[])).push(r));
-      Object.entries(TYPES).forEach(([type,key])=>{
-        const all=readKey(key),other=all.filter(x=>!mine(x)),localMine=all.filter(mine),crows=byType[type]||[],cmap=new Map(crows.map(r=>[String(r.record_id),r])),merged=[];
-        crows.forEach(r=>{const cr=r.record_data||{},lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));if(lr&&lr.updatedAt&&r.updated_at&&new Date(lr.updatedAt)>new Date(r.updated_at))merged.push(lr);else merged.push({...cr,propertyId:prop()});});
-        localMine.forEach(l=>{if(!cmap.has(String(l?.id||'')))merged.push(l);});localStorage.setItem(key,JSON.stringify(other.concat(merged)));
-      });
-      try{if(typeof renderStores==='function')renderStores();}catch(e){}try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
-      setMsg('Cloud Stores / Inventory refreshed successfully.','success');return true;
-    }catch(e){console.warn('Supabase Stores hydration skipped:',e);setMsg('Stores remain local; cloud refresh failed: '+(e?.message||e),'error');return false;}
-  };
-  function wrap(name){const fn=window[name];if(typeof fn!=='function'||fn.__storesCloudWrapped)return;const wrapped=function(){const result=fn.apply(this,arguments);setTimeout(()=>window.syncSupabaseStores(),250);return result;};wrapped.__storesCloudWrapped=true;window[name]=wrapped;}
-  function bind(){['saveSupplierMaster','saveArticleMaster','savePurchaseRequest','savePOFromPR','saveGRN','stSaveIssue','stSaveWaste','stSaveOpening','stSaveCount','stSaveSettings','stSaveRecipe','stDeleteRecipe','stSaveReqSetting','stSaveReq','stApproveReq','stRejectReq','stCancelReq','stCloseReq','stSaveIssueReq','stReqPR'].forEach(wrap);}
-  function wrapAfter(name,after){const fn=window[name];if(typeof fn!=='function'||fn.__storesCloudAfterWrapped)return;const wrapped=function(){const result=fn.apply(this,arguments);setTimeout(after,350);return result;};wrapped.__storesCloudAfterWrapped=true;window[name]=wrapped;}
-  function bindNavigation(){
-    wrapAfter('switchProperty',()=>window.hydrateSupabaseStores());
-    wrapAfter('hydrateCloudAfterLocalLogin',()=>window.hydrateSupabaseStores());
+  const role=()=>String(window.currentUser?.role||currentUser?.role||'').toLowerCase();
+  async function session(){
+    const c=client(),p=prop(); if(!c||!p)return null;
+    const r=await c.auth.getSession(); if(r.error)throw r.error;
+    return r.data?.session?.user?{c,p,user:r.data.session.user}:null;
   }
-  const boot=async()=>{bind();bindNavigation();if(typeof currentPropertyId!=='undefined'&&currentPropertyId)await window.hydrateSupabaseStores();else setTimeout(()=>window.hydrateSupabaseStores(),1200);};
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();[500,1500,3000].forEach(ms=>setTimeout(()=>{bind();bindNavigation();},ms));
+  function msg(t,k){try{if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage(t,k||'info');}catch(e){}}
+  function render(){
+    try{if(typeof renderStores==='function')renderStores();}catch(e){}
+    try{if(typeof stRenderRecipes==='function')stRenderRecipes();}catch(e){}
+    try{if(typeof renderStockStatement==='function')renderStockStatement();}catch(e){}
+    try{if(typeof renderStoreRequisitions==='function')renderStoreRequisitions();}catch(e){}
+  }
+  async function pullKey(z,key){
+    const q=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key',key).maybeSingle();
+    if(q.error)throw q.error;
+    if(!q.data)return false;
+    const cloud=Array.isArray(q.data.data)?q.data.data:[];
+    const local=read(key), other=local.filter(x=>!mine(x));
+    write(key,other.concat(cloud.map(x=>({...x,propertyId:z.p}))));
+    return true;
+  }
+  async function pushKey(z,key){
+    const arr=read(key).filter(mine).map(x=>({...x,propertyId:z.p}));
+    const r=await z.c.from(TABLE).upsert({
+      property_id:z.p,storage_key:key,data:arr,
+      updated_by:z.user?.id||null,updated_at:new Date().toISOString()
+    },{onConflict:'property_id,storage_key'});
+    if(r.error)throw r.error;
+    return true;
+  }
+  async function hydrate(){
+    try{
+      const z=await session(); if(!z)return false;
+      let found=false;
+      for(const key of KEYS)found=(await pullKey(z,key))||found;
+      render();
+      msg(found?'Stores & Recipes refreshed from Supabase cloud.':'Stores & Recipes cloud connected.','success');
+      return true;
+    }catch(e){
+      console.warn('Stores/Recipes cloud pull failed:',e);
+      msg('Stores / Recipes cloud refresh failed: '+(e?.message||e),'error');
+      return false;
+    }
+  }
+  async function publish(){
+    try{
+      const z=await session(); if(!z)return false;
+      for(const key of KEYS)await pushKey(z,key);
+      msg('Stores & Recipes saved to Supabase cloud.','success');
+      return true;
+    }catch(e){
+      console.warn('Stores/Recipes cloud save failed:',e);
+      msg('Stores / Recipes cloud save failed: '+(e?.message||e),'error');
+      return false;
+    }
+  }
+  window.syncSupabaseStores=publish;
+  window.hydrateSupabaseStores=hydrate;
+  window.syncSupabaseStoresRecipesCloud=publish;
+  window.hydrateSupabaseStoresRecipesCloud=hydrate;
+
+  function wrap(name){
+    const fn=window[name];
+    if(typeof fn!=='function'||fn.__v400StoresWrapped)return;
+    const w=function(){
+      const r=fn.apply(this,arguments);
+      [300,1000,2500].forEach(ms=>setTimeout(publish,ms));
+      return r;
+    };
+    w.__v400StoresWrapped=true;window[name]=w;
+  }
+  function navWrap(name){
+    const fn=window[name];
+    if(typeof fn!=='function'||fn.__v400StoresNavWrapped)return;
+    const w=function(){
+      const r=fn.apply(this,arguments);
+      [500,1500,3000].forEach(ms=>setTimeout(hydrate,ms));
+      return r;
+    };
+    w.__v400StoresNavWrapped=true;window[name]=w;
+  }
+  function bind(){
+    ['stSaveIssue','stSaveWaste','stSaveOpening','stSaveCount','stSaveSettings','stSaveRecipe','stDeleteRecipe','stSaveReqSetting','stSaveReq','stApproveReq','stRejectReq','stCancelReq','stCloseReq','stSaveIssueReq','stReqPR'].forEach(wrap);
+    navWrap('switchProperty');navWrap('hydrateCloudAfterLocalLogin');
+  }
+  function boot(){
+    bind();
+    [700,1800,3500].forEach(ms=>setTimeout(bind,ms));
+    [1200,3000,6000].forEach(ms=>setTimeout(hydrate,ms));
+    setInterval(()=>{if(document.hidden)return;hydrate();},12000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
 <script id="v2-1-365-purchasing-supplier-canonical-cloud-safe">
@@ -21894,138 +21950,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   window.signatureAccountingJournalCloud={sync:cycle};
   setTimeout(cycle,2500);
   setInterval(cycle,POLL_MS);
-})();
-</script>
-
-<script id="v2-1-399-stores-recipes-pms-cloud-canonical">
-/* v2.1.399 — STORES + RECIPES CLOUD SOURCE OF TRUTH
-   Keeps Purchasing untouched. Store/recipe operational data is synchronized
-   through pms_cloud_records so Admin and Reception see the same property data. */
-(function(){
-  'use strict';
-  if(window.__signatureV399StoresRecipesCloud)return;
-  window.__signatureV399StoresRecipesCloud=true;
-
-  const TABLE='pms_cloud_records';
-  const TYPES={
-    stock_movements:'signature_pms_stock_movements',
-    recipes:'signature_pms_recipes',
-    settings:'signature_pms_stores_settings',
-    requisitions:'signature_pms_store_requisitions'
-  };
-  const prop=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
-  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
-  const read=k=>{try{const v=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
-  const write=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}};
-  const mine=x=>String(x?.propertyId||'')===prop();
-  async function ready(){
-    const c=client(), p=prop();
-    if(!c||!p)return null;
-    const {data,error}=await c.auth.getSession();
-    if(error)throw error;
-    if(!data?.session?.user)return null;
-    return {c,p};
-  }
-  async function pullKey(z,key,type){
-    const {c,p}=z;
-    const q=await c.from(TABLE).select('record_id,data,updated_at').eq('property_id',p).eq('storage_key',key);
-    if(q.error)throw q.error;
-    const cloud=q.data||[];
-    if(!cloud.length)return false;
-    const local=read(key), other=local.filter(x=>!mine(x));
-    const localMine=local.filter(mine);
-    const cmap=new Map(cloud.map(r=>[String(r.record_id),r]));
-    const merged=[];
-    cloud.forEach(r=>{
-      const cr=r.data||{};
-      const lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
-      const lu=Date.parse(String(lr?.updatedAt||lr?.createdAt||''));
-      const cu=Date.parse(String(r.updated_at||''));
-      /* A newer local record is retained and will be published on the next push. */
-      merged.push(lr&&Number.isFinite(lu)&&Number.isFinite(cu)&&lu>cu?lr:{...cr,propertyId:p});
-    });
-    /* Keep local records that have not yet reached cloud. */
-    localMine.forEach(l=>{if(!cmap.has(String(l?.id||'')))merged.push(l);});
-    write(key,other.concat(merged));
-    return true;
-  }
-  async function hydrate(){
-    try{
-      const z=await ready();if(!z)return false;
-      let found=false;
-      for(const [type,key] of Object.entries(TYPES)){
-        found=(await pullKey(z,key,type))||found;
-      }
-      try{if(typeof renderStores==='function')renderStores();}catch(e){}
-      try{if(typeof stRenderRecipes==='function')stRenderRecipes();}catch(e){}
-      try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage(found?'Stores & Recipes refreshed from Supabase cloud.':'Stores & Recipes cloud is connected; no cloud records were found yet.','success');
-      return true;
-    }catch(e){
-      console.error('Stores & Recipes cloud hydration failed:',e);
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Stores & Recipes cloud refresh failed: '+(e?.message||e),'error');
-      return false;
-    }
-  }
-  async function pushKey(z,key,type){
-    const {c,p}=z;
-    const arr=read(key).filter(mine).map(x=>({...x,propertyId:p}));
-    const rows=arr.map((record,i)=>({
-      property_id:p,
-      storage_key:key,
-      data:record,
-      updated_by:z.uid||null,
-      updated_at:record?.updatedAt||record?.createdAt||new Date().toISOString()
-    }));
-    /* pms_cloud_records uses one row per property/storage key, so arrays are kept together. */
-    const payload={property_id:p,storage_key:key,data:arr,updated_by:z.uid||null,updated_at:new Date().toISOString()};
-    const q=await c.from(TABLE).upsert(payload,{onConflict:'property_id,storage_key'});
-    if(q.error)throw q.error;
-    return true;
-  }
-  async function publish(){
-    try{
-      const z=await ready();if(!z)return false;
-      const sess=await z.c.auth.getSession();z.uid=sess?.data?.session?.user?.id||null;
-      for(const [type,key] of Object.entries(TYPES))await pushKey(z,key,type);
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Stores & Recipes synchronized with Supabase cloud.','success');
-      return true;
-    }catch(e){
-      console.error('Stores & Recipes cloud publish failed:',e);
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Stores & Recipes cloud save failed: '+(e?.message||e),'error');
-      return false;
-    }
-  }
-  window.hydrateSupabaseStoresRecipesCloud=hydrate;
-  window.syncSupabaseStoresRecipesCloud=publish;
-
-  function wrap(name){
-    const fn=window[name];
-    if(typeof fn!=='function'||fn.__v399StoresRecipesWrapped)return;
-    const w=function(){
-      const result=fn.apply(this,arguments);
-      [250,900,2000].forEach(ms=>setTimeout(publish,ms));
-      return result;
-    };
-    w.__v399StoresRecipesWrapped=true;window[name]=w;
-  }
-  function bind(){
-    ['stSaveIssue','stSaveWaste','stSaveOpening','stSaveCount','stSaveSettings','stSaveRecipe','stDeleteRecipe','stSaveReqSetting','stSaveReq','stApproveReq','stRejectReq','stCancelReq','stCloseReq','stSaveIssueReq','stReqPR'].forEach(wrap);
-  }
-  function nav(){
-    ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{
-      const fn=window[name];
-      if(typeof fn!=='function'||fn.__v399StoresRecipesNav)return;
-      const w=function(){const r=fn.apply(this,arguments);[500,1500,3000].forEach(ms=>setTimeout(hydrate,ms));return r;};
-      w.__v399StoresRecipesNav=true;window[name]=w;
-    });
-  }
-  function boot(){
-    bind();nav();
-    [800,1800,3500].forEach(ms=>setTimeout(()=>{bind();nav();},ms));
-    [1200,2500,4500].forEach(ms=>setTimeout(hydrate,ms));
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
 </body><script id="v2-1-360-po-open-button-final">
