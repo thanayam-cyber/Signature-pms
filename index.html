@@ -8722,17 +8722,37 @@ function folioRestaurantLKR(reservationId){
     return Number(f.restaurant||0);
 }
 
+/* v2.1.384 — Guest Folio mixed-currency fix.
+   The reservation accommodation amount may be stored in the guest currency (USD),
+   while Experience / Extra / POS charges are posted in the PMS base currency (LKR).
+   Never add those raw numbers together. The folio financial total is always LKR;
+   the UI converts that LKR total back to the guest currency for foreign guests. */
 function getFolioTotal(reservationId){
-    const r=reservations.find(x=>x.id===reservationId);
+    const r=reservations.find(x=>String(x.id||'')===String(reservationId||''));
     const f=getFolio(reservationId);
     if(!r) return 0;
+    const accommodationLKR=reservationAmountLKR(r,Number(r.total||0));
     const restaurantLKR=folioRestaurantLKR(reservationId);
-    /* Keep the persisted folio in the same settlement currency so subsequent
-       screens and cloud snapshots do not reintroduce the raw POS amount. */
-    if(f && Math.abs(Number(f.restaurant||0)-restaurantLKR)>0.001){
-        f.restaurant=restaurantLKR;
+    const extrasLKR=Number(f?.extras||0);
+    const serviceLKR=Number(f?.serviceCharges||0);
+    const taxesLKR=Number(f?.taxes||0);
+    const discountsLKR=Number(f?.discounts||0);
+    if(f){
+        if(Math.abs(Number(f.accommodation||0)-accommodationLKR)>0.001) f.accommodation=accommodationLKR;
+        if(Math.abs(Number(f.restaurant||0)-restaurantLKR)>0.001) f.restaurant=restaurantLKR;
     }
-    return Number(r.total||0)+restaurantLKR+Number(f?.extras||0)+Number(f?.serviceCharges||0)+Number(f?.taxes||0)-Number(f?.discounts||0);
+    return accommodationLKR+restaurantLKR+extrasLKR+serviceLKR+taxesLKR-discountsLKR;
+}
+
+function folioGuestAmount(r,amountLKR){
+    const rate=reservationSettlementRate(r);
+    return rate>0 ? Number(amountLKR||0)/rate : Number(amountLKR||0);
+}
+
+function folioDisplayMoney(r,amountLKR){
+    const cur=String(r?.currency||r?.guestCurrency||'LKR').toUpperCase();
+    if(cur==='LKR') return reservationMoney(r,amountLKR);
+    return reservationMoney(r,folioGuestAmount(r,amountLKR));
 }
 
 
@@ -9081,17 +9101,17 @@ function viewFolio(reservationId){
 
         <div class="report-line">
             <strong>Total</strong>
-            <div style="text-align:right"><strong>${reservationMoney(r,total)}</strong></div>
+            <div style="text-align:right"><strong>${folioDisplayMoney(r,total)}</strong>${String(r?.currency||'LKR').toUpperCase()!=='LKR'?`<div style="font-size:11px;color:#6b7280">${accMoney(total)}</div>`:''}</div>
         </div>
 
         <div class="report-line">
             <span>Paid</span>
-            <div style="text-align:right"><strong>${reservationMoney(r,paid)}</strong></div>
+            <div style="text-align:right"><strong>${folioDisplayMoney(r,paid)}</strong>${String(r?.currency||'LKR').toUpperCase()!=='LKR'?`<div style="font-size:11px;color:#6b7280">${accMoney(paid)}</div>`:''}</div>
         </div>
 
         <div class="report-line">
             <strong>Balance</strong>
-            <div style="text-align:right"><strong>${reservationMoney(r,balance)}</strong></div>
+            <div style="text-align:right"><strong>${folioDisplayMoney(r,balance)}</strong>${String(r?.currency||'LKR').toUpperCase()!=='LKR'?`<div style="font-size:11px;color:#6b7280">${accMoney(balance)}</div>`:''}</div>
         </div>
 
     </div>
@@ -12485,7 +12505,10 @@ function fnbDailyClosingData(selected){
   (sales||[]).filter(s=>String(s.date||s.businessDate||"").slice(0,10)===String(selected) && !fnbSaleIsVoided(s)).forEach(s=>{
     const id=String(s.outletId||"legacy");
     if(!rows[id])rows[id]={id,name:String(s.outletName||"Other"),orders:0,net:0,cash:0,card:0,room:0,other:0};
-    const net=Number(s.total||0), m=String(s.paymentMethod||s.payment_method||"").toLowerCase();
+    // F&B sales may carry the guest/payment amount in USD while Daily Closing
+    // is an LKR accounting report. Convert the sale total to LKR before
+    // calculating Net Sales, Cash, Card, Room Charge and Expected Cash.
+    const net=fnbSaleAmountLKR(s,Number(s.total||0)), m=String(s.paymentMethod||s.payment_method||"").toLowerCase();
     rows[id].orders++; rows[id].net+=net;
     if(m.includes("cash"))rows[id].cash+=net;
     else if(m.includes("card")||m.includes("credit")||m.includes("debit"))rows[id].card+=net;
