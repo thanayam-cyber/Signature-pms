@@ -14252,7 +14252,7 @@ window.postDailyRevenue=function(){
   let ref='REV-'+d.replace(/-/g,'');
   let description='Daily Revenue Posting';
   if(alreadyPosted){
-    if(!dailyRevenueHasUnpostedFNB(d)){alert('Daily revenue for '+d+' has already been fully posted.');return;}
+    if(!dailyRevenueHasUnpostedRevenue(d)){alert('Daily revenue for '+d+' has already been fully posted.');return;}
     if(fnbDelta['Restaurant Revenue']>0.009)lines.push({account:'Restaurant Revenue',debit:0,credit:fnbDelta['Restaurant Revenue'],revenueSource:'Restaurant POS'});
     if(fnbDelta['Bar Revenue']>0.009)lines.push({account:'Bar Revenue',debit:0,credit:fnbDelta['Bar Revenue'],revenueSource:'Bar POS'});
     if(experienceDelta>0.009)lines.push({account:'Experience / Recreation Revenue',debit:0,credit:experienceDelta,revenueSource:'Experience Revenue'});
