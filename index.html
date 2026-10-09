@@ -1725,7 +1725,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.150 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.419 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -22779,7 +22779,104 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
-</script>\n</body><script id="v2-1-360-po-open-button-final">
+</script>\n<script id="v2-1-419-cashier-shift-cloud-sync-fix">
+/* v2.1.419 — General Cashier Shift & Daily Closing cloud sync.
+   Syncs the existing general cashier shift and closing records by property.
+   A user's UI still shows only their own shift; other cashiers' open shifts
+   remain visible only through the existing shared-status logic. F&B POS,
+   Purchasing, Payroll, Accounting and login are not modified. */
+(function(){
+  'use strict';
+  if(window.__signatureV419CashierShiftCloud)return;
+  window.__signatureV419CashierShiftCloud=true;
+  const TABLE='pms_cloud_records';
+  const SHIFT_KEY='signature_pms_cashier_shifts_v184';
+  const CLOSE_KEY='signature_pms_cashier_closings';
+  const prop=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  function read(key){try{const a=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}}
+  function write(key,a){try{localStorage.setItem(key,JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}}
+  async function auth(){
+    const c=client(),p=prop();
+    if(!c||!p)return null;
+    const s=await c.auth.getSession();
+    if(s.error)throw s.error;
+    const user=s.data?.session?.user;
+    return user?{c,p,user}:null;
+  }
+  async function cloudRows(a,key){
+    const q=await a.c.from(TABLE).select('data').eq('property_id',a.p).eq('storage_key',key).maybeSingle();
+    if(q.error)throw q.error;
+    return q.data?(Array.isArray(q.data.data)?q.data.data:[]):null;
+  }
+  function rowId(x,key){
+    return String(x?.id||(key===CLOSE_KEY?`${x?.date||''}_${x?.closedBy||x?.cashier||''}`:`${x?.businessDate||''}_${x?.cashier||''}_${x?.openedAt||''}`));
+  }
+  async function syncKey(a,key){
+    const local=read(key);
+    const localMine=local.filter(x=>String(x?.propertyId||a.p)===a.p).map(x=>({...x,propertyId:a.p}));
+    const cloud=await cloudRows(a,key);
+    const cloudMine=(Array.isArray(cloud)?cloud:[]).filter(x=>String(x?.propertyId||a.p)===a.p).map(x=>({...x,propertyId:a.p}));
+    const map=new Map();
+    // Cloud first, local second: recent local edits win, but an empty local
+    // array can never erase records already published by another user.
+    [...cloudMine,...localMine].forEach(x=>map.set(rowId(x,key),x));
+    const merged=[...map.values()];
+    write(key,local.filter(x=>String(x?.propertyId||'')!==a.p).concat(merged));
+    if(merged.length>0){
+      const q=await a.c.from(TABLE).upsert({property_id:a.p,storage_key:key,data:merged,updated_by:a.user.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      if(q.error)throw q.error;
+    }
+    return merged;
+  }
+  async function syncAndRefresh(){
+    try{
+      const a=await auth();
+      if(!a)return false;
+      await syncKey(a,SHIFT_KEY);
+      await syncKey(a,CLOSE_KEY);
+      return true;
+    }catch(e){console.warn('v2.1.419 cashier cloud sync failed:',e);return false;}
+  }
+  function wrap(name,flag,after){
+    const original=window[name];
+    if(typeof original!=='function'||original[flag])return;
+    const wrapped=function(){
+      const result=original.apply(this,arguments);
+      if(after)setTimeout(async()=>{await syncAndRefresh();try{if(typeof window.cashierShiftRefresh==='function'&&name!=='cashierShiftRefresh')window.cashierShiftRefresh.__v419Original?.()}catch(e){}},450);
+      return result;
+    };
+    wrapped[flag]=true;
+    if(name==='cashierShiftRefresh')wrapped.__v419Original=original;
+    window[name]=wrapped;
+  }
+  function bind(){
+    // Refresh is the explicit user action that pulls records from Supabase
+    // before recalculating the cashier view.
+    const original=window.cashierShiftRefresh;
+    if(typeof original==='function'&&!original.__v419Refresh){
+      const wrapped=function(){
+        syncAndRefresh().then(()=>{try{original.apply(this,arguments)}catch(e){console.warn(e)}});
+      };
+      wrapped.__v419Refresh=true;
+      window.cashierShiftRefresh=wrapped;
+    }
+    wrap('openCashierShift','__v419Open',true);
+    wrap('closeCashierDay','__v419Close',true);
+  }
+  async function boot(){
+    bind();
+    await syncAndRefresh();
+    try{if(typeof naRender==='function')naRender()}catch(e){}
+    [700,1800,3500].forEach(ms=>setTimeout(()=>{bind();syncAndRefresh().then(()=>{try{if(typeof naRender==='function')naRender()}catch(e){}})},ms));
+    window.addEventListener('focus',()=>syncAndRefresh().then(()=>{try{if(typeof naRender==='function')naRender()}catch(e){}}));
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncAndRefresh().then(()=>{try{if(typeof naRender==='function')naRender()}catch(e){}})});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+
+</body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
   'use strict';
