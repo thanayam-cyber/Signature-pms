@@ -469,6 +469,32 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <style>
 .gm-dash{font-size:14px}.gm-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.gm-title h2{margin:0;font-size:22px}.gm-title p{margin:4px 0 0;color:#64748b;font-size:12px}.gm-toggle{display:flex;gap:4px;background:#f1f5f9;padding:4px;border-radius:8px}.gm-toggle button{border:0;background:transparent;padding:7px 13px;border-radius:6px;cursor:pointer;font-weight:600;color:#64748b}.gm-toggle button.active{background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.12)}.gm-kpis{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#fff}.gm-kpi{padding:18px 20px;min-height:112px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}.gm-kpi:nth-child(3n){border-right:0}.gm-kpi:nth-last-child(-n+3){border-bottom:0}.gm-label{font-size:12px;font-weight:700;color:#475569}.gm-value{font-size:26px;font-weight:800;margin-top:3px;color:#0f172a}.gm-sub{font-size:11px;color:#64748b;margin-top:5px}.gm-section{margin-top:18px}.gm-section h3{margin:0 0 10px;font-size:16px;color:#0f172a}.gm-strip{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}.gm-strip .gm-cell{padding:12px 14px;border-right:1px solid #e2e8f0}.gm-strip .gm-cell:last-child{border-right:0}.gm-cell strong{display:block;font-size:17px;color:#0f172a}.gm-cell span{font-size:11px;color:#64748b}.gm-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.gm-table th,.gm-table td{padding:9px 10px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:12px}.gm-table th{background:#f8fafc;color:#475569;font-weight:700}.gm-table tr:last-child td{border-bottom:0}.gm-low{background:#fff7ed}.gm-ops{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}.gm-op{padding:13px;text-align:center;border-right:1px solid #e2e8f0}.gm-op:last-child{border-right:0}.gm-op strong{font-size:21px;display:block}.gm-op span{font-size:11px;color:#64748b}.gm-two{display:grid;grid-template-columns:1fr 1fr;gap:18px}.gm-alerts{border:1px solid #e2e8f0;border-radius:8px;background:#fff;overflow:hidden}.gm-alert{display:flex;gap:10px;padding:11px 13px;border-bottom:1px solid #e2e8f0}.gm-alert:last-child{border-bottom:0}.gm-alert .dot{width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-top:5px;flex:0 0 auto}.gm-alert.ok .dot{background:#22c55e}.gm-alert b{display:block;font-size:12px}.gm-alert span{font-size:11px;color:#64748b}.gm-movement{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.gm-move{border:1px solid #e2e8f0;border-radius:8px;padding:13px;background:#fff}.gm-move strong{font-size:20px}.gm-move div{font-size:12px;font-weight:700}.gm-move small{display:block;color:#64748b;margin-top:3px}.gm-actions{display:flex;gap:8px;flex-wrap:wrap}.gm-note{font-size:11px;color:#64748b;margin-top:8px}.gm-empty{padding:16px;text-align:center;color:#64748b;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
 @media(max-width:900px){.gm-kpis{grid-template-columns:1fr 1fr}.gm-kpi:nth-child(3n){border-right:1px solid #e2e8f0}.gm-strip,.gm-ops{grid-template-columns:repeat(2,1fr)}.gm-two{grid-template-columns:1fr}.gm-kpi:nth-last-child(-n+3){border-bottom:1px solid #e2e8f0}.gm-kpi:last-child{border-bottom:0}.gm-kpi:nth-child(even){border-right:0}}
+/* v2.1.425: dashboard-only mobile layout refinement */
+@media(max-width:600px){
+  #dashboard .gm-dash{width:100%;min-width:0;overflow-wrap:anywhere}
+  #dashboard .gm-head{display:flex;flex-direction:column;align-items:stretch;gap:10px}
+  #dashboard .gm-title h2{font-size:20px;line-height:1.25}
+  #dashboard .gm-title p{line-height:1.45}
+  #dashboard .gm-toggle{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;box-sizing:border-box}
+  #dashboard .gm-toggle button{padding:9px 6px;min-height:38px}
+  #dashboard .gm-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #dashboard .gm-kpi,#dashboard .gm-kpi:nth-child(3n){min-width:0;padding:12px 10px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
+  #dashboard .gm-kpi:nth-child(even){border-right:0}
+  #dashboard .gm-kpi:last-child{border-bottom:0}
+  #dashboard .gm-value{font-size:clamp(18px,5vw,24px);overflow-wrap:anywhere}
+  #dashboard .gm-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #dashboard .gm-strip .gm-cell{min-width:0;padding:10px 9px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0}
+  #dashboard .gm-strip .gm-cell:nth-child(even){border-right:0}
+  #dashboard .gm-strip .gm-cell strong{font-size:15px;overflow-wrap:anywhere}
+  #dashboard .gm-ops{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #dashboard .gm-op{min-width:0;padding:10px 7px;border-bottom:1px solid #e2e8f0}
+  #dashboard .gm-op:nth-child(even){border-right:0}
+  #dashboard .gm-two{grid-template-columns:minmax(0,1fr);gap:12px}
+  #dashboard .gm-movement{grid-template-columns:minmax(0,1fr)}
+  #dashboard .gm-table{display:block;max-width:100%;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  #dashboard .gm-actions{gap:6px}
+  #dashboard .gm-actions button{max-width:100%;white-space:normal}
+}
 </style>
 <div class="gm-dash">
 <div class="gm-head">
@@ -12033,6 +12059,9 @@ function renderDashboard(){
     const lowest=outlook.reduce((a,b)=>b.occ<a.occ?b:a,outlook[0]);if(lowest&&lowest.occ<50)alerts.push(["Low occupancy date",`${formatDate(lowest.ds)} occupancy is only ${lowest.occ}%.`]);
     const canc=reservations.filter(r=>r.status==="Cancelled"&&String(r.cancelledAt||"").startsWith(today)).length;if(canc)alerts.push(["Cancellation activity",`${canc} cancellation${canc===1?"":"s"} recorded today.`]);
     const alertBox=document.getElementById("gmAlerts");if(alertBox)alertBox.innerHTML=alerts.length?alerts.map(a=>`<div class="gm-alert"><span class="dot"></span><div><b>${escapeHtml(a[0])}</b><span>${escapeHtml(a[1])}</span></div></div>`).join(""):`<div class="gm-alert ok"><span class="dot"></span><div><b>No critical operational alerts</b><span>Current hotel activity is within the dashboard thresholds.</span></div></div>`;
+    // Display cleanup is deliberately scoped to dashboard text nodes only.
+    const dashRoot=document.getElementById("dashboard");
+    if(dashRoot){const walker=document.createTreeWalker(dashRoot,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){if(node.nodeValue&&node.nodeValue.includes("\\n"))node.nodeValue=node.nodeValue.replace(/\\n/g," ");}}
 }
 window.gmSetPeriod=function(kind){window.__gmPeriod=kind;renderDashboard();};
 
