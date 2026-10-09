@@ -26382,3 +26382,86 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
 })();
 
 </script>
+\n<script id="v2-1-423-purchase-request-approval-permission-fix">
+/* v2.1.423 — Separate PR creation from PR approval.
+   Front Office users may create/submit PRs when assigned purchasing.request,
+   but only users explicitly granted purchasing.approve_pr (and Admin) may approve.
+   Purchasing, cloud data, login, POS and other modules are otherwise untouched. */
+(function(){
+  'use strict';
+  if(window.__signatureV423PRApprovalPermission)return;
+  window.__signatureV423PRApprovalPermission=true;
+  const APPROVE='purchasing.approve_pr';
+  function isAdmin(){return !!(window.currentUser && window.currentUser.role==='Admin');}
+  function canApprove(){
+    if(isAdmin())return true;
+    try{
+      const u=window.currentUser;
+      return !!(u && Array.isArray(u.permissions?.actions) && u.permissions.actions.includes(APPROVE));
+    }catch(e){return false;}
+  }
+  function addPermissionOption(){
+    try{
+      const g=window.USER_MODULE_ACTION_GROUPS;
+      if(g && g.purchasing && Array.isArray(g.purchasing.items) && !g.purchasing.items.some(x=>x&&x[0]===APPROVE)){
+        g.purchasing.items.push([APPROVE,'Approve / Reject Purchase Requests']);
+      }
+      const groups=window.ACTION_PERMISSION_GROUPS;
+      if(groups && !groups.Purchasing)groups.Purchasing=[[APPROVE,'Approve / Reject Purchase Requests']];
+    }catch(e){}
+  }
+  function guardApproveButtons(){
+    try{
+      const root=document.getElementById('purchaseRequestTable');
+      if(!root)return;
+      root.querySelectorAll('button').forEach(b=>{
+        if((b.textContent||'').trim().toLowerCase()==='approve'){
+          if(!canApprove())b.remove();
+        }
+      });
+    }catch(e){}
+  }
+  function wrapApprovalHandler(){
+    const fn=window.approvePurchaseRequest;
+    if(typeof fn!=='function'||fn.__v423)return;
+    const wrapped=function(rid){
+      if(!canApprove()){
+        alert('Access denied. Only a Manager or Purchasing user with “Approve / Reject Purchase Requests” permission can approve a Purchase Request.');
+        return;
+      }
+      try{
+        const raw=JSON.parse(localStorage.getItem('signature_pms_purchase_requests')||'[]');
+        const list=Array.isArray(raw)?raw:[];
+        const p=String(window.currentPropertyId||'');
+        const r=list.find(x=>String(x?.id||'')===String(rid)&&String(x?.propertyId||p)===p);
+        if(r && String(r.requestedBy||'').trim().toLowerCase()===String(window.currentUser?.username||'').trim().toLowerCase() && !isAdmin()){
+          alert('A Purchase Request cannot be approved by the same user who created it. Please ask another authorized approver.');
+          return;
+        }
+      }catch(e){}
+      return fn.apply(this,arguments);
+    };
+    wrapped.__v423=true;
+    window.approvePurchaseRequest=wrapped;
+  }
+  function boot(){
+    addPermissionOption();
+    wrapApprovalHandler();
+    guardApproveButtons();
+    const root=document.getElementById('purchaseRequestTable');
+    if(root && !root.__v423Observer){
+      try{new MutationObserver(guardApproveButtons).observe(root,{childList:true,subtree:true});root.__v423Observer=true;}catch(e){}
+    }
+    [300,900,1800,3000,5000].forEach(ms=>setTimeout(()=>{addPermissionOption();wrapApprovalHandler();guardApproveButtons();},ms));
+    try{
+      const old=window.renderPurchasingModule;
+      if(typeof old==='function'&&!old.__v423Wrapped){
+        const w=function(){const r=old.apply(this,arguments);setTimeout(guardApproveButtons,0);return r;};
+        w.__v423Wrapped=true;window.renderPurchasingModule=w;
+      }
+    }catch(e){}
+    setInterval(()=>{addPermissionOption();wrapApprovalHandler();guardApproveButtons();},2000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
