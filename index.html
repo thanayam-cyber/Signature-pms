@@ -13746,6 +13746,7 @@ const DEFAULT_ACCOUNTS = [
  {code:"1020",name:"Card Receivables",type:"Asset"},
  {code:"1100",name:"Accounts Receivable",type:"Asset"},
  {code:"1200",name:"Inventory Assets",type:"Asset"},
+ {code:"1300",name:"Employee Advances Receivable",type:"Asset"},
  {code:"2000",name:"Accounts Payable",type:"Liability"},
  {code:"2010",name:"Salary Payable",type:"Liability"},
  {code:"2030",name:"Guest Deposits / Advance Payments",type:"Liability"},
@@ -26069,4 +26070,315 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   function boot(){bind();[400,1000,2200,4000].forEach(ms=>setTimeout(bind,ms));}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
+</script>
+
+<script id="v2-1-422-employee-advances-supabase-accounting-fix">
+/* Signature PMS v2.1.422 — Employee Advances, Supabase and Accounting integration.
+   Appended as an isolated extension. Existing posted/paid payroll is never recalculated. */
+(function(){
+  'use strict';
+  if(window.__signatureV422EmployeeAdvances)return;
+  window.__signatureV422EmployeeAdvances=true;
+  const ADV_KEY='signature_pms_hr_advances';
+  const PAY_KEY='signature_pms_hr_payroll';
+  const JOURNAL_KEY='signature_pms_accounting_journals';
+  const CLOUD_TABLE='pms_cloud_records';
+  const CLOUD_ADV_KEY=ADV_KEY;
+  const CLOUD_JOURNAL_KEY=JOURNAL_KEY;
+  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const prop=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const userName=()=>String(window.currentUser?.username||window.currentUser?.name||'Admin');
+  const escV=v=>typeof window.esc==='function'?window.esc(String(v??'')):String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const money=v=>typeof window.accMoney==='function'?window.accMoney(Number(v||0)):'LKR '+Number(v||0).toFixed(2);
+  const dateNow=()=>typeof window.today==='function'?String(window.today()).slice(0,10):new Date().toISOString().slice(0,10);
+  const read=k=>{try{const a=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+  const write=(k,a)=>localStorage.setItem(k,JSON.stringify(Array.isArray(a)?a:[]));
+  const mine=x=>String(x?.propertyId??prop())===prop();
+  const advances=()=>read(ADV_KEY).filter(mine);
+  const employees=()=>typeof window.hrEmployees==='function'?window.hrEmployees().filter(mine):[];
+  const client=()=>typeof window.initSupabaseClient==='function'?window.initSupabaseClient():null;
+  function requireHR(){
+    try{if(typeof window.isDepartmentSupervisor==='function'&&window.isDepartmentSupervisor()){alert('Employee advances are restricted to HR management.');return false;}}catch(e){}
+    try{if(typeof window.requireModuleAction==='function'&&!window.requireModuleAction('hr.employee'))return false;}catch(e){}
+    if(!prop()){alert('Please select a property first.');return false;}
+    return true;
+  }
+  function ensureAccounts(){
+    try{if(typeof window.getAccounts==='function')window.getAccounts();}catch(e){}
+    const key='signature_pms_accounts',a=read(key),pid=prop();
+    if(!a.some(x=>String(x.propertyId||'')===pid&&String(x.name||'')==='Employee Advances Receivable')){
+      a.push({id:'coa_emp_adv_'+pid,propertyId:pid,code:'1300',name:'Employee Advances Receivable',type:'Asset',active:true,system:true});
+      write(key,a);
+    }
+  }
+  function mergeByReference(cloud,local,pid){
+    const map=new Map();
+    (Array.isArray(cloud)?cloud:[]).filter(x=>String(x?.propertyId??pid)===pid).forEach(x=>map.set(String(x.reference||x.id||JSON.stringify(x)),{...x,propertyId:pid}));
+    (Array.isArray(local)?local:[]).filter(x=>String(x?.propertyId??pid)===pid).forEach(x=>map.set(String(x.reference||x.id||JSON.stringify(x)),{...x,propertyId:pid}));
+    return [...map.values()];
+  }
+  let journalSyncBusy=false,journalSyncQueued=false,journalTimer=null;
+  async function syncJournalCloud(){
+    if(journalSyncBusy){journalSyncQueued=true;return false;}
+    const c=client(),pid=prop();if(!c||!pid)return false;
+    let session;
+    try{session=await c.auth.getSession();}catch(e){return false;}
+    const authUser=session?.data?.session?.user;if(!authUser)return false;
+    journalSyncBusy=true;
+    try{
+      const q=await c.from(CLOUD_TABLE).select('data,updated_at').eq('property_id',pid).eq('storage_key',CLOUD_JOURNAL_KEY).maybeSingle();
+      if(q.error)throw q.error;
+      const cloud=Array.isArray(q.data?.data)?q.data.data:[];
+      const localAll=read(JOURNAL_KEY),localMine=localAll.filter(mine);
+      const merged=mergeByReference(cloud,localMine,pid);
+      const others=localAll.filter(x=>!mine(x));
+      // Keep local data if present; hydrate cloud-only records for other logged-in users.
+      const old=JSON.stringify(localAll);
+      const next=others.concat(merged);
+      if(JSON.stringify(next)!==old){
+        window.__v422JournalInternalWrite=true;
+        try{write(JOURNAL_KEY,next);}finally{window.__v422JournalInternalWrite=false;}
+      }
+      if(merged.length||cloud.length){
+        const up=await c.from(CLOUD_TABLE).upsert({property_id:pid,storage_key:CLOUD_JOURNAL_KEY,data:merged,updated_by:authUser.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+        if(up.error)throw up.error;
+      }
+      try{if(typeof window.renderAccounting==='function')window.renderAccounting();}catch(e){}
+      try{if(typeof window.setSupabaseCloudMessage==='function')window.setSupabaseCloudMessage('Accounting journals synchronized with Supabase.','success');}catch(e){}
+      return true;
+    }catch(e){
+      console.warn('Employee advance Accounting cloud sync failed:',e);
+      try{if(typeof window.setSupabaseCloudMessage==='function')window.setSupabaseCloudMessage('Accounting journal cloud sync failed: '+(e?.message||e),'error');}catch(x){}
+      return false;
+    }finally{
+      journalSyncBusy=false;
+      if(journalSyncQueued){journalSyncQueued=false;setTimeout(syncJournalCloud,250);}
+    }
+  }
+  function scheduleJournalSync(){
+    if(window.__v422JournalInternalWrite)return;
+    clearTimeout(journalTimer);journalTimer=setTimeout(syncJournalCloud,650);
+  }
+  try{
+    const originalSetItem=Storage.prototype.setItem;
+    if(!originalSetItem.__v422Wrapped){
+      const wrapped=function(k,v){const r=originalSetItem.call(this,k,v);if(this===window.localStorage&&String(k)===JOURNAL_KEY)scheduleJournalSync();return r;};
+      wrapped.__v422Wrapped=true;Storage.prototype.setItem=wrapped;
+    }
+  }catch(e){}
+  window.syncEmployeeAdvanceAccountingCloud=syncJournalCloud;
+
+  function postJournalOnce(date,reference,description,lines,source){
+    const pid=prop(),all=read(JOURNAL_KEY);
+    if(all.some(j=>String(j.propertyId??pid)===pid&&String(j.reference)===reference))return false;
+    const debit=lines.reduce((s,x)=>s+Number(x.debit||0),0),credit=lines.reduce((s,x)=>s+Number(x.credit||0),0);
+    if(Math.abs(debit-credit)>0.01)throw new Error('Advance accounting journal is not balanced.');
+    all.push({id:'je_adv_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),propertyId:pid,date,reference,description,source,lines:lines.map(x=>({...x,debit:Number(x.debit||0),credit:Number(x.credit||0)})),postedBy:userName()});
+    write(JOURNAL_KEY,all);
+    return true;
+  }
+  function activeOutstanding(x){
+    if(x.status==='Cancelled'||x.status==='Settled')return 0;
+    const recorded=Number(x.outstandingBalance);
+    if(Number.isFinite(recorded))return Math.max(0,recorded);
+    const repaid=(Array.isArray(x.repayments)?x.repayments:[]).reduce((s,r)=>s+Number(r.amount||0),0);
+    return Math.max(0,Number(x.amount||0)-repaid);
+  }
+  function renderAdvances(){
+    const tbody=document.getElementById('hrAdvancesTable');if(!tbody)return;
+    const rows=advances().slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    tbody.innerHTML=rows.length?rows.map(x=>{
+      const outstanding=activeOutstanding(x);
+      const status=outstanding<=0.009?'Settled':(x.status==='Cancelled'?'Cancelled':'Active');
+      const action=status==='Active'?`<button class="btn btn-secondary btn-small" onclick="window.recordEmployeeAdvanceRepayment('${escV(x.id)}')">Record Repayment</button>`:'—';
+      return `<tr><td>${escV(x.date)}</td><td>${escV(x.employeeNo||'')}</td><td>${escV(x.name||'')}</td><td>${money(x.amount)}</td><td>${money(x.repaidAmount||0)}</td><td><strong>${money(outstanding)}</strong></td><td>${money(x.monthlyDeduction||0)}</td><td>${escV(status)}</td><td>${action}</td></tr>`;
+    }).join(''):'<tr><td colspan="9" class="empty">No employee advances recorded for this property.</td></tr>';
+    const summary=document.getElementById('hrAdvancesSummary');
+    if(summary){const outstanding=rows.reduce((s,x)=>s+activeOutstanding(x),0);summary.textContent='Outstanding advances: '+money(outstanding)+' · '+rows.filter(x=>activeOutstanding(x)>0.009).length+' active record(s).';}
+  }
+  function ensureUI(){
+    const page=document.getElementById('hr');if(!page)return;
+    if(!document.getElementById('hrEmployeeAdvancesSection')){
+      const sec=document.createElement('div');sec.className='section';sec.id='hrEmployeeAdvancesSection';
+      sec.innerHTML=`<div class="section-header"><div><h3>Employee Advances</h3><div style="font-size:12px;color:#64748b">Property-scoped advances synced to Supabase and linked to Accounting. Future calculated payrolls recover the agreed monthly amount; already posted or paid payroll is not changed.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" type="button" onclick="window.refreshEmployeeAdvances()">Refresh</button></div></div><div id="hrAdvancesSummary" style="font-weight:600;margin:8px 0 14px">Outstanding advances: LKR 0.00</div><div class="form-grid" style="margin-bottom:12px"><div class="form-group"><label for="hrAdvEmp">Employee *</label><select id="hrAdvEmp"></select></div><div class="form-group"><label for="hrAdvDate">Advance Date *</label><input id="hrAdvDate" type="date" value="${dateNow()}"></div><div class="form-group"><label for="hrAdvAmount">Advance Amount (LKR) *</label><input id="hrAdvAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div><div class="form-group"><label for="hrAdvMonthly">Monthly Payroll Recovery (LKR) *</label><input id="hrAdvMonthly" type="number" min="0.01" step="0.01" placeholder="0.00"></div><div class="form-group"><label for="hrAdvPayMethod">Paid From</label><select id="hrAdvPayMethod"><option value="Bank Account">Bank Account</option><option value="Cash on Hand">Cash on Hand</option></select></div><div class="form-group full"><label for="hrAdvNotes">Notes / Approval Reference</label><textarea id="hrAdvNotes" rows="2" placeholder="Optional notes"></textarea></div></div><div class="toolbar" style="margin-bottom:14px"><button class="btn btn-primary" type="button" onclick="window.saveEmployeeAdvance()">Record Advance & Post to Accounting</button><span id="hrAdvCloudStatus" style="font-size:12px;color:#64748b"></span></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee No.</th><th>Employee</th><th>Advance</th><th>Repaid</th><th>Outstanding</th><th>Monthly Recovery</th><th>Status</th><th>Action</th></tr></thead><tbody id="hrAdvancesTable"></tbody></table></div>`;
+      const anchor=document.getElementById('hrLifecycleSection')||document.getElementById('hrPayrollSection');
+      if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(sec,anchor.nextSibling);else page.appendChild(sec);
+    }
+    const lifeToolbar=document.querySelector('#hrLifecycleSection .section-header .toolbar');
+    if(lifeToolbar&&!lifeToolbar.querySelector('[data-v422-advance-link]')){
+      const b=document.createElement('button');b.type='button';b.className='btn btn-primary';b.textContent='Employee Advances';b.setAttribute('data-v422-advance-link','1');
+      b.addEventListener('click',()=>document.getElementById('hrEmployeeAdvancesSection')?.scrollIntoView({behavior:'smooth',block:'start'}));
+      lifeToolbar.appendChild(b);
+    }
+    const sel=document.getElementById('hrAdvEmp');
+    if(sel){const prev=sel.value,em=employees();sel.innerHTML=em.map(e=>`<option value="${escV(e.id)}">${escV(e.employeeNo)} — ${escV(e.name)}</option>`).join('');if(em.some(e=>String(e.id)===prev))sel.value=prev;}
+    renderAdvances();
+  }
+  async function syncHR(){
+    try{
+      if(typeof window.syncSupabaseHRPayroll==='function')return await window.syncSupabaseHRPayroll();
+      return false;
+    }catch(e){return false;}
+  }
+  window.refreshEmployeeAdvances=async function(){
+    const status=document.getElementById('hrAdvCloudStatus');if(status)status.textContent='Refreshing cloud data…';
+    try{
+      if(typeof window.hydrateSupabaseHRPayroll==='function')await window.hydrateSupabaseHRPayroll();
+      await syncJournalCloud();ensureUI();renderAdvances();
+      if(status)status.textContent='Refreshed '+new Date().toLocaleTimeString();
+    }catch(e){if(status)status.textContent='Refresh failed: '+(e?.message||e);}
+  };
+  window.saveEmployeeAdvance=async function(){
+    if(!requireHR())return;
+    const emp=employees().find(e=>String(e.id)===String(document.getElementById('hrAdvEmp')?.value||''));
+    const date=String(document.getElementById('hrAdvDate')?.value||dateNow());
+    const amount=Number(document.getElementById('hrAdvAmount')?.value||0);
+    const monthly=Number(document.getElementById('hrAdvMonthly')?.value||0);
+    const paidFrom=String(document.getElementById('hrAdvPayMethod')?.value||'Bank Account');
+    const notes=String(document.getElementById('hrAdvNotes')?.value||'').trim();
+    if(!emp){alert('Please select an employee.');return;}
+    if(!date||!Number.isFinite(amount)||amount<=0){alert('Enter a valid advance date and amount.');return;}
+    if(!Number.isFinite(monthly)||monthly<=0){alert('Enter a monthly payroll recovery greater than zero.');return;}
+    if(monthly>amount){alert('Monthly recovery cannot exceed the original advance amount.');return;}
+    const record={id:'ADV-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),propertyId:prop(),employeeId:emp.id,employeeNo:emp.employeeNo,name:emp.name,date,amount:Number(amount.toFixed(2)),repaidAmount:0,outstandingBalance:Number(amount.toFixed(2)),monthlyDeduction:Number(monthly.toFixed(2)),paidFrom,status:'Active',repayments:[],notes,createdBy:userName(),createdAt:new Date().toISOString()};
+    try{
+      ensureAccounts();
+      const journalRef='ADV-ISSUE-'+record.id;
+      const posted=postJournalOnce(date,journalRef,'Employee advance issued — '+emp.employeeNo+' '+emp.name,[{account:'Employee Advances Receivable',debit:amount,credit:0},{account:paidFrom,debit:0,credit:amount}],'Employee Advance');
+      if(!posted){alert('A journal already exists for this advance.');return;}
+      const all=read(ADV_KEY);all.push(record);write(ADV_KEY,all);
+      const status=document.getElementById('hrAdvCloudStatus');if(status)status.textContent='Saving advance and Accounting journal to Supabase…';
+      const hrOk=await syncHR();const acctOk=await syncJournalCloud();
+      renderAdvances();
+      const amountEl=document.getElementById('hrAdvAmount');if(amountEl)amountEl.value='';const monthlyEl=document.getElementById('hrAdvMonthly');if(monthlyEl)monthlyEl.value='';const notesEl=document.getElementById('hrAdvNotes');if(notesEl)notesEl.value='';
+      try{if(typeof window.renderAccounting==='function')window.renderAccounting();}catch(e){}
+      if(status)status.textContent=(hrOk?'HR cloud saved':'HR cloud not confirmed')+' · '+(acctOk?'Accounting cloud saved':'Accounting cloud not confirmed');
+      alert('Employee advance recorded. Accounting journal '+journalRef+' created. '+(!hrOk||!acctOk?'Please check the cloud status beside the button.':'Supabase sync confirmed.'));
+    }catch(e){console.error('Employee advance save failed:',e);alert('Advance could not be fully recorded: '+(e?.message||e)+'. Please check the journal before retrying to avoid duplicates.');}
+  };
+  window.recordEmployeeAdvanceRepayment=async function(advanceId){
+    if(!requireHR())return;
+    const all=read(ADV_KEY),a=all.find(x=>String(x.id)===String(advanceId)&&mine(x));if(!a)return;
+    const outstanding=activeOutstanding(a);if(outstanding<=0.009){alert('This advance is already settled.');return;}
+    const raw=prompt('Repayment amount (outstanding '+money(outstanding)+'):',String(Math.min(Number(a.monthlyDeduction||outstanding),outstanding).toFixed(2)));if(raw===null)return;
+    const amount=Number(raw);if(!Number.isFinite(amount)||amount<=0||amount>outstanding+0.009){alert('Enter a valid amount not greater than the outstanding balance.');return;}
+    const method=(prompt('Received into Cash on Hand or Bank Account?','Bank Account')||'Bank Account').trim();
+    const account=/cash/i.test(method)?'Cash on Hand':'Bank Account';
+    const date=dateNow(),ref='ADV-REPAY-'+String(a.id)+'-'+Date.now();
+    try{
+      postJournalOnce(date,ref,'Employee advance repayment — '+a.employeeNo+' '+a.name,[{account,debit:amount,credit:0},{account:'Employee Advances Receivable',debit:0,credit:amount}],'Employee Advance Repayment');
+      a.repaidAmount=Number((Number(a.repaidAmount||0)+amount).toFixed(2));a.outstandingBalance=Number(Math.max(0,outstanding-amount).toFixed(2));a.status=a.outstandingBalance<=0.009?'Settled':'Active';
+      a.repayments=Array.isArray(a.repayments)?a.repayments:[];a.repayments.push({id:ref,date,amount,account,reference:ref,receivedBy:userName(),createdAt:new Date().toISOString()});
+      write(ADV_KEY,all);
+      const hrOk=await syncHR(),acctOk=await syncJournalCloud();renderAdvances();
+      try{if(typeof window.renderAccounting==='function')window.renderAccounting();}catch(e){}
+      alert('Repayment recorded and linked to Accounting. Outstanding: '+money(a.outstandingBalance)+(hrOk&&acctOk?'\nSupabase sync confirmed.':'\nWarning: cloud sync was not fully confirmed; check the cloud status.'));
+    }catch(e){console.error(e);alert('Repayment could not be recorded: '+(e?.message||e));}
+  };
+
+  // Route active Salary Advance / Staff Loan records from the existing Benefits / Advances
+  // modal into the dedicated advance ledger and Accounting, so there is only one balance source.
+  const legacySaveStaffBenefit=window.saveStaffBenefit;
+  if(typeof legacySaveStaffBenefit==='function'&&!legacySaveStaffBenefit.__v422Wrapped){
+    const wrappedLegacyBenefit=async function(){
+      const type=String(document.getElementById('slBenType')?.value||'');
+      const status=String(document.getElementById('slBenStatus')?.value||'Active');
+      if(!['Salary Advance','Staff Loan'].includes(type)||status!=='Active')return legacySaveStaffBenefit.apply(this,arguments);
+      if(!requireHR())return;
+      const emp=employees().find(e=>String(e.id)===String(document.getElementById('slBenEmp')?.value||''));
+      const date=String(document.getElementById('slBenDate')?.value||dateNow());
+      const amount=Number(document.getElementById('slBenAmount')?.value||0);
+      const monthly=Number(document.getElementById('slBenDeduction')?.value||0);
+      const notes=String(document.getElementById('slBenNotes')?.value||'').trim();
+      if(!emp||!Number.isFinite(amount)||amount<=0||!Number.isFinite(monthly)||monthly<=0||monthly>amount){alert('Select an employee and enter a valid advance amount and monthly recovery.');return;}
+      try{
+        ensureAccounts();
+        const record={id:'ADV-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),propertyId:prop(),employeeId:emp.id,employeeNo:emp.employeeNo,name:emp.name,date,amount:Number(amount.toFixed(2)),repaidAmount:0,outstandingBalance:Number(amount.toFixed(2)),monthlyDeduction:Number(monthly.toFixed(2)),paidFrom:'Bank Account',status:'Active',repayments:[],notes,recordType:type,createdBy:userName(),createdAt:new Date().toISOString()};
+        const journalRef='ADV-ISSUE-'+record.id;
+        postJournalOnce(date,journalRef,'Employee '+type.toLowerCase()+' issued — '+emp.employeeNo+' '+emp.name,[{account:'Employee Advances Receivable',debit:amount,credit:0},{account:'Bank Account',debit:0,credit:amount}],'Employee Advance');
+        const all=read(ADV_KEY);all.push(record);write(ADV_KEY,all);
+        const modal=document.getElementById('sigStaffLifecycleModal');if(modal)modal.classList.remove('show');
+        await syncHR();await syncJournalCloud();ensureUI();renderAdvances();
+        try{if(typeof window.renderAccounting==='function')window.renderAccounting();}catch(e){}
+        alert(type+' recorded in Employee Advances and linked to Accounting. Journal: '+journalRef);
+      }catch(e){console.error('Legacy salary advance accounting link failed:',e);alert('Advance could not be recorded: '+(e?.message||e));}
+    };
+    wrappedLegacyBenefit.__v422Wrapped=true;window.saveStaffBenefit=wrappedLegacyBenefit;
+  }
+
+  // Future payroll calculations only: apply monthly advance recovery to newly calculated rows.
+  const originalRunPayroll=window.runPayroll;
+  if(typeof originalRunPayroll==='function'&&!originalRunPayroll.__v422Wrapped){
+    const wrappedRunPayroll=function(){
+      const before=new Set(read(PAY_KEY).map(x=>String(x.id)));
+      const result=originalRunPayroll.apply(this,arguments);
+      try{
+        const all=read(PAY_KEY),fresh=all.filter(x=>!before.has(String(x.id))&&x.status==='Calculated'&&String(x.propertyId??prop())===prop());
+        if(!fresh.length)return result;
+        const period=fresh[0].period;
+        fresh.forEach(pay=>{
+          const records=advances().filter(a=>String(a.employeeId)===String(pay.employeeId)&&a.status==='Active'&&activeOutstanding(a)>0.009&&Number(a.monthlyDeduction||0)>0);
+          let available=Math.max(0,Number(pay.netPay||0)),deducted=0;const allocations=[];
+          records.forEach(a=>{if(available<=0.009)return;const amount=Number(Math.min(Number(a.monthlyDeduction||0),activeOutstanding(a),available).toFixed(2));if(amount<=0)return;deducted+=amount;available-=amount;allocations.push({advanceId:a.id,amount});});
+          if(deducted>0){pay.advanceDeduction=Number(deducted.toFixed(2));pay.advanceAllocations=allocations;pay.deductions=Number((Number(pay.deductions||0)+deducted).toFixed(2));pay.netPay=Number(Math.max(0,Number(pay.netPay||0)-deducted).toFixed(2));}
+        });
+        write(PAY_KEY,all);try{if(typeof window.renderHR==='function')window.renderHR();}catch(e){}
+        setTimeout(()=>syncHR(),200);
+        if(fresh.some(x=>Number(x.advanceDeduction||0)>0))alert('Payroll calculated with employee advance recovery included. Check the Deductions column before approval.');
+      }catch(e){console.warn('Advance recovery calculation could not be applied:',e);}
+      return result;
+    };
+    wrappedRunPayroll.__v422Wrapped=true;window.runPayroll=wrappedRunPayroll;
+  }
+  // After a new payroll posting, reclassify advance recovery from the generic deduction payable
+  // to the Employee Advances asset and reduce outstanding balances exactly once.
+  const originalPostPayroll=window.postPayroll;
+  if(typeof originalPostPayroll==='function'&&!originalPostPayroll.__v422Wrapped){
+    const wrappedPostPayroll=function(){
+      const before=read(PAY_KEY).map(x=>({id:String(x.id),status:x.status}));
+      const result=originalPostPayroll.apply(this,arguments);
+      try{
+        const all=read(PAY_KEY),old=new Map(before.map(x=>[x.id,x.status]));
+        const posted=all.filter(x=>old.get(String(x.id))==='Approved'&&x.status==='Posted'&&String(x.propertyId??prop())===prop());
+        if(!posted.length)return result;
+        const period=posted[0].period,ref='PAY-'+period;
+        const totalAdvance=Number(posted.reduce((s,x)=>s+Number(x.advanceDeduction||0),0).toFixed(2));
+        if(totalAdvance<=0)return result;
+        const journals=read(JOURNAL_KEY),j=journals.find(x=>String(x.propertyId??prop())===prop()&&String(x.reference)===ref);
+        if(!j||j.__v422AdvanceRecoveryReclassified)return result;
+        let remaining=totalAdvance;
+        const other=j.lines.find(x=>String(x.account)==='Other Payroll Deductions Payable');
+        if(other){const available=Number(other.credit||0),take=Math.min(available,remaining);other.credit=Number((available-take).toFixed(2));remaining=Number((remaining-take).toFixed(2));}
+        j.lines=j.lines.filter(x=>Number(x.debit||0)>0.009||Number(x.credit||0)>0.009);
+        const recovered=Number((totalAdvance-remaining).toFixed(2));
+        if(recovered>0){j.lines.push({account:'Employee Advances Receivable',debit:0,credit:recovered});j.description=(j.description||'Payroll '+period)+' — includes employee advance recovery';j.__v422AdvanceRecoveryReclassified=true;write(JOURNAL_KEY,journals);}
+        if(remaining>0.009)console.warn('Some advance recovery could not be reclassified from Other Payroll Deductions Payable:',remaining);
+        const advancesAll=read(ADV_KEY);let changed=false;
+        posted.forEach(pay=>{
+          if(pay.advanceRecoveryPosted)return;
+          (Array.isArray(pay.advanceAllocations)?pay.advanceAllocations:[]).forEach(alloc=>{
+            const a=advancesAll.find(z=>String(z.id)===String(alloc.advanceId)&&mine(z));if(!a)return;
+            const amount=Math.min(Number(alloc.amount||0),activeOutstanding(a));if(amount<=0)return;
+            a.repaidAmount=Number((Number(a.repaidAmount||0)+amount).toFixed(2));a.outstandingBalance=Number(Math.max(0,activeOutstanding(a)-amount).toFixed(2));a.status=a.outstandingBalance<=0.009?'Settled':'Active';
+            a.repayments=Array.isArray(a.repayments)?a.repayments:[];a.repayments.push({id:'ADV-PAYROLL-'+period+'-'+pay.id+'-'+alloc.advanceId,date:period+'-01',period,amount,reference:ref,method:'Payroll Recovery',receivedBy:userName(),createdAt:new Date().toISOString()});changed=true;
+          });
+          pay.advanceRecoveryPosted=true;
+        });
+        write(PAY_KEY,all);if(changed)write(ADV_KEY,advancesAll);
+        setTimeout(async()=>{await syncHR();await syncJournalCloud();renderAdvances();try{if(typeof window.renderAccounting==='function')window.renderAccounting();}catch(e){}},250);
+      }catch(e){console.warn('Advance recovery Accounting link failed:',e);alert('Payroll posted, but advance recovery accounting needs review: '+(e?.message||e));}
+      return result;
+    };
+    wrappedPostPayroll.__v422Wrapped=true;window.postPayroll=wrappedPostPayroll;
+  }
+  function boot(){
+    ensureAccounts();ensureUI();
+    setTimeout(()=>{ensureUI();syncJournalCloud();},800);
+    setInterval(()=>{if(!document.hidden){ensureUI();syncJournalCloud();}},20000);
+    window.addEventListener('focus',()=>{ensureUI();syncJournalCloud();});
+    try{const oldRender=window.renderAll;if(typeof oldRender==='function'&&!oldRender.__v422AdvancesWrapped){const w=function(){const r=oldRender.apply(this,arguments);setTimeout(()=>{ensureUI();},100);return r;};w.__v422AdvancesWrapped=true;window.renderAll=w;}}catch(e){}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+
 </script>
