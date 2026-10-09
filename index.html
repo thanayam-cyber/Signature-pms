@@ -1975,7 +1975,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="form-group">
 <label>Role *</label>
-<select id="userRole" onchange="const g=document.getElementById('userDepartmentGroup'); if(g)g.style.display=this.value==='Department Supervisor'?'block':'none'; if(this.value==='Admin'){renderUserPermissionCheckboxes(PERMISSION_PAGES.map(x=&gt;x[0]));renderUserActionPermissionCheckboxes(ACTION_PERMISSION_KEYS);}">
+<select id="userRole" onchange="const g=document.getElementById('userDepartmentGroup'); if(g)g.style.display='block'; const pg=document.getElementById('userPositionGroup'); if(pg)pg.style.display='block'; if(this.value==='Admin'){renderUserPermissionCheckboxes(PERMISSION_PAGES.map(x=&gt;x[0]));renderUserActionPermissionCheckboxes(ACTION_PERMISSION_KEYS);}">
 <option value="Admin">Admin</option>
 <option value="Manager">Manager</option>
 <option value="Front Office">Front Office</option>
@@ -1989,9 +1989,14 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <label>Property Access *</label>
 <select id="userProperty"></select>
 </div>
-<div class="form-group" id="userDepartmentGroup" style="display:none">
+<div class="form-group" id="userDepartmentGroup">
 <label>Department *</label>
-<input id="userDepartment" placeholder="e.g. Housekeeping"/>
+<select id="userDepartment" onchange="sigUpdateUserPositions()"><option value="">Select department</option><option>Front Office</option><option>Housekeeping</option><option>Food & Beverage</option><option>Kitchen</option><option>Purchasing</option><option>Stores</option><option>Engineering</option><option>Finance / Accounts</option><option>Human Resources</option><option>Security</option><option>Sales & Marketing</option><option>General Management</option><option>Administration</option></select>
+</div>
+<div class="form-group" id="userPositionGroup">
+<label>Position *</label>
+<select id="userPosition" onchange="sigUpdatePositionRightsHint()"><option value="">Select department first</option></select>
+<div id="userPositionHint" style="font-size:11px;color:#6b7280;margin-top:4px">Position identifies the approval responsibility; module access remains controlled by individual rights.</div>
 </div>
 <div class="form-group full">
 <label>Password *</label>
@@ -3680,6 +3685,7 @@ async function provisionSupabaseStaffUser(username,email,password,localUser){
             role:localUser.role,
             propertyId:cloudPropertyId,
             department:localUser.department||"",
+            position:localUser.position||"",
             fullName:localUser.fullName||localUser.name||username,
             status:localUser.active?"active":"inactive",
             permissions:localUser.permissions||{pages:[],actions:[],reports:[]}
@@ -4404,13 +4410,15 @@ const USER_MODULE_ACTION_GROUPS={
   eventbookings:{title:"Event Booking Action Rights",items:ACTION_PERMISSION_GROUPS["Event Booking"]||[]},
   purchasing:{title:"Purchasing Action Rights",items:[
     ["purchasing.po","Purchase Order"],["purchasing.ap","Supplier Payment"],["purchasing.grn","GRN"],
-    ["purchasing.suppliers","Suppliers"],["purchasing.articles","Articles"],["purchasing.request","Purchase Request"],["purchasing.refresh","Refresh"]
+    ["purchasing.suppliers","Suppliers"],["purchasing.articles","Articles"],["purchasing.request","Purchase Request"],["purchasing.refresh","Refresh"],
+    ["purchasing.approve_pr_department","Approve PR — Department Head"],["purchasing.approve_pr_purchasing","Approve PR — Purchasing Manager"],["purchasing.approve_po_gm","Approve PO — General Manager"],["purchasing.send_po","Send Approved PO to Supplier"]
   ]},
   cashiershift:{title:"Cashier Shift & Daily Closing Action Rights",items:ACTION_PERMISSION_GROUPS["Cashiering"]||[]},
   cashier:{title:"Cashier Shift & Daily Closing Action Rights",items:ACTION_PERMISSION_GROUPS["Cashiering"]||[]},
   hr:{title:"HR & Payroll Action Rights",items:[
     ["hr.employee","Employee"],["hr.attendance","Attendance"],["hr.leave","Leave"],["hr.overtime","Overtime"],
-    ["hr.calculate_payroll","Calculate Payroll"],["hr.approve_payroll","Approve Payroll"],["hr.post_payroll","Post to Accounting"],["hr.payroll_payment","Pay Payroll"],["hr.roster_update","Roster Update"],["hr.refresh","Refresh"]
+    ["hr.calculate_payroll","Calculate Payroll"],["hr.approve_payroll","Approve Payroll"],["hr.post_payroll","Post to Accounting"],["hr.payroll_payment","Pay Payroll"],["hr.roster_update","Roster Update"],["hr.refresh","Refresh"],
+    ["hr.approve_leave_department","Approve Leave — Department Head"],["hr.approve_leave_hr","Approve Leave — HR Manager"],["hr.approve_leave_gm","Approve Leave — General Manager"]
   ]},
   engineering:{title:"Engineering Action Rights",items:[
     ["engineering.request","Create Engineering Job Order"]
@@ -4565,6 +4573,7 @@ async function openUserModal(userId=null){
         document.getElementById("userProperty").value=
             user.propertyId || (user.role==="Admin" ? "all" : currentPropertyId);
         if(document.getElementById("userDepartment")) document.getElementById("userDepartment").value=user.department||"";
+        if(typeof window.sigUpdateUserPositions==='function')window.sigUpdateUserPositions(user.position||"");
 
         document.getElementById("userStatus")
             .value=user.active
@@ -4595,6 +4604,7 @@ async function openUserModal(userId=null){
         document.getElementById("userRole").value="Front Office";
         document.getElementById("userProperty").value=currentPropertyId || "all";
         if(document.getElementById("userDepartment")) document.getElementById("userDepartment").value="";
+        if(typeof window.sigUpdateUserPositions==='function')window.sigUpdateUserPositions("");
         document.getElementById("userPassword").value="";
         document.getElementById("userStatus").value="active";
 
@@ -4610,10 +4620,10 @@ async function openUserModal(userId=null){
 
 
     const deptGroup=document.getElementById("userDepartmentGroup");
-    const deptInput=document.getElementById("userDepartment");
-    const selectedRole=document.getElementById("userRole")?.value||"";
-    if(deptGroup){ deptGroup.style.display=selectedRole==="Department Supervisor"?"block":"none"; }
-    if(deptInput && selectedRole!=="Department Supervisor") deptInput.value="";
+    const posGroup=document.getElementById("userPositionGroup");
+    if(deptGroup)deptGroup.style.display="block";
+    if(posGroup)posGroup.style.display="block";
+    if(typeof window.sigUpdateUserPositions==='function')window.sigUpdateUserPositions(userId?(users.find(u=>u.id===userId)?.position||""):"");
 
     document.getElementById("userPassword")
         .type="password";
@@ -4765,6 +4775,7 @@ async function saveUser(){
     let propertyId=
         document.getElementById("userProperty")?.value || (role==="Admin" ? "all" : currentPropertyId || "");
     const department=(document.getElementById("userDepartment")?.value||"").trim();
+    const position=(document.getElementById("userPosition")?.value||"").trim();
     const permissions={pages:getSelectedUserPermissions(),actions:getSelectedUserActionPermissions(),reports:getSelectedUserReportPermissions()};
 
     // Property-level User Management is intentionally restricted to the
@@ -4839,8 +4850,8 @@ async function saveUser(){
 
     }
 
-    if(role==="Department Supervisor" && !department){
-        showUserError("Department is required for a Department Supervisor.");
+    if(!department || !position){
+        showUserError("Please select both Department and Position.");
         return;
     }
 
@@ -4894,7 +4905,8 @@ async function saveUser(){
             passwordHash,
             role,
             propertyId:role==="Admin" ? (propertyId||"all") : propertyId,
-            department:role==="Department Supervisor" ? department : "",
+            department,
+            position,
             active:status==="active",
             permissions,
             createdAt:localDateTime(),
@@ -5018,7 +5030,8 @@ async function saveUser(){
     if(email) user.email=email;
     if(email) user.authEmail=email;
     user.role=role;
-    user.department=role==="Department Supervisor" ? department : "";
+    user.department=department;
+    user.position=position;
     user.propertyId=role==="Admin" ? (propertyId||"all") : propertyId;
     user.permissions=permissions;
     user.active=status==="active";
@@ -26463,5 +26476,117 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     setInterval(()=>{addPermissionOption();wrapApprovalHandler();guardApproveButtons();},2000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+
+<script id="signature-pms-v2-1-424-approval-workflows">
+/* v2.1.424: targeted approval workflow layer. Does not alter login, POS, payments, folios, settings, or existing stored records. */
+(function(){
+'use strict';
+if(window.__sig424ApprovalWorkflows)return;window.__sig424ApprovalWorkflows=true;
+const KPR='signature_pms_purchase_requests',KPO='signature_pms_purchase_orders',KLV='signature_pms_hr_leave',KSR='signature_pms_store_requisitions';
+const read=k=>{try{const x=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}};
+const write=(k,a)=>{try{localStorage.setItem(k,JSON.stringify(a))}catch(e){console.error('Workflow save failed',k,e)}};
+const me=()=>window.currentUser||(typeof currentUser!=='undefined'?currentUser:null)||{};const uname=()=>String(me().username||me().name||'Unknown');
+const norm=x=>String(x||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ');
+const pos=()=>norm(me().position),dept=()=>norm(me().department);
+const has=a=>Array.isArray(me().permissions?.actions)&&me().permissions.actions.includes(a);
+const isGM=()=>pos()==='general manager'||has('purchasing.approve_po_gm')||has('hr.approve_leave_gm');
+const isDeptHead=record=>((pos().includes('department head')||pos().includes('hod')||pos().includes('department manager')||has('purchasing.approve_pr_department')||has('hr.approve_leave_department')||has('stores.approve')) && (!dept()||dept()===norm(record?.department)));
+const isPurchasing=()=>pos().includes('purchasing manager')||has('purchasing.approve_pr_purchasing')||has('purchasing.send_po');
+const isHR=()=>pos()==='hr manager'||pos().includes('human resources manager')||has('hr.approve_leave_hr');
+const canStage=(key,positionCheck,record)=>!!(positionCheck()&&has(key));
+const esc=x=>typeof window.escapeHtml==='function'?window.escapeHtml(x):String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const currentProp=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+function syncPR(){try{window.syncSupabasePurchaseRequests?.()}catch(e){}}
+function syncPO(){try{window.syncSupabasePurchaseOrders?.()}catch(e){}}
+function syncStores(){try{window.syncSupabaseStores?.()}catch(e){}}
+function syncHR(){try{window.syncSupabaseHRPayroll?.()}catch(e){}}
+function audit(event,ref,detail){try{window.logAudit?.(event,ref,detail,currentProp())}catch(e){}}
+
+/* Department -> Position dropdown. Position records responsibility only; rights are still explicit checkboxes. */
+const positionMap={
+'Front Office':['Front Office Agent','Front Office Supervisor','Front Office Manager','Department Head'],
+'Housekeeping':['Room Attendant','Housekeeping Supervisor','Executive Housekeeper','Department Head'],
+'Food & Beverage':['Waiter / Server','Restaurant Supervisor','Restaurant Manager','Department Head'],
+'Kitchen':['Commis Chef','Chef de Partie','Sous Chef','Executive Chef','Department Head'],
+'Purchasing':['Purchasing Officer','Purchasing Manager','Department Head'],
+'Stores':['Store Keeper','Stores Supervisor','Department Head'],
+'Engineering':['Technician','Engineering Supervisor','Chief Engineer','Department Head'],
+'Finance / Accounts':['Accounts Officer','Finance Manager','Chief Accountant','Department Head'],
+'Human Resources':['HR Officer','HR Manager','Department Head'],
+'Security':['Security Officer','Security Supervisor','Security Manager','Department Head'],
+'Sales & Marketing':['Sales Executive','Sales Manager','Director of Sales','Department Head'],
+'General Management':['General Manager','Resident Manager','Hotel Manager'],
+'Administration':['Administrator','Administration Manager','Department Head']};
+window.sigUpdateUserPositions=function(selected){const d=document.getElementById('userDepartment'),p=document.getElementById('userPosition');if(!d||!p)return;const list=positionMap[d.value]||[];p.innerHTML='<option value="">Select position</option>'+list.map(x=>'<option>'+esc(x)+'</option>').join('');if(selected&&list.includes(selected))p.value=selected;window.sigUpdatePositionRightsHint?.()};
+window.sigUpdatePositionRightsHint=function(){const p=document.getElementById('userPosition')?.value||'',h=document.getElementById('userPositionHint');if(h)h.textContent=(p==='General Manager'?'Final approver for Purchase Orders and final leave approver. Individual action rights must also be assigned.':p==='Purchasing Manager'?'Reviews PRs after Department Head approval, creates POs, and sends POs only after GM approval.':p==='HR Manager'?'Reviews leave requests after Department Head approval. Individual action rights must also be assigned.':p==='Store Keeper'?'Raises replenishment PRs and issues approved store requisitions.':p==='Department Head'?'Approves requests for the assigned department only.': 'Position identifies approval responsibility; access remains controlled by individual rights.')};
+
+/* PR chain: Department Head -> Purchasing Manager -> approved for PO creation. */
+function getPR(id){return read(KPR).find(x=>String(x.id)===String(id)&&String(x.propertyId||currentProp())===currentProp())}
+function savePRRecord(r){const all=read(KPR),i=all.findIndex(x=>String(x.id)===String(r.id)&&String(x.propertyId||currentProp())===currentProp());if(i<0)return false;all[i]=r;write(KPR,all);syncPR();return true}
+window.sigApprovePRStage=function(id){const r=getPR(id);if(!r)return alert('Purchase Request not found.');const stage=String(r.approvalStage||'Department Head');
+ if(stage==='Department Head'){if(!canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r))return alert('Only the assigned Department Head can approve this PR stage.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');r.departmentHeadApprovedBy=uname();r.departmentHeadApprovedAt=new Date().toISOString();r.approvalStage='Purchasing Manager';r.status='Pending Purchasing Manager Approval';}
+ else if(stage==='Purchasing Manager'){if(!canStage('purchasing.approve_pr_purchasing',isPurchasing,r))return alert('Only the Purchasing Manager can approve this PR stage.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');r.purchasingManagerApprovedBy=uname();r.purchasingManagerApprovedAt=new Date().toISOString();r.approvalStage='Complete';r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();}
+ else return alert('This PR approval stage is already complete.');savePRRecord(r);audit('PURCHASE_REQUEST_STAGE_APPROVED',r.number,'Approved by '+uname()+'; next stage '+r.approvalStage);window.renderPurchasingModule?.();window.renderPR?.();renderPRQueue();alert('PR stage approved. '+(r.status==='Approved'?'Purchasing can now create the PO.':'Next approval: '+r.approvalStage+'.'));};
+window.sigRejectPRStage=function(id){const r=getPR(id);if(!r)return;const stage=String(r.approvalStage||'Department Head');const allowed=stage==='Department Head'?canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r):stage==='Purchasing Manager'?canStage('purchasing.approve_pr_purchasing',isPurchasing,r):false;if(!allowed)return alert('You are not authorized to reject this PR stage.');const reason=prompt('Reason for rejecting '+r.number+':','');if(reason===null)return;if(!reason.trim())return alert('A rejection reason is required.');r.status='Rejected';r.rejectReason=reason.trim();r.rejectedBy=uname();r.rejectedAt=new Date().toISOString();savePRRecord(r);audit('PURCHASE_REQUEST_REJECTED',r.number,reason.trim());window.renderPurchasingModule?.();renderPRQueue();};
+/* Keep legacy Approve handler from bypassing the staged workflow. */
+window.approvePurchaseRequest=function(id){return window.sigApprovePRStage(id)};
+
+/* PO: Purchasing Manager creates it; General Manager approves; Purchasing Manager sends. */
+function getPOs(){return read(KPO)}
+function savePOs(a){write(KPO,a);syncPO()}
+window.sigApprovePO=function(id){if(!canStage('purchasing.approve_po_gm',isGM,null))return alert('Only a General Manager with the PO approval right can approve a Purchase Order.');const a=getPOs(),po=a.find(x=>String(x.id)===String(id)&&String(x.propertyId||currentProp())===currentProp());if(!po)return alert('Purchase Order not found.');if(po.status==='Sent to Supplier'||po.status==='Closed')return alert('This PO is already sent or closed.');if(po.status==='Pending GM Approval' || po.gmApprovalStatus==='Pending'){po.status='Approved';po.gmApprovalStatus='Approved';po.gmApprovedBy=uname();po.gmApprovedAt=new Date().toISOString();po.supplierDispatchStatus='Ready to Send';}else return alert('Only a PO pending GM approval can be approved.');savePOs(a);audit('PURCHASE_ORDER_GM_APPROVED',po.number,'Approved by '+uname());renderPOQueue();window.renderPurchasingModule?.();alert('PO approved. Purchasing Manager can now send it to the supplier.');};
+window.sigSendPOToSupplier=function(id){if(!canStage('purchasing.send_po',isPurchasing,null))return alert('Only a Purchasing Manager with supplier dispatch rights can send the approved PO.');const a=getPOs(),po=a.find(x=>String(x.id)===String(id)&&String(x.propertyId||currentProp())===currentProp());if(!po)return alert('Purchase Order not found.');if(po.gmApprovalStatus!=='Approved'&&po.status!=='Approved')return alert('General Manager approval is required before sending this PO.');let suppliers=read('signature_pms_suppliers'),supplier=suppliers.find(x=>String(x.id)===String(po.supplierId));const email=String(supplier?.email||po.supplierEmail||'').trim();const subject=encodeURIComponent('Purchase Order '+(po.number||''));const body=encodeURIComponent('Dear '+(supplier?.name||po.supplier||'Supplier')+',\n\nPlease find the approved Purchase Order details below.\nPO Number: '+(po.number||'')+'\nDate: '+(po.date||'')+'\nDepartment: '+(po.department||'')+'\nTotal: '+(typeof window.accMoney==='function'?window.accMoney(po.total||0):Number(po.total||0).toFixed(2))+'\n\nPlease confirm receipt and expected delivery.\n\nRegards,\n'+uname());if(email){try{window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body}catch(e){}}else alert('No supplier email is saved. Please send the printed PO through your normal supplier channel.');const sent=confirm('After you send the PO to the supplier, click OK to record it as sent. Click Cancel if you have not sent it yet.');if(!sent)return;const note=prompt('Enter email / dispatch reference (optional):','');if(note===null)return;po.status='Sent to Supplier';po.supplierDispatchStatus='Sent';po.sentToSupplierBy=uname();po.sentToSupplierAt=new Date().toISOString();po.supplierDispatchNote=note.trim();savePOs(a);audit('PURCHASE_ORDER_SENT_TO_SUPPLIER',po.number,note.trim()||'Marked sent by Purchasing Manager');renderPOQueue();window.renderPurchasingModule?.();alert('Supplier dispatch recorded.');};
+
+function addQueue(hostId,title,desc,head,rowsHtml){let el=document.getElementById(hostId);if(!el)return;el.innerHTML='<div class="section-header"><div><h3>'+title+'</h3><div style="font-size:12px;color:#64748b">'+desc+'</div></div></div>'+head+'<div class="table-wrap"><table><thead><tr><th>Document</th><th>Department / Details</th><th>Requester / Owner</th><th>Status</th><th>Action</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'}
+function renderPRQueue(){const host=document.getElementById('sig424PRQueue');if(!host)return;const all=read(KPR).filter(x=>String(x.propertyId||currentProp())===currentProp()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));const rows=all.map(r=>{const stage=r.approvalStage||(r.status==='Submitted'?'Department Head':r.status==='Pending Purchasing Manager Approval'?'Purchasing Manager':r.status==='Approved'?'Complete':'');let action='—';if(stage==='Department Head'&&canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r)&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';else if(stage==='Purchasing Manager'&&canStage('purchasing.approve_pr_purchasing',isPurchasing,r)&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';return '<tr><td><strong>'+esc(r.number)+'</strong></td><td>'+esc(r.department||'')+'</td><td>'+esc(r.requestedBy||'')+'</td><td>'+esc(r.status||'Submitted')+'<div style="font-size:11px;color:#64748b">Stage: '+esc(stage||'—')+'</div></td><td>'+action+'</td></tr>'}).join('');host.innerHTML='<div class="section-header"><div><h3>Approval Workflow — Purchase Requests</h3><div style="font-size:12px;color:#64748b">Requester → Department Head → Purchasing Manager → PO creation.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PR Number</th><th>Department</th><th>Requested By</th><th>Status / Stage</th><th>Action</th></tr></thead><tbody>'+ (rows||'<tr><td colspan="5" class="empty">No Purchase Requests.</td></tr>')+'</tbody></table></div>'}
+function renderPOQueue(){const host=document.getElementById('sig424POQueue');if(!host)return;const all=getPOs().filter(x=>String(x.propertyId||currentProp())===currentProp()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));const rows=all.map(po=>{let action='—';if((po.status==='Pending GM Approval'||po.gmApprovalStatus==='Pending')&&canStage('purchasing.approve_po_gm',isGM,po))action='<button class="btn btn-primary btn-small" onclick="sigApprovePO(\''+esc(po.id)+'\')">GM Approve PO</button>';else if((po.gmApprovalStatus==='Approved'||po.status==='Approved')&&canStage('purchasing.send_po',isPurchasing,po)&&po.status!=='Sent to Supplier')action='<button class="btn btn-success btn-small" onclick="sigSendPOToSupplier(\''+esc(po.id)+'\')">Send to Supplier</button>';return '<tr><td><strong>'+esc(po.number||'')+'</strong></td><td>'+esc(po.department||'')+' / '+esc(po.supplier||'')+'</td><td>'+esc(po.createdBy||'')+'</td><td>'+esc(po.status||'Open')+(po.gmApprovedBy?'<div style="font-size:11px;color:#64748b">GM: '+esc(po.gmApprovedBy)+'</div>':'')+'</td><td>'+action+'</td></tr>'}).join('');host.innerHTML='<div class="section-header"><div><h3>Approval Workflow — Purchase Orders</h3><div style="font-size:12px;color:#64748b">Purchasing Manager creates PO → General Manager approves → Purchasing Manager sends to supplier.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PO Number</th><th>Department / Supplier</th><th>Created By</th><th>Status</th><th>Action</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No Purchase Orders.</td></tr>')+'</tbody></table></div>'}
+window.sigRenderApprovalQueues=function(){renderPRQueue();renderPOQueue();renderLeaveQueue()};
+function ensurePurchasingQueues(){const page=document.getElementById('purchasing');if(!page)return;if(!document.getElementById('sig424PRQueue')){const x=document.createElement('div');x.className='section';x.id='sig424PRQueue';x.style.marginTop='14px';page.appendChild(x)}if(!document.getElementById('sig424POQueue')){const x=document.createElement('div');x.className='section';x.id='sig424POQueue';x.style.marginTop='14px';page.appendChild(x)}renderPRQueue();renderPOQueue()}
+
+/* Leave: Department Head -> HR Manager -> General Manager. Attendance is written only after final approval. */
+function leaveRecords(){return read(KLV).filter(x=>String(x.propertyId||currentProp())===currentProp())}
+function saveLeaves(a){const all=read(KLV).filter(x=>String(x.propertyId||currentProp())!==currentProp()).concat(a);write(KLV,all);syncHR()}
+const oldSaveLeaveRequest=window.saveLeaveRequest;
+window.saveLeaveRequest=function(){
+ if(typeof oldSaveLeaveRequest!=='function')return alert('Leave form is unavailable.');
+ const before=read(KLV),beforeIds=new Set(before.map(x=>String(x.id))),attendanceBefore=read('signature_pms_hr_attendance');
+ const result=oldSaveLeaveRequest.apply(this,arguments);
+ const after=read(KLV),created=after.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||currentProp())===currentProp()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];
+ if(!created)return result;
+ created.department=created.department||read('signature_pms_hr_employees').find(x=>String(x.id)===String(created.employeeId))?.department||me().department||'';
+ created.requestedBy=uname();created.approvalStage='Department Head';created.status='Pending Department Head Approval';delete created.approvedBy;delete created.approvedAt;
+ write(KLV,after);write('signature_pms_hr_attendance',attendanceBefore);syncHR();
+ ensureLeaveQueue();renderLeaveQueue();audit('LEAVE_REQUEST_SUBMITTED',created.id,created.type+' '+created.from+' to '+created.to);
+ alert('Leave request submitted to Department Head for approval.');return result;
+};
+window.sigApproveLeaveStage=function(id){const all=read(KLV),r=all.find(x=>String(x.id)===String(id)&&String(x.propertyId||currentProp())===currentProp());if(!r)return alert('Leave request not found.');const stage=r.approvalStage||String(r.status||'').replace('Pending ','');if(stage==='Department Head'){if(!canStage('hr.approve_leave_department',()=>isDeptHead({department:r.department}),r))return alert('Only the assigned Department Head can approve this leave request.');r.departmentHeadApprovedBy=uname();r.departmentHeadApprovedAt=new Date().toISOString();r.approvalStage='HR Manager';r.status='Pending HR Manager Approval';}else if(stage==='HR Manager'){if(!canStage('hr.approve_leave_hr',isHR,r))return alert('Only the HR Manager can approve this leave stage.');r.hrManagerApprovedBy=uname();r.hrManagerApprovedAt=new Date().toISOString();r.approvalStage='General Manager';r.status='Pending General Manager Approval';}else if(stage==='General Manager'){if(!canStage('hr.approve_leave_gm',isGM,r))return alert('Only the General Manager can give final leave approval.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own leave request.');r.gmApprovedBy=uname();r.gmApprovedAt=new Date().toISOString();r.approvalStage='Complete';r.status='Approved';r.approvedBy=uname();r.approvedAt=r.gmApprovedAt;const att=read('signature_pms_hr_attendance');for(let d=new Date(r.from+'T00:00:00Z');d<=new Date(r.to+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){const ds=d.toISOString().slice(0,10),old=att.find(x=>String(x.employeeId)===String(r.employeeId)&&String(x.date)===ds&&String(x.propertyId||currentProp())===currentProp());if(old)old.status='Leave';else att.push({id:'att_leave_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),propertyId:currentProp(),employeeId:r.employeeId,employeeNo:r.employeeNo,name:r.name,date:ds,status:'Leave',markedBy:uname()});}write('signature_pms_hr_attendance',att);}else return alert('This leave request has no pending approval stage.');saveLeaves(all.filter(x=>String(x.propertyId||currentProp())===currentProp()));audit('LEAVE_STAGE_APPROVED',r.id,'Stage '+stage+' approved by '+uname());window.renderHR?.();renderLeaveQueue();alert(r.status==='Approved'?'Leave finally approved; attendance updated.':'Leave stage approved. Next approval: '+r.approvalStage+'.')};
+window.sigRejectLeaveStage=function(id){const all=read(KLV),r=all.find(x=>String(x.id)===String(id)&&String(x.propertyId||currentProp())===currentProp());if(!r)return;const stage=r.approvalStage||'Department Head',ok=stage==='Department Head'?canStage('hr.approve_leave_department',()=>isDeptHead(r),r):stage==='HR Manager'?canStage('hr.approve_leave_hr',isHR,r):stage==='General Manager'?canStage('hr.approve_leave_gm',isGM,r):false;if(!ok)return alert('You are not authorized to reject this leave stage.');const why=prompt('Reason for rejecting leave request:','');if(why===null)return;if(!why.trim())return alert('A rejection reason is required.');r.status='Rejected';r.rejectedAt=new Date().toISOString();r.rejectedBy=uname();r.rejectReason=why.trim();saveLeaves(all.filter(x=>String(x.propertyId||currentProp())===currentProp()));audit('LEAVE_REQUEST_REJECTED',r.id,why.trim());window.renderHR?.();renderLeaveQueue()};
+function ensureLeaveQueue(){const page=document.getElementById('hr');if(page&&!document.getElementById('sig424LeaveQueue')){const x=document.createElement('div');x.className='section';x.id='sig424LeaveQueue';x.style.marginTop='14px';page.appendChild(x)}}
+function renderLeaveQueue(){const host=document.getElementById('sig424LeaveQueue');if(!host)return;const a=leaveRecords().slice().sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')));const rows=a.map(r=>{const stage=r.approvalStage||'Department Head';let ok=stage==='Department Head'?canStage('hr.approve_leave_department',()=>isDeptHead(r),r):stage==='HR Manager'?canStage('hr.approve_leave_hr',isHR,r):stage==='General Manager'?canStage('hr.approve_leave_gm',isGM,r):false;let action=ok&&String(r.status).startsWith('Pending')?'<button class="btn btn-primary btn-small" onclick="sigApproveLeaveStage(\''+esc(r.id)+'\')">Approve</button> <button class="btn btn-danger btn-small" onclick="sigRejectLeaveStage(\''+esc(r.id)+'\')">Reject</button>':'—';return '<tr><td>'+esc(r.name||'')+' ('+esc(r.employeeNo||'')+')</td><td>'+esc(r.type||'')+'</td><td>'+esc(r.from||'')+' → '+esc(r.to||'')+'</td><td>'+esc(r.department||'')+'</td><td>'+esc(r.status||'')+'</td><td>'+action+'</td></tr>'}).join('');host.innerHTML='<div class="section-header"><div><h3>Leave Approval Workflow</h3><div style="font-size:12px;color:#64748b">Staff → Department Head → HR Manager → General Manager. Leave is recorded in attendance only after final approval.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Department</th><th>Status / Stage</th><th>Action</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6" class="empty">No leave requests.</td></tr>')+'</tbody></table></div>'}
+
+/* Store requisitions: mandatory Department Head approval before issue. Store Keeper can issue only after approval. */
+const oldStSaveReq=window.stSaveReq;
+if(typeof oldStSaveReq==='function')window.stSaveReq=function(){const before=read(KSR),ids=new Set(before.map(x=>String(x.id)));const result=oldStSaveReq.apply(this,arguments);const after=read(KSR),r=after.filter(x=>!ids.has(String(x.id))&&String(x.propertyId||currentProp())===currentProp()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];if(r){r.status='Pending';r.approvalStage='Department Head';delete r.approvedBy;delete r.approvedAt;write(KSR,after);syncStores();audit('STORE_REQUISITION_SUBMITTED',r.number,'Pending Department Head approval');window.renderStores?.();}return result;};
+const oldStApprove=window.stApproveReq;
+window.stApproveReq=function(id){const all=read(KSR),r=all.find(x=>String(x.id)===String(id)&&String(x.propertyId||currentProp())===currentProp());if(!r||r.status!=='Pending')return; if(!canStage('stores.approve',()=>isDeptHead(r),r))return alert('Only the Department Head for '+(r.department||'this department')+' can approve this store requisition.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own store requisition.');r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();write(KSR,all);syncStores();audit('STORE_REQUISITION_APPROVED',r.number,'Department Head approval by '+uname());window.renderStores?.();};
+/* Replenishment PR from stores must enter the purchasing workflow at the Department Head stage, then Purchasing Manager. */
+const oldSavePR=window.savePurchaseRequest;
+if(typeof oldSavePR==='function'){
+  window.savePurchaseRequest=function(){const beforeIds=new Set(read(KPR).map(x=>String(x.id)));const result=oldSavePR.apply(this,arguments);setTimeout(()=>{const a=read(KPR);const r=a.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||currentProp())===currentProp()).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')))[0];if(!r)return;if(!r.approvalStage){const fromStores=norm(r.department)==='stores'||norm(r.notes).includes('store requisition');r.approvalStage=fromStores?'Purchasing Manager':'Department Head';r.status=fromStores?'Pending Purchasing Manager Approval':'Pending Department Head Approval';write(KPR,a);syncPR();}},0);return result;};
+}
+/* Prevent a PO from being dispatched or treated as fully approved before GM approval. */
+const oldCreatePO=window.savePOFromPR;
+if(typeof oldCreatePO==='function')window.savePOFromPR=function(prId){const r=getPR(prId);if(!r||r.status!=='Approved'||r.approvalStage!=='Complete')return alert('The PR must pass Department Head and Purchasing Manager approvals before PO creation.');const beforeIds=new Set(read(KPO).map(x=>String(x.id)));const res=oldCreatePO.apply(this,arguments);setTimeout(()=>{const a=read(KPO),po=a.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||currentProp())===currentProp()).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')))[0];if(!po)return;po.status='Pending GM Approval';po.gmApprovalStatus='Pending';po.supplierDispatchStatus='Not Sent';const i=a.findIndex(x=>x.id===po.id);if(i>=0)a[i]=po;savePOs(a);renderPOQueue();},0);return res;};
+
+function boot(){
+  ensurePurchasingQueues();ensureLeaveQueue();window.sigRenderApprovalQueues();
+  const oldShow=window.showPage;if(oldShow&&!oldShow.__sig424WorkflowWrapped){window.showPage=function(pageName){const r=oldShow.apply(this,arguments);setTimeout(()=>{if(pageName==='purchasing')ensurePurchasingQueues();if(pageName==='hr')ensureLeaveQueue();window.sigRenderApprovalQueues()},100);return r};window.showPage.__sig424WorkflowWrapped=true;}
+  const oldRenderHR=window.renderHR;if(oldRenderHR&&!oldRenderHR.__sig424WorkflowWrapped){window.renderHR=function(){const r=oldRenderHR.apply(this,arguments);setTimeout(()=>{ensureLeaveQueue();renderLeaveQueue()},50);return r};window.renderHR.__sig424WorkflowWrapped=true;}
+  let lastSnapshot=JSON.stringify([read(KPR),read(KPO),read(KLV),read(KSR)]);
+  setInterval(()=>{if(document.hidden)return;const snapshot=JSON.stringify([read(KPR),read(KPO),read(KLV),read(KSR)]);if(snapshot!==lastSnapshot){lastSnapshot=snapshot;ensurePurchasingQueues();ensureLeaveQueue();renderPRQueue();renderPOQueue();renderLeaveQueue();}},5000);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
