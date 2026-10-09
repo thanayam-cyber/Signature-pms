@@ -25970,3 +25970,68 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
+
+
+<script id="v2-1-420-cashier-refresh-button-fix">
+/* v2.1.420 — Make Cashier Refresh visibly run, report sync failures, and reload the view. */
+(function(){
+  'use strict';
+  if(window.__signatureV420CashierRefresh)return;
+  window.__signatureV420CashierRefresh=true;
+  const TABLE='pms_cloud_records';
+  const KEYS=['signature_pms_cashier_shifts_v184','signature_pms_cashier_closings'];
+  const getProp=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+  const getClient=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
+  const read=k=>{try{const x=JSON.parse(localStorage.getItem(k)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}};
+  const write=(k,x)=>{try{localStorage.setItem(k,JSON.stringify(x));return true}catch(e){return false}};
+  async function cloudSync(){
+    const c=getClient(),p=getProp();
+    if(!c||!p)throw new Error('Supabase client or active property is unavailable.');
+    const ss=await c.auth.getSession();
+    if(ss.error)throw ss.error;
+    const user=ss.data?.session?.user;
+    if(!user)throw new Error('No active Supabase session. Please log in again.');
+    for(const key of KEYS){
+      const q=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',key).maybeSingle();
+      if(q.error)throw q.error;
+      const cloud=Array.isArray(q.data?.data)?q.data.data:[];
+      const local=read(key);
+      const localMine=local.filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}));
+      const cloudMine=cloud.filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}));
+      const id=x=>String(x?.id||(key===KEYS[1]?(String(x?.date||'')+'_'+String(x?.closedBy||x?.cashier||'')):(String(x?.businessDate||'')+'_'+String(x?.cashier||'')+'_'+String(x?.openedAt||''))));
+      const mergedMap=new Map();
+      [...cloudMine,...localMine].forEach(x=>mergedMap.set(id(x),x));
+      const merged=[...mergedMap.values()];
+      write(key,local.filter(x=>String(x?.propertyId||'')!==p).concat(merged));
+      if(merged.length){
+        const up=await c.from(TABLE).upsert({property_id:p,storage_key:key,data:merged,updated_by:user.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+        if(up.error)throw up.error;
+      }
+    }
+  }
+  function statusNode(button){
+    let n=document.getElementById('v420CashierRefreshStatus');
+    if(!n){n=document.createElement('span');n.id='v420CashierRefreshStatus';n.setAttribute('role','status');n.style.cssText='font-size:12px;margin-left:8px;color:#475569;';button.insertAdjacentElement('afterend',n);}
+    return n;
+  }
+  function bind(){
+    const button=document.querySelector('button[onclick="cashierShiftRefresh()"]');
+    if(!button||button.dataset.v420Bound==='1')return;
+    button.dataset.v420Bound='1';
+    button.addEventListener('click',async function(ev){
+      ev.preventDefault();ev.stopImmediatePropagation();
+      const oldText=button.textContent;
+      const status=statusNode(button);
+      button.disabled=true;button.textContent='Refreshing…';status.textContent='Syncing cashier records from cloud…';status.style.color='#475569';
+      let ok=false,err=null;
+      try{await cloudSync();ok=true;}catch(e){err=e;console.error('v2.1.420 cashier refresh failed:',e);}
+      try{if(typeof window.cashierShiftRefresh==='function')window.cashierShiftRefresh();}catch(e){console.error('Cashier display refresh failed:',e);if(!err)err=e;}
+      button.disabled=false;button.textContent=oldText;
+      if(ok&&!err){const t=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});status.textContent='Refreshed '+t;status.style.color='#166534';}
+      else{status.textContent='Cloud refresh failed — '+String(err?.message||'check connection and Supabase access');status.style.color='#b91c1c';}
+    },true);
+  }
+  function boot(){bind();[400,1000,2200,4000].forEach(ms=>setTimeout(bind,ms));}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
