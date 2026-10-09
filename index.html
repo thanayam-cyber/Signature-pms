@@ -15541,8 +15541,19 @@ window.postPayroll=function(){if(isDepartmentSupervisor()){alert('Access denied.
     let journals=[]; try{journals=JSON.parse(localStorage.getItem(journalKey)||"[]");}catch(e){journals=[];}
     const existing=journals.some(j=>String(j.propertyId??currentPropertyId)===String(currentPropertyId)&&String(j.reference)===ref);
     if(existing){setStatus("Payroll is already posted: "+ref,false);alert("Payroll is already posted to Accounting. Journal: "+ref);return;}
+    const gross=rec.reduce((sum,x)=>sum+Number(x.statutoryEarnings||x.grossEarnings||x.grossSalary||x.gross||0),0)||rec.reduce((sum,x)=>sum+Number(x.netPay||0)+Number(x.epfEmployee||0),0);
+    const epfEmployee=rec.reduce((sum,x)=>sum+Number(x.epfEmployee||0),0);
+    const epfEmployer=rec.reduce((sum,x)=>sum+Number(x.epfEmployer||0),0);
+    const etfEmployer=rec.reduce((sum,x)=>sum+Number(x.etfEmployer||0),0);
+    const otherDeductions=Math.max(0,Number((gross-total-epfEmployee).toFixed(2)));
     const lines=[
-      {account:"Payroll & Staff Cost",debit:Number(total),credit:0},
+      {account:"Payroll & Staff Cost",debit:Number(gross),credit:0},
+      ...(epfEmployer>0?[{account:"Employer EPF Expense",debit:epfEmployer,credit:0}]:[]),
+      ...(etfEmployer>0?[{account:"Employer ETF Expense",debit:etfEmployer,credit:0}]:[]),
+      {account:"EPF Payable - Employee",debit:0,credit:epfEmployee},
+      ...(epfEmployer>0?[{account:"EPF Payable - Employer",debit:0,credit:epfEmployer}]:[]),
+      ...(etfEmployer>0?[{account:"ETF Payable",debit:0,credit:etfEmployer}]:[]),
+      ...(otherDeductions>0?[{account:"Other Payroll Deductions Payable",debit:0,credit:otherDeductions}]:[]),
       {account:"Salary Payable",debit:0,credit:Number(total)}
     ];
     const debit=lines.reduce((n,x)=>n+Number(x.debit||0),0),credit=lines.reduce((n,x)=>n+Number(x.credit||0),0);
@@ -22876,6 +22887,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 
+<!-- v2.1.421 Payroll statutory journal repair + Accounting Journal repaint debounce -->
 </body><script id="v2-1-360-po-open-button-final">
 /* v2.1.360 — Purchasing PO OPEN button hardening. Restaurant POS untouched. */
 (function(){
@@ -25579,6 +25591,8 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     if(q.error)throw q.error;
     const cloud=(q.data||[]).map(r=>r?.data).filter(Boolean).filter(j=>String(j?.propertyId||z.p)===z.p);
     const all=localJournals(),other=all.filter(j=>String(j?.propertyId||z.p)!==z.p),mine=all.filter(j=>String(j?.propertyId||z.p)===z.p);
+    const signature=list=>JSON.stringify((Array.isArray(list)?list:[]).map(j=>({id:j?.id,reference:j?.reference,source:j?.source,date:j?.date,description:j?.description,lines:j?.lines,propertyId:j?.propertyId})).sort((a,b)=>String(a.id||a.reference).localeCompare(String(b.id||b.reference))));
+    const beforeSig=signature(mine);
     const map=new Map();
     [...mine,...cloud].forEach(j=>{
       const k=String(j?.id||j?.reference||'');if(!k)return;
@@ -25586,9 +25600,12 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
       if(!old||String(j.updatedAt||j.postedAt||'')>=String(old.updatedAt||old.postedAt||''))map.set(k,j);
     });
     const merged=[...map.values()];
-    writeJournals(other.concat(merged));
-    try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
-    return true;
+    const changed=beforeSig!==signature(merged);
+    if(changed){
+      writeJournals(other.concat(merged));
+      try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+    }
+    return changed;
   }
   function payrollRows(){
     try{
@@ -25604,20 +25621,35 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     let changed=false;
     const periods=[...new Set(payrollRows().filter(x=>String(x?.propertyId||p)===p&&['Posted','Paid'].includes(String(x?.status||''))).map(x=>String(x.period||'')).filter(x=>/^\d{4}-\d{2}$/.test(x)))];
     periods.forEach(period=>{
-      const ref='PAY-'+period;
-      if(mine.some(j=>String(j?.reference||'')===ref&&String(j?.source||'')==='Payroll'))return;
       const rec=payrollRows().filter(x=>String(x?.propertyId||p)===p&&String(x?.period||'')===period&&['Posted','Paid'].includes(String(x?.status||'')));
-      const total=rec.reduce((sum,x)=>sum+Number(x?.netPay||0),0);
-      if(total<=0)return;
-      mine.push({
-        id:'je_payroll_repair_'+period+'_'+Date.now().toString(36),
-        propertyId:p, date:period+'-01', reference:ref,
-        description:'Payroll '+period, source:'Payroll',
-        lines:[{account:'Payroll & Staff Cost',debit:total,credit:0},{account:'Salary Payable',debit:0,credit:total}],
-        postedBy:currentUser?.username||'Admin',
-        repairedFromPostedPayroll:true, updatedAt:new Date().toISOString()
-      });
-      changed=true;
+      if(!rec.length)return;
+      const net=rec.reduce((sum,x)=>sum+Number(x?.netPay||0),0);
+      const employeeEPF=rec.reduce((sum,x)=>sum+Number(x?.epfEmployee||0),0);
+      const employerEPF=rec.reduce((sum,x)=>sum+Number(x?.epfEmployer||0),0);
+      const employerETF=rec.reduce((sum,x)=>sum+Number(x?.etfEmployer||0),0);
+      const gross=rec.reduce((sum,x)=>sum+Number(x?.statutoryEarnings||x?.grossEarnings||x?.grossSalary||x?.gross||0),0)||rec.reduce((sum,x)=>sum+Number(x?.netPay||0)+Number(x?.epfEmployee||0),0);
+      if(net<=0||gross<=0)return;
+      const otherDeductions=Math.max(0,Number((gross-net-employeeEPF).toFixed(2)));
+      const lines=[
+        {account:'Payroll & Staff Cost',debit:gross,credit:0},
+        ...(employerEPF>0?[{account:'Employer EPF Expense',debit:employerEPF,credit:0}]:[]),
+        ...(employerETF>0?[{account:'Employer ETF Expense',debit:employerETF,credit:0}]:[]),
+        ...(employeeEPF>0?[{account:'EPF Payable - Employee',debit:0,credit:employeeEPF}]:[]),
+        ...(employerEPF>0?[{account:'EPF Payable - Employer',debit:0,credit:employerEPF}]:[]),
+        ...(employerETF>0?[{account:'ETF Payable',debit:0,credit:employerETF}]:[]),
+        ...(otherDeductions>0?[{account:'Other Payroll Deductions Payable',debit:0,credit:otherDeductions}]:[]),
+        {account:'Salary Payable',debit:0,credit:net}
+      ];
+      const debit=lines.reduce((n,x)=>n+Number(x.debit||0),0),credit=lines.reduce((n,x)=>n+Number(x.credit||0),0);
+      if(Math.abs(debit-credit)>0.01){console.warn('Payroll statutory journal repair skipped because it would not balance:',period,debit,credit);return;}
+      let journal=mine.find(j=>String(j?.reference||'')==='PAY-'+period&&String(j?.source||'')==='Payroll');
+      if(!journal){
+        journal={id:'je_payroll_repair_'+period+'_'+Date.now().toString(36),propertyId:p,date:period+'-01',reference:'PAY-'+period,description:'Payroll '+period,source:'Payroll',postedBy:(typeof currentUser!=='undefined'&&currentUser?.username)||'Admin'};
+        mine.push(journal);changed=true;
+      }
+      const same=JSON.stringify(journal.lines||[])===JSON.stringify(lines);
+      if(!same){journal.lines=lines;journal.updatedAt=new Date().toISOString();journal.repairedStatutoryPayroll=true;changed=true;}
+      journal.propertyId=p;
     });
     if(changed)writeJournals(all.filter(j=>String(j?.propertyId||p)!==p).concat(mine));
     return changed;
@@ -25626,12 +25658,15 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     try{
       /* Repair only a missing accounting journal for payroll that is already
          Posted/Paid. This NEVER recalculates or changes payroll status. */
-      ensureExistingPostedPayrollJournals();
+      const repaired=ensureExistingPostedPayrollJournals();
       await publishPayrollJournals();
-      await pullAccountingJournals();
-      try{if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}
-      try{if(typeof renderGeneralLedger==='function')renderGeneralLedger();}catch(e){}
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Payroll journal synchronized to Accounting cloud.','success');
+      const cloudChanged=await pullAccountingJournals();
+      if(repaired&&!cloudChanged){
+        try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+        try{if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}
+        try{if(typeof renderGeneralLedger==='function')renderGeneralLedger();}catch(e){}
+      }
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Payroll statutory journal synchronized to Accounting cloud.','success');
       return true;
     }catch(e){
       console.warn('Payroll Accounting Journal cloud sync failed:',e);
