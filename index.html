@@ -9637,7 +9637,7 @@ function openPaymentModal(reservationId){
 
             ${escapeHtml(r.bookingNo)}
             · Balance ${money(balance)}
-            · <strong>${accMoney(reservationAmountLKR(r,balance))}</strong> payable in LKR
+            · <strong>${accMoney(balance)}</strong> payable in LKR
 
         </div>
 
@@ -9699,13 +9699,13 @@ function openPaymentModal(reservationId){
                    id="paymentAmount"
                    min="0.01"
                    step="0.0001"
-                   value="${(reservationAmountLKR(r,balance)/paymentRateToLKR(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||'USD'))).toFixed(4)}"
-                   data-lkr-value="${Number(reservationAmountLKR(r,balance)).toFixed(2)}"
+                   value="${(Number(balance||0)/paymentRateToLKR(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||'USD'))).toFixed(4)}"
+                   data-lkr-value="${Number(balance||0).toFixed(2)}"
                    data-last-rate="${paymentRateToLKR(String(r.currency||r.guestCurrency||settings?.guestCurrency||settings?.currency||'USD'))}"
                    oninput="updatePaymentAmountLKRValue()">
             <div id="paymentFxRate" style="font-size:11px;color:#6b7280;margin-top:5px"></div>
             <div id="paymentLkrEquivalent" style="font-size:12px;font-weight:600;margin-top:4px"></div>
-            <div style="font-size:11px;color:#6b7280;margin-top:4px">Folio balance: ${money(balance)} (${accMoney(reservationAmountLKR(r,balance))} base value)</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px">Folio balance: ${accMoney(balance)} (LKR base value)</div>
 
         </div>
 
