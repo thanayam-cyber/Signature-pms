@@ -7466,13 +7466,21 @@ async function clearRevenueHistory(){
   "signature_pms_hr_roster","signature_pms_fnb_cashier_shifts_v231"
  ];
  const selectedProperty=String(currentPropertyId||'');
+ // Journal rows can carry either the PMS-local property ID (e.g. H003) or
+ // the Supabase properties.id UUID. Resolve both identifiers before filtering
+ // local transaction arrays so a UUID-tagged journal cannot survive the reset
+ // and be republished by the 5-second accounting-journal sync loop.
+ let resolvedCloudPropertyId='';
+ try{resolvedCloudPropertyId=String(await resolveSupabasePropertyId(selectedProperty)||'');}
+ catch(e){console.warn('Property ID alias resolution for transaction cleanup failed:',e?.message||e);}
+ const currentPropertyAliases=new Set([selectedProperty,resolvedCloudPropertyId].filter(Boolean));
  const keepOtherPropertyRows=(rows)=>rows.filter(x=>{
    if(!x||typeof x!=='object') return false;
    const rowProperty=x.propertyId??x.property_id??'';
-   // Legacy transaction rows without a property tag belong to this browser's
-   // selected property and must not survive a reset. Explicit other-property
-   // rows are retained.
-   return rowProperty!=='' && String(rowProperty)!==selectedProperty;
+   // Legacy untagged transaction rows belong to this browser's selected
+   // property. Remove rows tagged with either local or Supabase property ID;
+   // retain rows explicitly belonging to another property.
+   return rowProperty!=='' && !currentPropertyAliases.has(String(rowProperty));
  });
  transactionKeys.forEach(key=>{
    try{
@@ -7488,7 +7496,7 @@ async function clearRevenueHistory(){
  try{
    const client=initSupabaseClient();
    if(client){
-     const cloudPropertyId=await resolveSupabasePropertyId(selectedProperty);
+     const cloudPropertyId=resolvedCloudPropertyId||await resolveSupabasePropertyId(selectedProperty);
      if(cloudPropertyId){
        // Reservations are stored in the dedicated reservations table.
        const {data:cloudReservations,error:rErr}=await client.from('reservations').select('id').eq('property_id',cloudPropertyId);
