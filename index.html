@@ -7539,15 +7539,22 @@ async function clearRevenueHistory(){
    if(client){
      const cloudPropertyId=resolvedCloudPropertyId||await resolveSupabasePropertyId(selectedProperty);
      if(cloudPropertyId){
-       // v2.1.451: H001/local property IDs and Supabase UUIDs can both appear in cloud rows.
+       // v2.1.452: satisfy pms_cloud_records RLS updated_by checks and support H001/property UUID aliases.
        // Lock both aliases so the journal poller cannot republish stale rows under either ID.
        const cloudPropertyAliases=[...new Set([String(selectedProperty||''),String(cloudPropertyId||'')].filter(Boolean))];
        const cleanupLockKey='signature_pms_revenue_cleanup_lock';
+       // RLS on pms_cloud_records requires updated_by = auth.uid() for INSERT and UPDATE.
+       // Use the authenticated Supabase user ID; never bypass or disable RLS.
+       const {data:cleanupAuthData,error:cleanupAuthError}=await client.auth.getSession();
+       if(cleanupAuthError)throw cleanupAuthError;
+       const cleanupUserId=cleanupAuthData?.session?.user?.id;
+       if(!cleanupUserId)throw new Error('Could not verify the signed-in Supabase user. No cloud cleanup was attempted. Please sign in again.');
        for(const lockPropertyId of cloudPropertyAliases){
          const {error:lockError}=await client.from('pms_cloud_records').upsert({
            property_id:lockPropertyId,
            storage_key:cleanupLockKey,
            data:{active:true,propertyId:lockPropertyId,startedAt:new Date().toISOString(),startedBy:String(window.currentUser?.username||window.currentUser?.name||'Admin')},
+           updated_by:cleanupUserId,
            updated_at:new Date().toISOString()
          },{onConflict:'property_id,storage_key'});
          if(lockError)throw new Error('Could not activate the property cleanup lock for '+lockPropertyId+'. No cloud cleanup was attempted: '+(lockError.message||String(lockError)));
