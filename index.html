@@ -7525,7 +7525,7 @@ async function clearRevenueHistory(){
      const kept=parsed.filter(j=>{
        const rowProperty=j?.propertyId??j?.property_id??'';
        const belongsToCurrent=rowProperty===''||currentPropertyAliases.has(String(rowProperty));
-       return !(belongsToCurrent&&isOperationalResetJournal(j));
+       return !(belongsToCurrent&&!isPayrollJournal(j));
      });
      localStorage.setItem(journalKey,JSON.stringify(kept));
    }
@@ -7539,20 +7539,23 @@ async function clearRevenueHistory(){
    if(client){
      const cloudPropertyId=resolvedCloudPropertyId||await resolveSupabasePropertyId(selectedProperty);
      if(cloudPropertyId){
-       // v2.1.450: a property-scoped cloud lock prevents other updated PMS sessions
-       // from re-publishing operational journals while this cleanup deletes them.
+       // v2.1.451: H001/local property IDs and Supabase UUIDs can both appear in cloud rows.
+       // Lock both aliases so the journal poller cannot republish stale rows under either ID.
+       const cloudPropertyAliases=[...new Set([String(selectedProperty||''),String(cloudPropertyId||'')].filter(Boolean))];
        const cleanupLockKey='signature_pms_revenue_cleanup_lock';
-       const {error:lockError}=await client.from('pms_cloud_records').upsert({
-         property_id:cloudPropertyId,
-         storage_key:cleanupLockKey,
-         data:{active:true,propertyId:cloudPropertyId,startedAt:new Date().toISOString(),startedBy:String(window.currentUser?.username||window.currentUser?.name||'Admin')},
-         updated_at:new Date().toISOString()
-       },{onConflict:'property_id,storage_key'});
-       if(lockError)throw new Error('Could not activate the property cleanup lock. No cloud cleanup was attempted: '+(lockError.message||String(lockError)));
-       const {data:lockCheck,error:lockCheckError}=await client.from('pms_cloud_records')
-         .select('data').eq('property_id',cloudPropertyId).eq('storage_key',cleanupLockKey).maybeSingle();
-       if(lockCheckError)throw lockCheckError;
-       if(lockCheck?.data?.active!==true)throw new Error('Supabase did not confirm the property cleanup lock. No cloud transactions were deleted. Check pms_cloud_records write permissions/RLS.');
+       for(const lockPropertyId of cloudPropertyAliases){
+         const {error:lockError}=await client.from('pms_cloud_records').upsert({
+           property_id:lockPropertyId,
+           storage_key:cleanupLockKey,
+           data:{active:true,propertyId:lockPropertyId,startedAt:new Date().toISOString(),startedBy:String(window.currentUser?.username||window.currentUser?.name||'Admin')},
+           updated_at:new Date().toISOString()
+         },{onConflict:'property_id,storage_key'});
+         if(lockError)throw new Error('Could not activate the property cleanup lock for '+lockPropertyId+'. No cloud cleanup was attempted: '+(lockError.message||String(lockError)));
+         const {data:lockCheck,error:lockCheckError}=await client.from('pms_cloud_records')
+           .select('data').eq('property_id',lockPropertyId).eq('storage_key',cleanupLockKey).maybeSingle();
+         if(lockCheckError)throw lockCheckError;
+         if(lockCheck?.data?.active!==true)throw new Error('Supabase did not confirm the cleanup lock for '+lockPropertyId+'. No cloud transactions were deleted. Check pms_cloud_records write permissions/RLS.');
+       }
        // Wait for this browser's in-flight accounting sync to finish before deleting rows.
        if(window.signatureAccountingJournalCloud&&typeof window.signatureAccountingJournalCloud.waitForIdle==='function'){
          const idle=await window.signatureAccountingJournalCloud.waitForIdle(12000);
@@ -7571,27 +7574,30 @@ async function clearRevenueHistory(){
        // Supabase project, and an error here would abort cleanup before F&B data.
        // Delete only transaction keys for this property; preserve setup/master data.
        const cloudTransactionExact=new Set(transactionKeys.map(String));
-       const {data:cloudRecords,error:crErr}=await client.from('pms_cloud_records').select('storage_key,data').eq('property_id',cloudPropertyId);
+       const {data:cloudRecords,error:crErr}=await client.from('pms_cloud_records').select('storage_key,data').in('property_id',cloudPropertyAliases);
        if(crErr) throw crErr;
        const isTransactionCloudKey=(rawKey,data)=>{
          const key=String(rawKey||'');
+         // Clear all non-payroll journal transactions for the selected property, even when
+         // an old journal payload lacks source/reference fields and the old heuristic missed it.
+         const isIndividualJournal=key.startsWith('signature_pms_accounting_journal_je_') && !isPayrollJournal(data);
          return cloudTransactionExact.has(key)
            || key==='signature_pms_fnb_invoice_index'
+           || key.startsWith('signature_pms_fnb_invoice_')
            || key.startsWith('signature_pms_fnb_sale_')
            || key.startsWith('signature_pms_fnb_payment_')
-           // Only remove individual Daily Revenue / Daily Payments journals; preserve payroll journals.
-           || (key.startsWith('signature_pms_accounting_journal_') && isOperationalResetJournal(data));
+           || isIndividualJournal;
        };
-       // The main journal array may also contain payroll/other journals. Filter its revenue rows
-       // instead of deleting the entire array or changing accounting setup.
+       // A clean revenue reset leaves payroll journals only; accounting operational/test journals
+       // must not remain in the aggregate array and later reappear in Accounting.
        const mainJournal=(cloudRecords||[]).find(r=>String(r.storage_key||'')==='signature_pms_accounting_journals');
        if(mainJournal){
          const oldJournals=Array.isArray(mainJournal.data)?mainJournal.data:[];
-         const keptJournals=oldJournals.filter(j=>!isOperationalResetJournal(j));
+         const keptJournals=oldJournals.filter(j=>isPayrollJournal(j));
          if(keptJournals.length!==oldJournals.length){
            const {error:journalUpdateError}=await client.from('pms_cloud_records')
              .update({data:keptJournals,updated_at:new Date().toISOString()})
-             .eq('property_id',cloudPropertyId).eq('storage_key','signature_pms_accounting_journals');
+             .in('property_id',cloudPropertyAliases).eq('storage_key','signature_pms_accounting_journals');
            if(journalUpdateError)throw journalUpdateError;
          }
        }
@@ -7600,13 +7606,13 @@ async function clearRevenueHistory(){
          // Ask Supabase to return the deleted key. A DELETE without .select()
          // can return no rows and no error when RLS prevents deletion.
          const {data:deletedRows,error:e}=await client.from('pms_cloud_records')
-           .delete().eq('property_id',cloudPropertyId).eq('storage_key',key).select('storage_key');
+           .delete().in('property_id',cloudPropertyAliases).eq('storage_key',key).select('storage_key');
          if(e) throw e;
          if(!Array.isArray(deletedRows) || deletedRows.length===0){
            // Verify whether the row still exists so the user gets a real failure,
            // not a misleading CLEAN START success message.
            const {data:stillThere,error:verifyError}=await client.from('pms_cloud_records')
-             .select('storage_key').eq('property_id',cloudPropertyId).eq('storage_key',key);
+             .select('storage_key').in('property_id',cloudPropertyAliases).eq('storage_key',key);
            if(verifyError) throw verifyError;
            if(Array.isArray(stillThere) && stillThere.length){
              throw new Error('Supabase did not confirm deletion of '+key+'. The row still exists. Check DELETE/SELECT permissions (RLS) for pms_cloud_records.');
@@ -7616,11 +7622,11 @@ async function clearRevenueHistory(){
        }
        // Final verification: make sure no target transaction keys remain visible.
        const {data:verifyRecords,error:verifyRecordsError}=await client.from('pms_cloud_records')
-         .select('storage_key,data').eq('property_id',cloudPropertyId);
+         .select('storage_key,data').in('property_id',cloudPropertyAliases);
        if(verifyRecordsError) throw verifyRecordsError;
        const remaining=(verifyRecords||[]).filter(r=>isTransactionCloudKey(r.storage_key,r.data)).map(r=>String(r.storage_key||''));
        const mainAfter=(verifyRecords||[]).find(r=>String(r.storage_key||'')==='signature_pms_accounting_journals');
-       const mainStillHasOperationalJournals=Array.isArray(mainAfter?.data)&&mainAfter.data.some(isOperationalResetJournal);
+       const mainStillHasOperationalJournals=Array.isArray(mainAfter?.data)&&mainAfter.data.some(j=>!isPayrollJournal(j));
        if(remaining.length||mainStillHasOperationalJournals){
          throw new Error('Cloud cleanup incomplete. Remaining transaction keys: '+remaining.slice(0,8).join(', ')+(remaining.length>8?' …':''));
        }
@@ -7642,11 +7648,12 @@ async function clearRevenueHistory(){
      const client=initSupabaseClient();
      const cloudPropertyId=resolvedCloudPropertyId||await resolveSupabasePropertyId(selectedProperty);
      if(client&&cloudPropertyId){
+       const unlockAliases=[...new Set([String(selectedProperty||''),String(cloudPropertyId||'')].filter(Boolean))];
        const {error:unlockError}=await client.from('pms_cloud_records')
-         .delete().eq('property_id',cloudPropertyId).eq('storage_key','signature_pms_revenue_cleanup_lock');
+         .delete().in('property_id',unlockAliases).eq('storage_key','signature_pms_revenue_cleanup_lock');
        if(unlockError)throw unlockError;
        const {data:lockStillThere,error:lockVerifyError}=await client.from('pms_cloud_records')
-         .select('storage_key').eq('property_id',cloudPropertyId).eq('storage_key','signature_pms_revenue_cleanup_lock');
+         .select('storage_key').in('property_id',unlockAliases).eq('storage_key','signature_pms_revenue_cleanup_lock');
        if(lockVerifyError)throw lockVerifyError;
        if(Array.isArray(lockStillThere)&&lockStillThere.length)throw new Error('Cleanup lock could not be released after verification.');
      }
@@ -22231,7 +22238,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const cleanupLocked=lockQ.data?.data?.active===true;
       if(window.__signaturePropertyCleanupInProgress)return;
       const localBefore=localMine(p);
-      const eligibleLocal=cleanupLocked?localBefore.filter(j=>!isOperationalResetJournal(j)):localBefore;
+      const eligibleLocal=cleanupLocked?localBefore.filter(j=>isPayrollJournal(j)):localBefore;
       const local=typeof window.dedupeAccountingJournalRows==='function'
         ? window.dedupeAccountingJournalRows(eligibleLocal,p) : eligibleLocal;
       /* Publish only the deduplicated local snapshot, then reconcile it with
@@ -22242,7 +22249,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(q.error)throw q.error;
       if(window.__signaturePropertyCleanupInProgress)return;
       const cloud=(q.data||[]).filter(r=>r&&r.data).map(r=>{const row={...r.data};if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});return row;})
-        .filter(j=>!cleanupLocked||!isOperationalResetJournal(j));
+        .filter(j=>!cleanupLocked||isPayrollJournal(j));
       const merged=mergeJournals(local,cloud,p);
       if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
         writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
