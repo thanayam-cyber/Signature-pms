@@ -13974,12 +13974,55 @@ function getAccounts(){
 function accountByName(name){ return getAccounts().find(a=>a.name===name); }
 function accountByCode(code){ return getAccounts().find(a=>a.code===code); }
 
+/* Accounting safety: collapse repeated cloud/local copies of the same POS
+   invoice or monthly payroll journal. Different IDs alone do not make a second
+   posting. Keep the newest journal version by embedded creation timestamp. */
+function dedupeAccountingJournalRows(rows, propertyId){
+  const input=Array.isArray(rows)?rows:[];
+  const chosen=new Map();
+  const freshness=j=>{
+    const explicit=Date.parse(String(j?.__cloudUpdatedAt||j?.updatedAt||j?.postedAt||''));
+    if(Number.isFinite(explicit))return explicit;
+    const id=String(j?.id||'');
+    const m=id.match(/(?:^|_)(\d{10,13})(?:_|$)/);
+    return m?Number(m[1]):0;
+  };
+  const normalizedSource=j=>String(j?.source||'').trim().toLowerCase();
+  const shouldCollapse=j=>{
+    const ref=String(j?.reference||'').trim();
+    const src=normalizedSource(j);
+    return (/^ST-POS-RINV-/i.test(ref) && /stores\s*\/\s*pos/i.test(src))
+      || (/^PAY-\d{4}-\d{2}$/i.test(ref) && src==='payroll');
+  };
+  input.forEach((j,index)=>{
+    if(!j || typeof j!=='object')return;
+    const prop=String(j.propertyId??j.property_id??propertyId??'');
+    if(propertyId!=null && prop && prop!==String(propertyId))return;
+    if(!shouldCollapse(j)){
+      chosen.set('row:'+index,j);
+      return;
+    }
+    const natural=[prop,String(j.reference||'').trim().toUpperCase(),normalizedSource(j),String(j.date||'').slice(0,10)].join('|');
+    const prev=chosen.get(natural);
+    if(!prev || freshness(j)>freshness(prev) || (freshness(j)===freshness(prev) && index>prev.__dedupeIndex)){
+      const copy={...j};
+      Object.defineProperty(copy,'__dedupeIndex',{value:index,enumerable:false,configurable:true});
+      chosen.set(natural,copy);
+    }
+  });
+  return [...chosen.values()].map(j=>{
+    if(Object.prototype.hasOwnProperty.call(j,'__dedupeIndex')){const copy={...j};delete copy.__dedupeIndex;return copy;}
+    return j;
+  });
+}
+window.dedupeAccountingJournalRows=dedupeAccountingJournalRows;
 function journalEntries(){
   const all=accRead(ACC_STORE.journals);
-  return all.filter(x=>{
+  const mine=all.filter(x=>{
     const pid=x.propertyId==null || x.propertyId==="" ? currentPropertyId : x.propertyId;
     return String(pid)===String(currentPropertyId);
   });
+  return dedupeAccountingJournalRows(mine,currentPropertyId);
 }
 window.postJournal=postJournal;
 function postJournal(date,ref,description,lines,source){
@@ -22110,7 +22153,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const old=map.get(key);
       if(!old || String(j.updatedAt||j.postedAt||'')>=String(old.updatedAt||old.postedAt||'')) map.set(key,j);
     });
-    return [...map.values()];
+    const rows=[...map.values()];
+    return typeof window.dedupeAccountingJournalRows==='function'
+      ? window.dedupeAccountingJournalRows(rows,p)
+      : rows;
   }
   async function publishOne(c,p,u,j){
     if(!j || String(j.propertyId||p)!==p)return false;
@@ -22128,15 +22174,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(lastProperty!==p)lastProperty=p;
     busy=true;
     try{
-      const local=localMine(p);
-      /* Publish local journals first. This includes older journals so a user
-         who logs in on another device can see the existing accounting state. */
+      const localBefore=localMine(p);
+      const local=typeof window.dedupeAccountingJournalRows==='function'
+        ? window.dedupeAccountingJournalRows(localBefore,p) : localBefore;
+      /* Publish only the deduplicated local snapshot, then reconcile it with
+         cloud. This prevents old copies on a device from being re-published
+         as additional Accounting postings on every polling cycle. */
       for(const j of local){try{await publishOne(c,p,u,j)}catch(e){console.warn('Accounting journal cloud publish failed:',e?.message||e)}}
       const q=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%');
       if(q.error)throw q.error;
-      const cloud=(q.data||[]).map(r=>r.data).filter(Boolean);
+      const cloud=(q.data||[]).filter(r=>r&&r.data).map(r=>{const row={...r.data};if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});return row;});
       const merged=mergeJournals(local,cloud,p);
-      if(merged.length!==local.length || JSON.stringify(merged)!==JSON.stringify(local)){
+      if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
         writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
         try{if(typeof renderAccounting==='function')renderAccounting()}catch(e){}
         try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting()}catch(e){}
