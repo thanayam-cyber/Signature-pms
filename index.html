@@ -7484,7 +7484,7 @@ async function clearRevenueHistory(){
 
  reservations=[]; folios=[]; payments=[]; sales=[]; pmAccounts=[]; pmTransactions=[];
 
- let cloudReservationDeleted=0, cloudStoreDeleted=0, cloudTxnDeleted=0, cloudErrors=[];
+ let cloudReservationDeleted=0, cloudTxnDeleted=0, cloudErrors=[];
  try{
    const client=initSupabaseClient();
    if(client){
@@ -7498,17 +7498,10 @@ async function clearRevenueHistory(){
          if(e) throw e;
          cloudReservationDeleted++;
        }
-       // Store transaction rows are separate from the cloud-records table.
-       const {data:cloudStores,error:sErr}=await client.from('property_store_records').select('record_type,record_id').eq('property_id',cloudPropertyId);
-       if(sErr) throw sErr;
-       for(const row of (cloudStores||[])){
-         const {error:e}=await client.from('property_store_records').delete().eq('property_id',cloudPropertyId).eq('record_type',String(row.record_type)).eq('record_id',String(row.record_id));
-         if(e) throw e;
-         cloudStoreDeleted++;
-       }
-       // Restaurant invoices/sales and payments live in pms_cloud_records, not
-       // in the reservations table. Delete only transaction keys for this
-       // property; preserve menu, table setup, suppliers, articles and settings.
+       // This project uses pms_cloud_records for shared module data.
+       // Do NOT query property_store_records: that table does not exist in this
+       // Supabase project, and an error here would abort cleanup before F&B data.
+       // Delete only transaction keys for this property; preserve setup/master data.
        const cloudTransactionExact=new Set(transactionKeys.map(String));
        const {data:cloudRecords,error:crErr}=await client.from('pms_cloud_records').select('storage_key').eq('property_id',cloudPropertyId);
        if(crErr) throw crErr;
@@ -7517,13 +7510,36 @@ async function clearRevenueHistory(){
          return cloudTransactionExact.has(key)
            || key==='signature_pms_fnb_invoice_index'
            || key.startsWith('signature_pms_fnb_sale_')
-           || key.startsWith('signature_pms_fnb_payment_');
+           || key.startsWith('signature_pms_fnb_payment_')
+           // Journal entries are stored as one row per JE with a dynamic suffix.
+           || key.startsWith('signature_pms_accounting_journal_');
        };
        const keys=[...new Set((cloudRecords||[]).map(r=>String(r.storage_key||'')).filter(isTransactionCloudKey))];
        for(const key of keys){
-         const {error:e}=await client.from('pms_cloud_records').delete().eq('property_id',cloudPropertyId).eq('storage_key',key);
+         // Ask Supabase to return the deleted key. A DELETE without .select()
+         // can return no rows and no error when RLS prevents deletion.
+         const {data:deletedRows,error:e}=await client.from('pms_cloud_records')
+           .delete().eq('property_id',cloudPropertyId).eq('storage_key',key).select('storage_key');
          if(e) throw e;
+         if(!Array.isArray(deletedRows) || deletedRows.length===0){
+           // Verify whether the row still exists so the user gets a real failure,
+           // not a misleading CLEAN START success message.
+           const {data:stillThere,error:verifyError}=await client.from('pms_cloud_records')
+             .select('storage_key').eq('property_id',cloudPropertyId).eq('storage_key',key);
+           if(verifyError) throw verifyError;
+           if(Array.isArray(stillThere) && stillThere.length){
+             throw new Error('Supabase did not confirm deletion of '+key+'. The row still exists. Check DELETE/SELECT permissions (RLS) for pms_cloud_records.');
+           }
+         }
          cloudTxnDeleted++;
+       }
+       // Final verification: make sure no target transaction keys remain visible.
+       const {data:verifyRecords,error:verifyRecordsError}=await client.from('pms_cloud_records')
+         .select('storage_key').eq('property_id',cloudPropertyId);
+       if(verifyRecordsError) throw verifyRecordsError;
+       const remaining=(verifyRecords||[]).map(r=>String(r.storage_key||'')).filter(isTransactionCloudKey);
+       if(remaining.length){
+         throw new Error('Cloud cleanup incomplete. Remaining transaction keys: '+remaining.slice(0,8).join(', ')+(remaining.length>8?' …':''));
        }
      }else{
        cloudErrors.push('Could not resolve the selected property to a Supabase property ID.');
@@ -7545,7 +7561,7 @@ async function clearRevenueHistory(){
  if(cloudErrors.length){
    alert('Local transaction data was cleared for '+propertyName+'.\n\nWARNING: Cloud cleanup did not fully complete:\n'+cloudErrors.join('\n')+'\n\nRestaurant invoice cloud records may remain until the error is resolved. Please verify Supabase before starting new tests.');
  }else{
-   alert('CLEAN START completed for '+propertyName+'.\n\nLocal transaction data cleared. Cloud reservations, store transactions and restaurant invoice/sale/payment records cleared for this property.\n\nProperty setup, rooms, rate plans, users, permissions, master data and Chart of Accounts were kept.\n\nYou can now start Reservation #1.');
+   alert('CLEAN START completed for '+propertyName+'.\n\nLocal transaction data cleared. Supabase confirmed deletion of visible reservation and transaction records, including restaurant invoice/sale/payment records, for this property.\n\nProperty setup, rooms, rate plans, users, permissions, master data and Chart of Accounts were kept.\n\nYou can now start Reservation #1.');
  }
 }
 /* =========================================================
