@@ -7452,8 +7452,8 @@ async function saveSettings(){
 async function clearRevenueHistory(){
  if(!requireRole("Admin")) return;
  const propertyName=settings?.property||"this property";
- if(!confirm("RESET TEST DATA for "+propertyName+"?\n\nThis will permanently delete ALL operational and accounting transaction data for the CURRENT property, including reservations, guests, folios, payments, POS sales, PM postings, AR/AP activity, purchasing transactions, inventory movements, payroll/attendance transactions, cashier/F&B closings, audit history and accounting journals.\n\nProperty configuration, rooms, rate plans, users, permissions, master setup and Chart of Accounts will be kept.\n\nContinue?")) return;
- if(!confirm("FINAL CONFIRMATION\n\nALL TEST TRANSACTION DATA for "+propertyName+" will be permanently removed from this browser and the connected Supabase transactional tables.\n\nThis cannot be undone. Continue?")) return;
+ if(!confirm("RESET TEST DATA for "+propertyName+"?\n\nThis will permanently delete ALL operational and accounting transaction data for the CURRENT property, including reservations, guests, folios, payments, POS sales and restaurant invoices, PM postings, AR/AP activity, purchasing transactions, inventory movements, payroll/attendance transactions, cashier/F&B closings, audit history and accounting journals.\n\nProperty configuration, rooms, rate plans, users, permissions, master setup and Chart of Accounts will be kept.\n\nContinue?")) return;
+ if(!confirm("FINAL CONFIRMATION\n\nALL TEST TRANSACTION DATA for "+propertyName+" will be permanently removed from this browser and the connected Supabase transactional records for this property.\n\nThis cannot be undone. Continue?")) return;
 
  const transactionKeys=[
   STORAGE.reservations,STORAGE.folios,STORAGE.payments,STORAGE.sales,
@@ -7463,48 +7463,73 @@ async function clearRevenueHistory(){
   "signature_pms_purchase_orders","signature_pms_accounting_journals","signature_pms_grns",
   "signature_pms_purchase_requests","signature_pms_stock_movements","signature_pms_store_requisitions",
   "signature_pms_hr_attendance","signature_pms_hr_payroll","signature_pms_hr_leave","signature_pms_hr_overtime",
-  "signature_pms_hr_roster"
+  "signature_pms_hr_roster","signature_pms_fnb_cashier_shifts_v231"
  ];
-
- // Clear only the CURRENT property's records from property-scoped arrays.
- // Keys that are purely transactional are cleared completely if their rows do not carry a propertyId.
+ const selectedProperty=String(currentPropertyId||'');
+ const keepOtherPropertyRows=(rows)=>rows.filter(x=>{
+   if(!x||typeof x!=='object') return false;
+   const rowProperty=x.propertyId??x.property_id??'';
+   // Legacy transaction rows without a property tag belong to this browser's
+   // selected property and must not survive a reset. Explicit other-property
+   // rows are retained.
+   return rowProperty!=='' && String(rowProperty)!==selectedProperty;
+ });
  transactionKeys.forEach(key=>{
    try{
-     const raw=JSON.parse(localStorage.getItem(key)||"[]");
-     if(!Array.isArray(raw)){ localStorage.setItem(key,"[]"); return; }
-     const remaining=raw.filter(x=>{
-       if(!x || typeof x!=="object") return false;
-       const pid=x.propertyId ?? x.property_id ?? "";
-       return String(pid)!==String(currentPropertyId);
-     });
-     localStorage.setItem(key,JSON.stringify(remaining));
-   }catch(e){ localStorage.setItem(key,"[]"); }
+     const parsed=JSON.parse(localStorage.getItem(key)||'[]');
+     if(Array.isArray(parsed)) localStorage.setItem(key,JSON.stringify(keepOtherPropertyRows(parsed)));
+     else localStorage.setItem(key,'[]');
+   }catch(e){try{localStorage.setItem(key,'[]')}catch(_e){}}
  });
 
  reservations=[]; folios=[]; payments=[]; sales=[]; pmAccounts=[]; pmTransactions=[];
 
- // Clear matching cloud reservations and cloud store/inventory transaction rows.
- let cloudReservationDeleted=0, cloudStoreDeleted=0, cloudErrors=[];
+ let cloudReservationDeleted=0, cloudStoreDeleted=0, cloudTxnDeleted=0, cloudErrors=[];
  try{
    const client=initSupabaseClient();
    if(client){
-     const cloudPropertyId=await resolveSupabasePropertyId(String(currentPropertyId));
+     const cloudPropertyId=await resolveSupabasePropertyId(selectedProperty);
      if(cloudPropertyId){
-       const {data:cloudReservations,error:rErr}=await client.from("reservations").select("id").eq("property_id",cloudPropertyId);
+       // Reservations are stored in the dedicated reservations table.
+       const {data:cloudReservations,error:rErr}=await client.from('reservations').select('id').eq('property_id',cloudPropertyId);
        if(rErr) throw rErr;
        for(const row of (cloudReservations||[])){
-         const {error:e}=await client.from("reservations").delete().eq("id",String(row.id));
+         const {error:e}=await client.from('reservations').delete().eq('property_id',cloudPropertyId).eq('id',String(row.id));
          if(e) throw e;
          cloudReservationDeleted++;
        }
-       const {data:cloudStores,error:sErr}=await client.from("property_store_records").select("record_type,record_id").eq("property_id",cloudPropertyId);
+       // Store transaction rows are separate from the cloud-records table.
+       const {data:cloudStores,error:sErr}=await client.from('property_store_records').select('record_type,record_id').eq('property_id',cloudPropertyId);
        if(sErr) throw sErr;
        for(const row of (cloudStores||[])){
-         const {error:e}=await client.from("property_store_records").delete().eq("property_id",cloudPropertyId).eq("record_type",String(row.record_type)).eq("record_id",String(row.record_id));
+         const {error:e}=await client.from('property_store_records').delete().eq('property_id',cloudPropertyId).eq('record_type',String(row.record_type)).eq('record_id',String(row.record_id));
          if(e) throw e;
          cloudStoreDeleted++;
        }
+       // Restaurant invoices/sales and payments live in pms_cloud_records, not
+       // in the reservations table. Delete only transaction keys for this
+       // property; preserve menu, table setup, suppliers, articles and settings.
+       const cloudTransactionExact=new Set(transactionKeys.map(String));
+       const {data:cloudRecords,error:crErr}=await client.from('pms_cloud_records').select('storage_key').eq('property_id',cloudPropertyId);
+       if(crErr) throw crErr;
+       const isTransactionCloudKey=(rawKey)=>{
+         const key=String(rawKey||'');
+         return cloudTransactionExact.has(key)
+           || key==='signature_pms_fnb_invoice_index'
+           || key.startsWith('signature_pms_fnb_sale_')
+           || key.startsWith('signature_pms_fnb_payment_');
+       };
+       const keys=[...new Set((cloudRecords||[]).map(r=>String(r.storage_key||'')).filter(isTransactionCloudKey))];
+       for(const key of keys){
+         const {error:e}=await client.from('pms_cloud_records').delete().eq('property_id',cloudPropertyId).eq('storage_key',key);
+         if(e) throw e;
+         cloudTxnDeleted++;
+       }
+     }else{
+       cloudErrors.push('Could not resolve the selected property to a Supabase property ID.');
      }
+   }else{
+     cloudErrors.push('Supabase client is not available; cloud data was not deleted.');
    }
  }catch(e){
    cloudErrors.push(e?.message||String(e));
@@ -7512,17 +7537,17 @@ async function clearRevenueHistory(){
 
  saveData();
  renderAll();
- if(typeof renderAccounting==="function") renderAccounting();
- if(typeof renderPurchasing==="function") renderPurchasing();
- if(typeof renderHR==="function") renderHR();
+ if(typeof renderAccounting==='function') renderAccounting();
+ if(typeof renderPurchasing==='function') renderPurchasing();
+ if(typeof renderHR==='function') renderHR();
+ if(typeof renderPOSInvoices==='function') renderPOSInvoices();
 
  if(cloudErrors.length){
-   alert("Local transaction data was cleared for "+propertyName+".\n\nWARNING: Cloud cleanup did not fully complete:\n"+cloudErrors.join("\n")+"\n\nDo not start new cloud testing until the Supabase cleanup is verified.");
+   alert('Local transaction data was cleared for '+propertyName+'.\n\nWARNING: Cloud cleanup did not fully complete:\n'+cloudErrors.join('\n')+'\n\nRestaurant invoice cloud records may remain until the error is resolved. Please verify Supabase before starting new tests.');
  }else{
-   alert("TRUE CLEAN START completed for "+propertyName+".\n\nLocal transactional data cleared. Cloud reservations/store transaction records cleared.\n\nProperty setup, rooms, rate plans, users, permissions, master data and Chart of Accounts were kept.\n\nYou can now start Reservation #1.");
+   alert('CLEAN START completed for '+propertyName+'.\n\nLocal transaction data cleared. Cloud reservations, store transactions and restaurant invoice/sale/payment records cleared for this property.\n\nProperty setup, rooms, rate plans, users, permissions, master data and Chart of Accounts were kept.\n\nYou can now start Reservation #1.');
  }
 }
-
 /* =========================================================
    RESERVATION
 ========================================================= */
@@ -26948,4 +26973,44 @@ async function boot(){buildUI();try{await db();}catch(e){$('gclCloudStatus').tex
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 
+</script>
+
+<script id="v2-1-443-stray-escaped-newline-cleanup">
+/* v2.1.443 — Remove only visible text nodes made entirely of escaped-newline artifacts.
+   Leaves all application data, forms, and module logic unchanged. */
+(function(){
+  'use strict';
+  function isArtifact(value){
+    const text=String(value||'').trim();
+    return text.includes('\\n') && !/[^\s\\n]/.test(text);
+  }
+  function cleanNode(node){
+    if(!node)return;
+    if(node.nodeType===3){
+      if(isArtifact(node.nodeValue||'') && node.parentNode) node.parentNode.removeChild(node);
+      return;
+    }
+    if(node.nodeType!==1 && node.nodeType!==9 && node.nodeType!==11)return;
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
+    const remove=[];
+    let textNode;
+    while((textNode=walker.nextNode())) if(isArtifact(textNode.nodeValue||'')) remove.push(textNode);
+    remove.forEach(n=>{if(n.parentNode)n.parentNode.removeChild(n);});
+  }
+  function start(){
+    if(!document.body)return;
+    cleanNode(document.body);
+    if(window.MutationObserver){
+      const observer=new MutationObserver(records=>{
+        for(const record of records){
+          if(record.type==='characterData') cleanNode(record.target);
+          for(const added of record.addedNodes||[]) cleanNode(added);
+        }
+      });
+      observer.observe(document.body,{subtree:true,childList:true,characterData:true});
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
+})();
 </script>
