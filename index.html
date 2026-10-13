@@ -26412,56 +26412,23 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     (Array.isArray(local)?local:[]).filter(x=>String(x?.propertyId??pid)===pid).forEach(x=>map.set(String(x.reference||x.id||JSON.stringify(x)),{...x,propertyId:pid}));
     return [...map.values()];
   }
-  let journalSyncBusy=false,journalSyncQueued=false,journalTimer=null;
+  /* v2.1.449 follow-up: Accounting journals have one canonical sync owner.
+     The dedicated per-journal sync (v2-1-397) publishes/pulls individual
+     journal rows and applies deduplication. Do not merge the separate
+     signature_pms_accounting_journals array here: that second writer could
+     race with the canonical sync and make Expense totals flicker. */
   async function syncJournalCloud(){
     if(window.__signaturePropertyCleanupInProgress)return false;
-    if(journalSyncBusy){journalSyncQueued=true;return false;}
-    const c=client(),pid=prop();if(!c||!pid)return false;
-    let session;
-    try{session=await c.auth.getSession();}catch(e){return false;}
-    const authUser=session?.data?.session?.user;if(!authUser)return false;
-    journalSyncBusy=true;
     try{
-      const q=await c.from(CLOUD_TABLE).select('data,updated_at').eq('property_id',pid).eq('storage_key',CLOUD_JOURNAL_KEY).maybeSingle();
-      if(q.error)throw q.error;
-      const cloud=Array.isArray(q.data?.data)?q.data.data:[];
-      const localAll=read(JOURNAL_KEY),localMine=localAll.filter(mine);
-      const merged=mergeByReference(cloud,localMine,pid);
-      const others=localAll.filter(x=>!mine(x));
-      // Keep local data if present; hydrate cloud-only records for other logged-in users.
-      const old=JSON.stringify(localAll);
-      const next=others.concat(merged);
-      if(JSON.stringify(next)!==old){
-        window.__v422JournalInternalWrite=true;
-        try{write(JOURNAL_KEY,next);}finally{window.__v422JournalInternalWrite=false;}
-      }
-      if(merged.length||cloud.length){
-        const up=await c.from(CLOUD_TABLE).upsert({property_id:pid,storage_key:CLOUD_JOURNAL_KEY,data:merged,updated_by:authUser.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
-        if(up.error)throw up.error;
-      }
-      try{if(typeof window.renderAccounting==='function')window.renderAccounting();}catch(e){}
-      try{if(typeof window.setSupabaseCloudMessage==='function')window.setSupabaseCloudMessage('Accounting journals synchronized with Supabase.','success');}catch(e){}
+      const sync=window.signatureAccountingJournalCloud&&window.signatureAccountingJournalCloud.sync;
+      if(typeof sync!=='function')return false;
+      await sync();
       return true;
     }catch(e){
-      console.warn('Employee advance Accounting cloud sync failed:',e);
-      try{if(typeof window.setSupabaseCloudMessage==='function')window.setSupabaseCloudMessage('Accounting journal cloud sync failed: '+(e?.message||e),'error');}catch(x){}
+      console.warn('Employee advance Accounting journal sync delegated to canonical sync failed:',e);
       return false;
-    }finally{
-      journalSyncBusy=false;
-      if(journalSyncQueued){journalSyncQueued=false;setTimeout(syncJournalCloud,250);}
     }
   }
-  function scheduleJournalSync(){
-    if(window.__v422JournalInternalWrite)return;
-    clearTimeout(journalTimer);journalTimer=setTimeout(syncJournalCloud,650);
-  }
-  try{
-    const originalSetItem=Storage.prototype.setItem;
-    if(!originalSetItem.__v422Wrapped){
-      const wrapped=function(k,v){const r=originalSetItem.call(this,k,v);if(this===window.localStorage&&String(k)===JOURNAL_KEY)scheduleJournalSync();return r;};
-      wrapped.__v422Wrapped=true;Storage.prototype.setItem=wrapped;
-    }
-  }catch(e){}
   window.syncEmployeeAdvanceAccountingCloud=syncJournalCloud;
 
   function postJournalOnce(date,reference,description,lines,source){
