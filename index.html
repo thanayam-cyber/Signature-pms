@@ -25901,7 +25901,13 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
          Posted/Paid. This NEVER recalculates or changes payroll status. */
       const repaired=ensureExistingPostedPayrollJournals();
       await publishPayrollJournals();
-      const cloudChanged=await pullAccountingJournals();
+      // The general accounting journal cloud sync (v2-1-397) is the sole
+      // reader/merger of all accounting journals. Do not pull and rewrite the
+      // same local journal array from this payroll-only loop: concurrent
+      // merges can race and make Accounting totals flicker between snapshots.
+      // Payroll journals are still repaired above and published to their
+      // individual cloud records; the general sync hydrates them locally.
+      const cloudChanged=false;
       if(repaired&&!cloudChanged){
         try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
         try{if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}
