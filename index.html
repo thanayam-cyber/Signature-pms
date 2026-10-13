@@ -7452,8 +7452,8 @@ async function saveSettings(){
 async function clearRevenueHistory(){
  if(!requireRole("Admin")) return;
  const propertyName=settings?.property||"this property";
- if(!confirm("RESET TEST DATA for "+propertyName+"?\n\nThis will permanently delete operational test transactions for the CURRENT property, including reservations, guests, folios, payments, POS sales and restaurant invoices, PM postings, AR/AP activity, purchasing transactions, inventory movements, cashier/F&B closings, audit history, and Daily Revenue/Daily Payments journal entries.\n\nHR/Payroll records, other non-revenue accounting journals, property configuration, rooms, rate plans, users, permissions, master setup, Chart of Accounts, and all other properties will be kept.\n\nContinue?")) return;
- if(!confirm("FINAL CONFIRMATION\n\nThe selected property's operational test transactions, restaurant invoices/sales/payments, and Daily Revenue/Daily Payments journal entries will be removed from this browser and the connected Supabase records. HR/Payroll data, non-revenue journals, setup, and other properties will be preserved.\n\nThis cannot be undone. Continue?")) return;
+ if(!confirm("RESET TEST DATA for "+propertyName+"?\n\nThis will permanently delete operational test transactions for the CURRENT property, including reservations, guests, folios, payments, POS sales and restaurant invoices, PM postings, AR/AP activity, purchasing transactions, inventory movements, cashier/F&B closings, audit history, and accounting journals linked to these operational transactions.\n\nHR/Payroll records, other non-revenue accounting journals, property configuration, rooms, rate plans, users, permissions, master setup, Chart of Accounts, and all other properties will be kept.\n\nContinue?")) return;
+ if(!confirm("FINAL CONFIRMATION\n\nThe selected property's operational test transactions, restaurant invoices/sales/payments, and Daily Revenue/Daily Payments and journals linked to cleared operational transactions (F&B/POS, GRNs, stock, purchasing, expenses and folios) will be removed from this browser and the connected Supabase records. HR/Payroll data, unrelated accounting journals, setup, and other properties will be preserved.\n\nThis cannot be undone. Continue?")) return;
 
  // Pause accounting journal sync while the selected property's revenue cleanup runs.
  window.__signaturePropertyCleanupInProgress=true;
@@ -7479,7 +7479,25 @@ async function clearRevenueHistory(){
    if(!j||typeof j!=="object")return false;
    const source=String(j.source||"").trim().toLowerCase();
    const reference=String(j.reference||"").trim();
-   return source==="daily revenue"||source==="daily payments"||/^REV-\d{8}$/.test(reference)||/^PAY-\d{8}$/.test(reference);
+   return source==="daily revenue"||source==="daily payments"||/^REV-\d{8}$/i.test(reference)||/^PAY-\d{8}$/i.test(reference);
+ };
+ // The clean-start action also removes journals created by operational test
+ // transactions that it clears (F&B invoices, GRNs, stock activity, purchasing,
+ // expenses, folios, etc.). Payroll and unrelated/manual journals are preserved.
+ const isPayrollJournal=(j)=>{
+   if(!j||typeof j!=="object")return false;
+   const source=String(j.source||"").trim().toLowerCase();
+   const reference=String(j.reference||"").trim();
+   return source.includes('payroll')||/^PAYROLL[-_]/i.test(reference)||(/^PAY-\d{4}-\d{2}$/i.test(reference)&&source==='payroll');
+ };
+ const isOperationalResetJournal=(j)=>{
+   if(!j||typeof j!=="object")return false;
+   if(isPayrollJournal(j))return false;
+   if(isRevenueJournal(j))return true;
+   const source=String(j.source||"").trim().toLowerCase();
+   const reference=String(j.reference||"").trim();
+   if(/^(?:ST-POS-RINV-|VOID-RINV-|RINV-|GRN-|PO-|PR-|SUPPAY-|SUPPLIER-PAYMENT-|EXP-|EXPENSE-|STOCK-|ST-)/i.test(reference))return true;
+   return /(?:f&b pos|restaurant pos|bar pos|\bgrn\b|\bstores\b|stock take|inventory|purchas|supplier payment|\bexpense\b|\bfolio\b|experience|reservation|cashier|daily revenue|daily payments)/i.test(source);
  };
  const keepOtherPropertyRows=(rows)=>rows.filter(x=>{
    if(!x||typeof x!=='object') return false;
@@ -7505,7 +7523,7 @@ async function clearRevenueHistory(){
      const kept=parsed.filter(j=>{
        const rowProperty=j?.propertyId??j?.property_id??'';
        const belongsToCurrent=rowProperty===''||currentPropertyAliases.has(String(rowProperty));
-       return !(belongsToCurrent&&isRevenueJournal(j));
+       return !(belongsToCurrent&&isOperationalResetJournal(j));
      });
      localStorage.setItem(journalKey,JSON.stringify(kept));
    }
@@ -7541,14 +7559,14 @@ async function clearRevenueHistory(){
            || key.startsWith('signature_pms_fnb_sale_')
            || key.startsWith('signature_pms_fnb_payment_')
            // Only remove individual Daily Revenue / Daily Payments journals; preserve payroll journals.
-           || (key.startsWith('signature_pms_accounting_journal_') && isRevenueJournal(data));
+           || (key.startsWith('signature_pms_accounting_journal_') && isOperationalResetJournal(data));
        };
        // The main journal array may also contain payroll/other journals. Filter its revenue rows
        // instead of deleting the entire array or changing accounting setup.
        const mainJournal=(cloudRecords||[]).find(r=>String(r.storage_key||'')==='signature_pms_accounting_journals');
        if(mainJournal){
          const oldJournals=Array.isArray(mainJournal.data)?mainJournal.data:[];
-         const keptJournals=oldJournals.filter(j=>!isRevenueJournal(j));
+         const keptJournals=oldJournals.filter(j=>!isOperationalResetJournal(j));
          if(keptJournals.length!==oldJournals.length){
            const {error:journalUpdateError}=await client.from('pms_cloud_records')
              .update({data:keptJournals,updated_at:new Date().toISOString()})
@@ -7581,8 +7599,8 @@ async function clearRevenueHistory(){
        if(verifyRecordsError) throw verifyRecordsError;
        const remaining=(verifyRecords||[]).filter(r=>isTransactionCloudKey(r.storage_key,r.data)).map(r=>String(r.storage_key||''));
        const mainAfter=(verifyRecords||[]).find(r=>String(r.storage_key||'')==='signature_pms_accounting_journals');
-       const mainStillHasRevenue=Array.isArray(mainAfter?.data)&&mainAfter.data.some(isRevenueJournal);
-       if(remaining.length||mainStillHasRevenue){
+       const mainStillHasOperationalJournals=Array.isArray(mainAfter?.data)&&mainAfter.data.some(isOperationalResetJournal);
+       if(remaining.length||mainStillHasOperationalJournals){
          throw new Error('Cloud cleanup incomplete. Remaining transaction keys: '+remaining.slice(0,8).join(', ')+(remaining.length>8?' …':''));
        }
      }else{
