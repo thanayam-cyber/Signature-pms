@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- SIGNATURE PMS PATCH VERSION: 2.1.450 ACCOUNTING CLEANUP SYNC LOCK -->
+
 
 <html lang="en"><head>
 <meta charset="utf-8"/>
@@ -7537,6 +7539,25 @@ async function clearRevenueHistory(){
    if(client){
      const cloudPropertyId=resolvedCloudPropertyId||await resolveSupabasePropertyId(selectedProperty);
      if(cloudPropertyId){
+       // v2.1.450: a property-scoped cloud lock prevents other updated PMS sessions
+       // from re-publishing operational journals while this cleanup deletes them.
+       const cleanupLockKey='signature_pms_revenue_cleanup_lock';
+       const {error:lockError}=await client.from('pms_cloud_records').upsert({
+         property_id:cloudPropertyId,
+         storage_key:cleanupLockKey,
+         data:{active:true,propertyId:cloudPropertyId,startedAt:new Date().toISOString(),startedBy:String(window.currentUser?.username||window.currentUser?.name||'Admin')},
+         updated_at:new Date().toISOString()
+       },{onConflict:'property_id,storage_key'});
+       if(lockError)throw new Error('Could not activate the property cleanup lock. No cloud cleanup was attempted: '+(lockError.message||String(lockError)));
+       const {data:lockCheck,error:lockCheckError}=await client.from('pms_cloud_records')
+         .select('data').eq('property_id',cloudPropertyId).eq('storage_key',cleanupLockKey).maybeSingle();
+       if(lockCheckError)throw lockCheckError;
+       if(lockCheck?.data?.active!==true)throw new Error('Supabase did not confirm the property cleanup lock. No cloud transactions were deleted. Check pms_cloud_records write permissions/RLS.');
+       // Wait for this browser's in-flight accounting sync to finish before deleting rows.
+       if(window.signatureAccountingJournalCloud&&typeof window.signatureAccountingJournalCloud.waitForIdle==='function'){
+         const idle=await window.signatureAccountingJournalCloud.waitForIdle(12000);
+         if(!idle)throw new Error('Accounting journal sync is still running. Cleanup stopped safely; please refresh and try again.');
+       }
        // Reservations are stored in the dedicated reservations table.
        const {data:cloudReservations,error:rErr}=await client.from('reservations').select('id').eq('property_id',cloudPropertyId);
        if(rErr) throw rErr;
@@ -7613,6 +7634,24 @@ async function clearRevenueHistory(){
    cloudErrors.push(e?.message||String(e));
  }
 
+ // Release the distributed lock only after Supabase confirms that the cleanup is complete.
+ // On failure keep it active: updated PMS sessions will suppress operational journals instead
+ // of restoring stale entries while the cloud cleanup issue is investigated.
+ if(!cloudErrors.length){
+   try{
+     const client=initSupabaseClient();
+     const cloudPropertyId=resolvedCloudPropertyId||await resolveSupabasePropertyId(selectedProperty);
+     if(client&&cloudPropertyId){
+       const {error:unlockError}=await client.from('pms_cloud_records')
+         .delete().eq('property_id',cloudPropertyId).eq('storage_key','signature_pms_revenue_cleanup_lock');
+       if(unlockError)throw unlockError;
+       const {data:lockStillThere,error:lockVerifyError}=await client.from('pms_cloud_records')
+         .select('storage_key').eq('property_id',cloudPropertyId).eq('storage_key','signature_pms_revenue_cleanup_lock');
+       if(lockVerifyError)throw lockVerifyError;
+       if(Array.isArray(lockStillThere)&&lockStillThere.length)throw new Error('Cleanup lock could not be released after verification.');
+     }
+   }catch(e){cloudErrors.push('Cleanup data was deleted, but the cloud sync lock could not be released: '+(e?.message||String(e)));}
+ }
  window.__signaturePropertyCleanupInProgress=false;
  saveData();
  renderAll();
@@ -7622,7 +7661,7 @@ async function clearRevenueHistory(){
  if(typeof renderPOSInvoices==='function') renderPOSInvoices();
 
  if(cloudErrors.length){
-   alert('Local transaction data was cleared for '+propertyName+'.\n\nWARNING: Cloud cleanup did not fully complete:\n'+cloudErrors.join('\n')+'\n\nRestaurant invoice cloud records may remain until the error is resolved. Please verify Supabase before starting new tests.');
+   alert('Local transaction data was cleared for '+propertyName+'.\n\nWARNING: Cloud cleanup did not fully complete:\n'+cloudErrors.join('\n')+'\n\nSome cloud transaction records may remain. A property-scoped sync lock is being retained to prevent updated PMS sessions from restoring operational journals. Do not start new tests until the cleanup issue is resolved.');
  }else{
    alert('CLEAN START completed for '+propertyName+'.\n\nLocal transaction data cleared. Supabase confirmed deletion of visible reservation and transaction records, including restaurant invoice/sale/payment records, for this property.\n\nProperty setup, rooms, rate plans, users, permissions, master data and Chart of Accounts were kept.\n\nYou can now start Reservation #1.');
  }
@@ -22124,7 +22163,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 <script id="v2-1-397-accounting-journal-cloud-sync">
-/* v2.1.397 — ACCOUNTING JOURNAL CLOUD SYNC
+/* v2.1.450 — ACCOUNTING JOURNAL CLOUD SYNC WITH CLEANUP LOCK
    Makes Daily Revenue / Daily Payments posting status property-wide.
    Each journal is stored as its own pms_cloud_records row so Admin and
    Reception cannot overwrite one another's accounting journal array. */
@@ -22135,8 +22174,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const TABLE='pms_cloud_records';
   const PREFIX='signature_pms_accounting_journal_';
   const POLL_MS=5000;
+  const CLEANUP_LOCK_KEY='signature_pms_revenue_cleanup_lock';
   let lastProperty='';
   let busy=false;
+  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
   async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
@@ -22165,25 +22206,43 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(r.error)throw r.error;
     return true;
   }
+  function isOperationalResetJournal(j){
+    if(!j||typeof j!=='object')return false;
+    const source=String(j.source||'').trim().toLowerCase();
+    const reference=String(j.reference||'').trim();
+    const payroll=source.includes('payroll')||/^PAYROLL[-_]/i.test(reference)||(/^PAY-\d{4}-\d{2}$/i.test(reference)&&source==='payroll');
+    if(payroll)return false;
+    if(source==='daily revenue'||source==='daily payments'||/^REV-\d{8}$/i.test(reference)||/^PAY-\d{8}$/i.test(reference))return true;
+    if(/^(?:ST-POS-RINV-|VOID-RINV-|RINV-|GRN-|PO-|PR-|SUPPAY-|SUPPLIER-PAYMENT-|EXP-|EXPENSE-|STOCK-|ST-)/i.test(reference))return true;
+    return /(?:f&b pos|restaurant pos|bar pos|\bgrn\b|\bstores\b|stock take|inventory|purchas|supplier payment|\bexpense\b|\bfolio\b|experience|reservation|cashier|daily revenue|daily payments)/i.test(source);
+  }
   async function cycle(){
     if(window.__signaturePropertyCleanupInProgress)return;
     if(busy)return;
     const c=client(),p=pid();
     if(!c||!p)return;
-    const u=await uid(c); if(!u)return;
-    if(lastProperty!==p)lastProperty=p;
     busy=true;
     try{
+      const u=await uid(c); if(!u)return;
+      if(window.__signaturePropertyCleanupInProgress)return;
+      if(lastProperty!==p)lastProperty=p;
+      const lockQ=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',CLEANUP_LOCK_KEY).maybeSingle();
+      if(lockQ.error)throw lockQ.error;
+      const cleanupLocked=lockQ.data?.data?.active===true;
+      if(window.__signaturePropertyCleanupInProgress)return;
       const localBefore=localMine(p);
+      const eligibleLocal=cleanupLocked?localBefore.filter(j=>!isOperationalResetJournal(j)):localBefore;
       const local=typeof window.dedupeAccountingJournalRows==='function'
-        ? window.dedupeAccountingJournalRows(localBefore,p) : localBefore;
+        ? window.dedupeAccountingJournalRows(eligibleLocal,p) : eligibleLocal;
       /* Publish only the deduplicated local snapshot, then reconcile it with
          cloud. This prevents old copies on a device from being re-published
          as additional Accounting postings on every polling cycle. */
       for(const j of local){try{await publishOne(c,p,u,j)}catch(e){console.warn('Accounting journal cloud publish failed:',e?.message||e)}}
       const q=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%');
       if(q.error)throw q.error;
-      const cloud=(q.data||[]).filter(r=>r&&r.data).map(r=>{const row={...r.data};if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});return row;});
+      if(window.__signaturePropertyCleanupInProgress)return;
+      const cloud=(q.data||[]).filter(r=>r&&r.data).map(r=>{const row={...r.data};if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});return row;})
+        .filter(j=>!cleanupLocked||!isOperationalResetJournal(j));
       const merged=mergeJournals(local,cloud,p);
       if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
         writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
@@ -22195,7 +22254,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }catch(e){console.warn('Accounting journal cloud sync failed:',e?.message||e)}
     finally{busy=false}
   }
-  window.signatureAccountingJournalCloud={sync:cycle};
+  window.signatureAccountingJournalCloud={
+    sync:cycle,
+    waitForIdle:async function(timeoutMs=10000){
+      const end=Date.now()+Math.max(0,Number(timeoutMs)||0);
+      while(busy&&Date.now()<end)await sleep(100);
+      return !busy;
+    }
+  };
   setTimeout(cycle,2500);
   setInterval(cycle,POLL_MS);
 })();
@@ -25841,7 +25907,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
 })();
 </script>
 <script id="v2-1-407-payroll-accounting-journal-cloud-fix">
-/* v2.1.407 — PAYROLL -> ACCOUNTING JOURNAL CLOUD FIX
+/* v2.1.450 — PAYROLL JOURNAL PULL RESPECTS REVENUE CLEANUP LOCK
    Ensures PAY-YYYY-MM journals created by Payroll are explicitly published to
    pms_cloud_records and pulled back into the Accounting Journal list on every
    Admin/Reception window. Payroll calculation/status logic is untouched. */
@@ -25861,6 +25927,23 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     try{const q=await c.auth.getSession(),u=q?.data?.session?.user;if(!u)return null;return {c,p,u};}catch(e){return null;}
   }
   function isPayrollJournal(j){return j&&String(j.reference||'').startsWith('PAY-')&&String(j.source||'')==='Payroll';}
+  function isOperationalResetJournal(j){
+    if(!j||typeof j!=='object')return false;
+    const source=String(j.source||'').trim().toLowerCase();
+    const reference=String(j.reference||'').trim();
+    const payroll=source.includes('payroll')||/^PAYROLL[-_]/i.test(reference)||(/^PAY-\d{4}-\d{2}$/i.test(reference)&&source==='payroll');
+    if(payroll)return false;
+    if(source==='daily revenue'||source==='daily payments'||/^REV-\d{8}$/i.test(reference)||/^PAY-\d{8}$/i.test(reference))return true;
+    if(/^(?:ST-POS-RINV-|VOID-RINV-|RINV-|GRN-|PO-|PR-|SUPPAY-|SUPPLIER-PAYMENT-|EXP-|EXPENSE-|STOCK-|ST-)/i.test(reference))return true;
+    return /(?:f&b pos|restaurant pos|bar pos|\bgrn\b|\bstores\b|stock take|inventory|purchas|supplier payment|\bexpense\b|\bfolio\b|experience|reservation|cashier|daily revenue|daily payments)/i.test(source);
+  }
+  async function cleanupLockActive(z){
+    try{
+      const q=await z.c.from(TABLE).select('data').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
+      if(q.error)throw q.error;
+      return q.data?.data?.active===true;
+    }catch(e){console.warn('Revenue cleanup lock check failed:',e?.message||e);return true;}
+  }
   function storageKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()));}
   async function publishPayrollJournals(){
     if(window.__signaturePropertyCleanupInProgress)return false;
@@ -25876,10 +25959,12 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   async function pullAccountingJournals(){
     if(window.__signaturePropertyCleanupInProgress)return false;
     const z=await session();if(!z)return false;
+    const cleanupLocked=await cleanupLockActive(z);
+    if(window.__signaturePropertyCleanupInProgress)return false;
     const q=await z.c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',z.p).like('storage_key',PREFIX+'%');
     if(q.error)throw q.error;
-    const cloud=(q.data||[]).map(r=>r?.data).filter(Boolean).filter(j=>String(j?.propertyId||z.p)===z.p);
-    const all=localJournals(),other=all.filter(j=>String(j?.propertyId||z.p)!==z.p),mine=all.filter(j=>String(j?.propertyId||z.p)===z.p);
+    const cloud=(q.data||[]).map(r=>r?.data).filter(Boolean).filter(j=>String(j?.propertyId||z.p)===z.p).filter(j=>!cleanupLocked||!isOperationalResetJournal(j));
+    const all=localJournals(),other=all.filter(j=>String(j?.propertyId||z.p)!==z.p),allMine=all.filter(j=>String(j?.propertyId||z.p)===z.p),mine=cleanupLocked?allMine.filter(j=>!isOperationalResetJournal(j)):allMine;
     const signature=list=>JSON.stringify((Array.isArray(list)?list:[]).map(j=>({id:j?.id,reference:j?.reference,source:j?.source,date:j?.date,description:j?.description,lines:j?.lines,propertyId:j?.propertyId})).sort((a,b)=>String(a.id||a.reference).localeCompare(String(b.id||b.reference))));
     const beforeSig=signature(mine);
     const map=new Map();
