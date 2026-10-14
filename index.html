@@ -5391,10 +5391,24 @@ function downloadJsonFile(filename,data){
     const a=document.createElement("a");
     a.href=url;
     a.download=filename;
+    /* Keep the anchor attached and rendered off-screen. This is more reliable than
+       clicking and immediately removing a dynamically-created hidden link. */
+    a.style.position="fixed";
+    a.style.left="-10000px";
+    a.style.top="0";
+    a.style.width="1px";
+    a.style.height="1px";
+    a.style.opacity="0.01";
     document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    try{
+        a.click();
+    }catch(err){
+        setTimeout(()=>{try{a.remove();}catch(e){}},1000);
+        setTimeout(()=>URL.revokeObjectURL(url),60000);
+        throw new Error("Browser could not start the backup download. Check this site's download permissions and try again.");
+    }
+    setTimeout(()=>{try{a.remove();}catch(e){}},1000);
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 
 function safeFilePart(value){
@@ -18239,6 +18253,12 @@ window.showPage=function(page,btn){
   }
   return r;
 };
+window.confirmBackupFileSeen=function(){
+  if(!confirm('Have you checked Ctrl+J or the Downloads folder and confirmed that the Full PMS backup file is present?'))return;
+  try{localStorage.setItem(BK_KEY,String(Date.now()));}catch(e){}
+  try{sessionStorage.removeItem('signature_pms_backup_dismissed');}catch(e){}
+  renderBackupReminder();
+};
 const prevAll=window.renderAll;
 window.renderAll=function(){
   const r=prevAll?prevAll.apply(this,arguments):undefined;
@@ -18380,12 +18400,20 @@ window.restoreModuleData=function(extras,propertyId){
     localStorage.setItem(k,JSON.stringify(cur.filter(x=>x&&x.propertyId!==propertyId).concat(rows.map(x=>({...x,propertyId})))));
   });
 };
+/* A requested download is not proof that the browser saved a file. Only record a
+   full backup after the Admin confirms that the file is visible in Downloads/Ctrl+J. */
 ['backupAllData','backupCurrentProperty'].forEach(name=>{
   const orig=window[name];
   if(typeof orig!=='function')return;
   window[name]=function(){
     const r=orig.apply(this,arguments);
-    if(r){try{localStorage.setItem(BK_KEY,String(Date.now()));}catch(e){}renderBackupReminder();}
+    if(r){
+      if(name==='backupAllData'){
+        const status=byId('backupReminderStatus');
+        if(status)status.textContent='Download requested. Check Ctrl+J or Downloads; confirm only after you see the backup file.';
+      }
+      renderBackupReminder();
+    }
     return r;
   };
 });
@@ -18397,7 +18425,7 @@ function renderBackupReminder(){
   const last=Number(localStorage.getItem(BK_KEY)||0),days=last?Math.floor((Date.now()-last)/86400000):null;
   const show=currentUser?.role==='Admin'&&(properties||[]).length>0&&(days===null||days>=7)&&sessionStorage.getItem('signature_pms_backup_dismissed')!=='1';
   if(!show){box?.remove();return;}
-  if(!box){dash.insertAdjacentHTML('afterbegin','<div id="backupReminder" class="no-print" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div id="backupReminderText" style="flex:1;font-size:13px;color:#78350f"></div><button class="btn btn-primary btn-small" onclick="backupAllData()">Download Full Backup</button><button class="btn btn-secondary btn-small" onclick="sessionStorage.setItem(\'signature_pms_backup_dismissed\',\'1\');document.getElementById(\'backupReminder\').remove()">Later</button></div>');box=byId('backupReminder');}
+  if(!box){dash.insertAdjacentHTML('afterbegin','<div id="backupReminder" class="no-print" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div id="backupReminderText" style="flex:1;font-size:13px;color:#78350f"></div><button class="btn btn-primary btn-small" onclick="backupAllData()">Download Full Backup</button><button class="btn btn-secondary btn-small" onclick="confirmBackupFileSeen()">I see the file</button><button class="btn btn-secondary btn-small" onclick="sessionStorage.setItem(\'signature_pms_backup_dismissed\',\'1\');document.getElementById(\'backupReminder\').remove()">Later</button><div id="backupReminderStatus" style="width:100%;font-size:12px;color:#92400e"></div></div>');box=byId('backupReminder');}
   byId('backupReminderText').innerHTML='<strong>Back up your data.</strong> '+(days===null?'No backup has been downloaded yet. All data is stored in this browser only.':'Last backup was '+days+' day'+(days>1?'s':'')+' ago. All data is stored in this browser only.');
 }
 const prevAll=window.renderAll;
