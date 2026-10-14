@@ -887,7 +887,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <section class="page" id="pos">
 <div class="grid-2">
 <div class="section">
-<div class="section-header"><h3>Restaurant POS</h3></div><div class="form-group" style="margin-bottom:15px"><label>Restaurant / Outlet</label><select id="posOutlet" onchange="selectPOSOutlet(this.value)"></select></div><div id="posOutletContext" style="font-size:12px;color:#64748b;margin:-7px 0 12px 0"></div><div class="form-group" style="margin-bottom:15px"><label>Customer Type</label><select id="posCustomerType" onchange="renderPOSCustomerMode()"><option value="In-House">In-House Guest</option><option value="Walk-In">Walk-In / Outside Guest</option></select></div><div class="form-group" id="posGuestWrap" style="margin-bottom:15px"><label>In-House Guest / Folio</label><select id="posGuest"><option value="">Select In-House Guest / Folio</option></select></div><div class="form-group" id="posWalkInWrap" style="margin-bottom:15px;display:none"><label>Walk-In Guest Name (optional)</label><input id="posWalkInName" placeholder="Customer name"/></div><div class="form-group" style="margin-bottom:15px"><label>Payment Method</label><select id="posPaymentMethod"><option value="Room Charge">Room Charge</option><option value="Cash">Cash</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Online Payment">Online Payment</option><option value="Other">Other</option></select></div>
+<div class="section-header"><h3>Restaurant POS</h3></div><div class="form-group" style="margin-bottom:15px"><label>Restaurant / Outlet</label><select id="posOutlet" onchange="selectPOSOutlet(this.value)"></select></div><div id="posOutletContext" style="font-size:12px;color:#64748b;margin:-7px 0 12px 0"></div><div class="form-group" style="margin-bottom:15px"><label>Customer Type</label><select id="posCustomerType" onchange="renderPOSCustomerMode()"><option value="In-House">In-House Guest</option><option value="Walk-In">Walk-In / Outside Guest</option></select></div><div class="form-group" style="margin-bottom:15px"><label>Guest Rate Type</label><select id="posRateType" onchange="renderPOS()"><option value="Local">Local Rate</option><option value="Foreign">Foreign Rate</option></select><div style="font-size:11px;color:#64748b;margin-top:4px">Choose the applicable rate before adding menu items.</div></div><div class="form-group" id="posGuestWrap" style="margin-bottom:15px"><label>In-House Guest / Folio</label><select id="posGuest"><option value="">Select In-House Guest / Folio</option></select></div><div class="form-group" id="posWalkInWrap" style="margin-bottom:15px;display:none"><label>Walk-In Guest Name (optional)</label><input id="posWalkInName" placeholder="Customer name"/></div><div class="form-group" style="margin-bottom:15px"><label>Payment Method</label><select id="posPaymentMethod"><option value="Room Charge">Room Charge</option><option value="Cash">Cash</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Online Payment">Online Payment</option><option value="Other">Other</option></select></div>
 <div id="posMenuRule"><div style="background:#f8faf9;border:1px solid #d1d5db;border-radius:8px;padding:9px;margin-bottom:10px;font-size:12px;color:#475569"><strong>Restaurant pricing:</strong> Food cost + 20% preparation &amp; service. Tea / Coffee included.</div></div>
 <div class="pos-menu" id="posMenu"><div class="empty">No active restaurant menu items for this property.</div></div>
 </div>
@@ -2544,7 +2544,9 @@ function normalizePOSMenu(items, outletId, outletName){
         id:item.id || ("menu_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,6)),
         name:String(item.name||"Menu Item"),
         category:String(item.category||"General"),
-        price:Math.max(0,Number(item.price||0)),
+        price:Math.max(0,Number(item.priceLocal ?? item.price ?? 0)),
+        priceLocal:Math.max(0,Number(item.priceLocal ?? item.price ?? 0)),
+        priceForeign:Math.max(0,Number(item.priceForeign ?? item.priceLocal ?? item.price ?? 0)),
         active:item.active!==false,
         outletId:item.outletId || outletId || "",
         outletName:item.outletName || outletName || ""
@@ -6514,7 +6516,7 @@ function renderRestaurantMenuManager(){
         <div class="table-wrap">
             <table>
                 <thead><tr>
-                    <th>Item</th><th>Outlet</th><th>Category</th><th>Price</th>
+                    <th>Item</th><th>Outlet</th><th>Category</th><th>Local Price</th><th>Foreign Price</th>
                     <th>Recipe</th><th>Food Cost</th><th>Margin</th><th>Status</th>${canEdit?"<th>Actions</th>":""}
                 </tr></thead>
                 <tbody id="restaurantMenuRows">${rows.map(({item,rc,cost,pct,margin})=>`
@@ -6522,7 +6524,8 @@ function renderRestaurantMenuManager(){
                         <td><strong>${escapeHtml(item.name)}</strong></td>
                         <td><span class="badge badge-blue">${escapeHtml(item.outletName||"")}</span></td>
                         <td>${escapeHtml(item.category||"General")}</td>
-                        <td><strong>${posMoney(item.price)}</strong></td>
+                        <td><strong>${posMoney(item.priceLocal ?? item.price)}</strong></td>
+                        <td><strong>${posMoney(item.priceForeign ?? item.priceLocal ?? item.price)}</strong></td>
                         <td>${rc?'<span class="badge badge-success">Configured</span>':'<span class="badge badge-red">No Recipe</span>'}</td>
                         <td>${rc?`${money(cost)} ${pct!=null?pctBadge(pct,target):''}`:'—'}</td>
                         <td>${rc?money(margin):'—'}</td>
@@ -6572,7 +6575,8 @@ function openPOSMenuItemModal(id=null){
       <div class="form-group"><label>Menu Item Name</label><input id="pmName" value="${escapeHtml(item?.name||"")}" placeholder="e.g. Chicken Curry"></div>
       <div class="form-group"><label>Category</label><input id="pmCategory" value="${escapeHtml(item?.category||"General")}" placeholder="Main Course"></div>
       <div class="form-group"><label>Restaurant / Outlet</label><select id="pmOutletId">${outletOptions}</select></div>
-      <div class="form-group"><label>Selling Price (LKR)</label><input id="pmPrice" type="number" min="0" step="0.01" value="${Number(posAmountLKR(item?.price||0)).toFixed(2)}"></div>
+      <div class="form-group"><label>Local Price (LKR)</label><input id="pmPriceLocal" type="number" min="0" step="0.01" value="${Number(posAmountLKR(item?.priceLocal ?? item?.price ?? 0)).toFixed(2)}"></div>
+      <div class="form-group"><label>Foreign Price (LKR)</label><input id="pmPriceForeign" type="number" min="0" step="0.01" value="${Number(posAmountLKR(item?.priceForeign ?? item?.priceLocal ?? item?.price ?? 0)).toFixed(2)}"></div>
       <div class="form-group"><label>Status</label><select id="pmActive"><option value="true" ${item?.active!==false?'selected':''}>Active</option><option value="false" ${item?.active===false?'selected':''}>Inactive</option></select></div>
     </div>
     <div id="pmRecipeSummary" style="margin-top:10px;padding:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;color:#475569">Recipe details will be available after this menu item is saved.</div>`;
@@ -6598,14 +6602,16 @@ async function savePOSMenuItemModal(id){
     const name=document.getElementById('pmName')?.value.trim();
     const category=document.getElementById('pmCategory')?.value.trim()||'General';
     const outletId=document.getElementById('pmOutletId')?.value || POS_OUTLET_ID || getCurrentPOSOutlet()?.id;
-    const enteredPriceLKR=Number(document.getElementById('pmPrice')?.value||0);
+    const enteredLocalLKR=Number(document.getElementById('pmPriceLocal')?.value||0);
+    const enteredForeignLKR=Number(document.getElementById('pmPriceForeign')?.value||0);
     const active=document.getElementById('pmActive')?.value!=='false';
     if(!name){alert('Menu item name is required.');return;}
-    if(!Number.isFinite(enteredPriceLKR)||enteredPriceLKR<0){alert('Please enter a valid LKR selling price.');return;}
-    /* Restaurant Menu Manager edit field is LKR-only. Keep the existing
-       internal menu currency model untouched so POS/accounting behaviour
-       remains exactly as before. */
-    const price=enteredPriceLKR/Math.max(0.000001,Number(posRate()||1));
+    if(!Number.isFinite(enteredLocalLKR)||enteredLocalLKR<0||!Number.isFinite(enteredForeignLKR)||enteredForeignLKR<0){alert('Please enter valid Local and Foreign prices in LKR.');return;}
+    /* Both prices are entered in LKR for the operator, while the existing
+       internal menu/sales currency model is retained for accounting compatibility. */
+    const priceLocal=enteredLocalLKR/Math.max(0.000001,Number(posRate()||1));
+    const priceForeign=enteredForeignLKR/Math.max(0.000001,Number(posRate()||1));
+    const price=priceLocal;
     const outlets=ensureRestaurantOutletData();
     const outlet=outlets.find(o=>String(o.id)===String(outletId));
     if(!outlet){alert('Please select a valid restaurant / outlet.');return;}
@@ -6625,9 +6631,9 @@ async function savePOSMenuItemModal(id){
             found.outletId=outlet.id;found.outletName=outlet.name;
             outlet.posMenu.push(found);
         }
-        found.name=name;found.category=category;found.price=price;found.active=active;found.outletId=outlet.id;found.outletName=outlet.name;
+        found.name=name;found.category=category;found.price=price;found.priceLocal=priceLocal;found.priceForeign=priceForeign;found.active=active;found.outletId=outlet.id;found.outletName=outlet.name;
     }else{
-        outlet.posMenu.push({id:'menu_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name,category,price,active,outletId:outlet.id,outletName:outlet.name});
+        outlet.posMenu.push({id:'menu_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name,category,price,priceLocal,priceForeign,active,outletId:outlet.id,outletName:outlet.name});
     }
 
     settings.restaurants=outlets;
@@ -6702,6 +6708,8 @@ async function savePOSMenuItemModal(id){
                    !sameText(savedItem.category,expectedItem?.category) ||
                    Boolean(savedItem.active!==false)!==Boolean(expectedItem?.active!==false) ||
                    !sameNumber(savedItem.price,expectedItem?.price) ||
+                   !sameNumber(savedItem.priceLocal ?? savedItem.price,expectedItem?.priceLocal ?? expectedItem?.price) ||
+                   !sameNumber(savedItem.priceForeign ?? savedItem.priceLocal ?? savedItem.price,expectedItem?.priceForeign ?? expectedItem?.priceLocal ?? expectedItem?.price) ||
                    !sameText(savedItem.outletId,expectedItem?.outletId)){
                     throw new Error('Restaurant menu cloud verification failed: the edited item returned by Supabase does not match the saved item.');
                 }
@@ -11134,9 +11142,12 @@ function renderPOS(){
             : "";
     }
 
+    const rateType=document.getElementById("posRateType")?.value||"Local";
     const activeMenu=POS_MENU.filter(item=>item.active!==false && String(item.outletId||current?.id||"")===String(current?.id||""));
 
-    menu.innerHTML=activeMenu.length ? activeMenu.map(item=>`
+    menu.innerHTML=activeMenu.length ? activeMenu.map(item=>{
+        const selectedPrice=rateType==="Foreign"?(item.priceForeign ?? item.priceLocal ?? item.price):(item.priceLocal ?? item.price);
+        return `
 
             <div class="pos-item">
 
@@ -11149,7 +11160,7 @@ function renderPOS(){
                 </h4>
 
                 <div class="pos-price">
-                    ${posMoney(item.price)}
+                    ${posMoney(selectedPrice)}
                 </div>
 
                 <button type="button" class="btn btn-primary btn-small pos-menu-add-btn"
@@ -11159,7 +11170,8 @@ function renderPOS(){
 
             </div>
 
-        `).join("") : `<div class="empty">No active restaurant menu items for this property.</div>`;
+        `;
+    }).join("") : `<div class="empty">No active restaurant menu items for this property.</div>`;
 
 
     renderPOSOrder();
@@ -11186,6 +11198,10 @@ function addPOSItem(id){
             return;
         }
 
+        /* Capture the selected Local/Foreign price on the order line so changing
+           the selector later cannot silently change an already-added item. */
+        const rateType=document.getElementById("posRateType")?.value||"Local";
+        const selectedPrice=Number((rateType==="Foreign"?(item.priceForeign ?? item.priceLocal ?? item.price):(item.priceLocal ?? item.price))||0);
         /* Table service is the source of truth while a table is open. */
         const tableId=(typeof activeFNBTableId!=="undefined")?String(activeFNBTableId||""):"";
         let table=(tableId && typeof fnbTableById==="function")?fnbTableById(tableId):null;
@@ -11204,7 +11220,8 @@ function addPOSItem(id){
                     id:item.id,
                     name:item.name,
                     category:item.category||"",
-                    price:Number(item.price||0),
+                    price:selectedPrice,
+                    rateType,
                     qty:1,
                     sentQty:0,
                     outletId:outlet.id,
@@ -11229,7 +11246,8 @@ function addPOSItem(id){
             id:item.id,
             name:item.name,
             category:item.category||"",
-            price:Number(item.price||0),
+            price:selectedPrice,
+            rateType,
             qty:1,
             outletId:outlet.id,
             outletName:outlet.name
@@ -11709,7 +11727,7 @@ async function settleFNBTable(){
 }
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
-function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
+function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const rateType=document.getElementById("posRateType")?.value||"Local";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,rateType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
 if(guest && typeof syncReservationToSupabase==='function'){
   // v2.1.133 — explicitly sync the updated guest reservation snapshot after
   // the POS sale/folio/payment arrays have been committed locally.
