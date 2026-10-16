@@ -14812,21 +14812,21 @@ window.postDailyRevenue=function(){
     renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
-/* v2.1.470 — correct previously posted OTA gross-up revenue lines.
-   Remove the erroneous Room Revenue credit and reduce the matching AR debit by
-   the same amount, preserving journal balance. The separate OTA commission expense
-   journal is intentionally left untouched. The cloud journal sync loop publishes
-   the repaired local journal because updatedAt is refreshed. */
+/* v2.1.471 — safely and idempotently correct old OTA gross-up revenue lines.
+   On every sync cycle, remove the erroneous Room Revenue credit and reduce the matching
+   Accounts Receivable debit by the same amount, preserving balance. This keeps retrying
+   while cloud journals are still loading and also repairs a late-arriving stale copy.
+   The separate OTA commission expense journal is intentionally left untouched. */
 (function signatureOtaGrossupRevenueRepair470(){
   'use strict';
   if(window.__signatureOtaGrossupRevenueRepair470)return;
   window.__signatureOtaGrossupRevenueRepair470=true;
   const KEY='signature_pms_accounting_journals';
-  let busy=false, completedFor='';
+  let busy=false;
   async function run(){
     if(busy||window.__signaturePropertyCleanupInProgress)return;
     const p=String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||'');
-    if(!p||completedFor===p)return;
+    if(!p)return;
     if(typeof initSupabaseClient!=='function')return;
     busy=true;
     try{
@@ -14840,7 +14840,6 @@ window.postDailyRevenue=function(){
       let all=[];
       try{all=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(all))all=[];}catch(e){all=[];}
       let changed=false;
-      const hasRevenueJournal=all.some(j=>j&&String(j.propertyId||p)===p&&String(j.source||'').trim().toLowerCase()==='daily revenue');
       for(const j of all){
         if(!j||String(j.propertyId||p)!==p||String(j.source||'').trim().toLowerCase()!=='daily revenue')continue;
         const lines=Array.isArray(j.lines)?j.lines:[];
@@ -14862,7 +14861,6 @@ window.postDailyRevenue=function(){
         try{if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}
         console.info('OTA gross-up revenue repair completed for property',p);
       }
-      if(hasRevenueJournal)completedFor=p;
     }catch(e){console.warn('OTA gross-up revenue repair paused:',e?.message||e)}
     finally{busy=false;}
   }
