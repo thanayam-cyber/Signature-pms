@@ -14160,6 +14160,7 @@ const DEFAULT_ACCOUNTS = [
  {code:"5400",name:"Utilities",type:"Expense"},
  {code:"5500",name:"Repairs & Maintenance",type:"Expense"},
  {code:"5600",name:"Sales & Marketing",type:"Expense"},
+ {code:"6330",name:"OTA / Booking Commissions",type:"Expense"},
  {code:"5700",name:"Administrative Expenses",type:"Expense"},
  {code:"5800",name:"Other Operating Expenses",type:"Expense"}
 ];
@@ -14620,6 +14621,39 @@ function dailyRevenueRows(date){
   });
   return rows;
 }
+/* OTA commission accounting: commission is separate from the meal-plan food allocation.
+   For Gross-up channels, the commission is calculated from the saved reservation total
+   per occupied night and posted as an expense with an Accounts Payable credit. */
+function dailyRevenueOtaCommissionRows(date){
+  const d=date||dailyRevenueSelectedDate();
+  const sd=normalizeSalesDistribution(settings?.salesDistribution);
+  const active=accProp(reservations||[]).filter(r=>{
+    const ci=String(r.checkIn||'').slice(0,10),co=String(r.checkOut||'').slice(0,10);
+    return r.status!=='Cancelled' && r.status!=='No-Show' && ci && co && ci<=d && d<co;
+  });
+  const out=[];
+  active.forEach(r=>{
+    const channel=reservationBookingChannelValue(r).trim();
+    const ota=(sd.otaChannels||[]).find(x=>String(x.name||'').trim().toLowerCase()===channel.toLowerCase() && x.active!==false);
+    if(!ota || ota.calculation!=='grossup' || Number(ota.commission)<=0)return;
+    const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
+    const dailyGross=Number(r.total||0)/nights;
+    const amount=toAccountingAmount(dailyGross*(Math.max(0,Math.min(99.99,Number(ota.commission)||0))/100),r);
+    if(amount>0.009)out.push({date:d,source:'OTA Commission',revenueSource:'OTA Commission Expense',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+channel+' commission',amount,account:'OTA / Booking Commissions',commissionChannel:channel});
+  });
+  return out;
+}
+function dailyRevenuePostedOtaCommission(date){
+  let total=0;
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions')total+=Number(l.debit||0);});
+  });
+  return total;
+}
+function dailyRevenueOtaCommissionDelta(date){
+  const expected=dailyRevenueOtaCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
+  return Math.max(0,expected-dailyRevenuePostedOtaCommission(date));
+}
 function dailyRevenueTotals(date){
   const rows=dailyRevenueRows(date);
   return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Experience / Recreation Revenue':0,'Other Operating Revenue':0});
@@ -14667,14 +14701,14 @@ function dailyRevenueHasUnpostedFNB(date){
   return d['Restaurant Revenue']>0.009 || d['Bar Revenue']>0.009;
 }
 function dailyRevenueHasUnpostedRevenue(date){
-  return dailyRevenueHasUnpostedFNB(date) || dailyRevenueExperienceDelta(date)>0.009;
+  return dailyRevenueHasUnpostedFNB(date) || dailyRevenueExperienceDelta(date)>0.009 || dailyRevenueOtaCommissionDelta(date)>0.009;
 }
 function renderDailyRevenuePosting(){
   const tb=document.getElementById('dailyRevenuePostingTable'); if(!tb)return;
   const current=accountingBusinessDate();
   const dateEl=document.getElementById('dailyRevenuePostingDate');
   if(dateEl){dateEl.max=current;if(!dateEl.value || dateEl.value>current)dateEl.value=current;}
-  const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
+  const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);set('dailyPostTax',0);
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
@@ -14685,7 +14719,8 @@ function renderDailyRevenuePosting(){
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
   }
-  tb.innerHTML=rows.length?rows.map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(r.reference)}</td><td>${escapeHtml(r.description)}</td><td style="text-align:right">${accMoney(r.amount)}</td></tr>`).join(''):`<tr><td colspan="5" class="empty">No daily revenue transactions found for ${escapeHtml(d)}.</td></tr>`;
+  const previewRows=rows.concat(commissionRows.map(r=>({...r,source:'OTA Commission Expense',description:r.description+' (expense; separate from BB allocation)'})));
+  tb.innerHTML=previewRows.length?previewRows.map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(r.reference)}</td><td>${escapeHtml(r.description)}</td><td style="text-align:right">${accMoney(r.amount)}</td></tr>`).join(''):`<tr><td colspan="5" class="empty">No daily revenue transactions found for ${escapeHtml(d)}.</td></tr>`;
 }
 window.postDailyRevenue=function(){
   if(!requireRole('Admin','Manager'))return;
@@ -14695,6 +14730,8 @@ window.postDailyRevenue=function(){
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const fnbDelta=dailyRevenueFNBDelta(d);
   const experienceDelta=dailyRevenueExperienceDelta(d);
+  const commissionRows=dailyRevenueOtaCommissionRows(d);
+  const commissionDelta=dailyRevenueOtaCommissionDelta(d);
   let lines=[];
   let gross=0;
   let ref='REV-'+d.replace(/-/g,'');
@@ -14708,8 +14745,8 @@ window.postDailyRevenue=function(){
     ref='REV-INC-'+d.replace(/-/g,'')+'-'+Date.now();
     description='Daily Revenue Posting (Incremental)';
   }else{
-    gross=Object.values(totals).reduce((s,v)=>s+Number(v||0),0);
-    if(gross<=0){alert('No revenue is available to post for business date '+d+'.');return;}
+    gross=Object.values(totals).reduce((sum,v)=>sum+Number(v||0),0);
+    if(gross<=0 && commissionDelta<=0.009){alert('No revenue or OTA commission is available to post for business date '+d+'.');return;}
     const grouped={};
     rows.forEach(r=>{
       const amount=Number(r.amount||0); if(amount<=0)return;
@@ -14719,12 +14756,18 @@ window.postDailyRevenue=function(){
     });
     lines=Object.values(grouped);
   }
-  lines.unshift({account:'Accounts Receivable',debit:gross,credit:0,revenueSource:'Daily Revenue Receivable'});
+  /* Only the revenue delta increases Accounts Receivable. Commission is a separate
+     expense/payable pair and must never be confused with the BB meal allocation. */
+  if(gross>0.009)lines.unshift({account:'Accounts Receivable',debit:gross,credit:0,revenueSource:'Daily Revenue Receivable'});
+  if(commissionDelta>0.009){
+    lines.push({account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'});
+    lines.push({account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'});
+  }
   try{
     postJournal(d,ref,description,lines,'Daily Revenue');
     const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
-    logAudit('DAILY_REVENUE_POSTED','REV-'+d,'Daily revenue posted: '+gross,currentPropertyId);
-    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posted successfully for '+d+'.');
+    logAudit('DAILY_REVENUE_POSTED','REV-'+d,'Daily revenue posted: '+gross+'; OTA commission: '+commissionDelta,currentPropertyId);
+    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue and OTA commission posted successfully for '+d+'. Revenue: '+accMoney(gross)+'. OTA commission expense: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
 let dailyPaymentSelectedDateOverride='';
