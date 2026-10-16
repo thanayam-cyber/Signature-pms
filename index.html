@@ -7623,7 +7623,7 @@ async function clearRevenueHistory(){
  };
  const isOperationalResetJournal=(j)=>{
    if(!j||typeof j!=="object")return false;
-   if(isPayrollJournal(j))return false;
+   if(isPayrollJournal(j))return true;
    if(isRevenueJournal(j))return true;
    const source=String(j.source||"").trim().toLowerCase();
    const reference=String(j.reference||"").trim();
@@ -22490,7 +22490,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 <script id="v2-1-397-accounting-journal-cloud-sync">
-/* v2.1.468 — MOBILE STALE JOURNAL CACHE / CLOUD SYNC FIX
+/* v2.1.469 — MOBILE STALE PAYROLL / ETF / EPF JOURNAL FIX
    Makes Daily Revenue / Daily Payments posting status property-wide.
    Each journal is stored as its own pms_cloud_records row so Admin and
    Reception cannot overwrite one another's accounting journal array. */
@@ -22538,7 +22538,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const source=String(j.source||'').trim().toLowerCase();
     const reference=String(j.reference||'').trim();
     const payroll=source.includes('payroll')||/^PAYROLL[-_]/i.test(reference)||(/^PAY-\d{4}-\d{2}$/i.test(reference)&&source==='payroll');
-    if(payroll)return false;
+    if(payroll)return true;
     if(source==='daily revenue'||source==='daily payments'||/^REV-\d{8}$/i.test(reference)||/^PAY-\d{8}$/i.test(reference))return true;
     if(/^(?:ST-POS-RINV-|VOID-RINV-|RINV-|GRN-|PO-|PR-|SUPPAY-|SUPPLIER-PAYMENT-|EXP-|EXPENSE-|STOCK-|ST-)/i.test(reference))return true;
     return /(?:f&b pos|restaurant pos|bar pos|\bgrn\b|\bstores\b|stock take|inventory|purchas|supplier payment|\bexpense\b|\bfolio\b|experience|reservation|cashier|daily revenue|daily payments)/i.test(source);
@@ -26356,13 +26356,21 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   }
   function ensureExistingPostedPayrollJournals(){
     const p=pid(); if(!p)return false;
+    const cleanupCutoff=Number(window.__signatureAccountingCleanupWatermark||0);
+    const payrollPeriodSurvivesCleanup=(period,records)=>{
+      if(!cleanupCutoff)return true;
+      const stamps=(records||[]).flatMap(x=>['postedAt','paidAt','updatedAt','createdAt','date'].map(k=>Date.parse(x?.[k]||'')).filter(n=>Number.isFinite(n)&&n>0));
+      if(stamps.length)return Math.max(...stamps)>cleanupCutoff;
+      const periodStart=Date.parse(String(period)+'-01T00:00:00Z');
+      return Number.isFinite(periodStart)&&periodStart>cleanupCutoff;
+    };
     const all=localJournals();
     const mine=all.filter(j=>String(j?.propertyId||p)===p);
     let changed=false;
     const periods=[...new Set(payrollRows().filter(x=>String(x?.propertyId||p)===p&&['Posted','Paid'].includes(String(x?.status||''))).map(x=>String(x.period||'')).filter(x=>/^\d{4}-\d{2}$/.test(x)))];
     periods.forEach(period=>{
       const rec=payrollRows().filter(x=>String(x?.propertyId||p)===p&&String(x?.period||'')===period&&['Posted','Paid'].includes(String(x?.status||'')));
-      if(!rec.length)return;
+      if(!rec.length||!payrollPeriodSurvivesCleanup(period,rec))return;
       const net=rec.reduce((sum,x)=>sum+Number(x?.netPay||0),0);
       const employeeEPF=rec.reduce((sum,x)=>sum+Number(x?.epfEmployee||0),0);
       const employerEPF=rec.reduce((sum,x)=>sum+Number(x?.epfEmployer||0),0);
@@ -26397,8 +26405,15 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   async function syncPayrollJournal(){
     if(window.__signaturePropertyCleanupInProgress)return false;
     try{
+      /* Share the cleanup watermark with payroll repair so old Posted/Paid payroll
+         rows cannot recreate historical ETF/EPF/payroll expense journals after a clean start. */
+      const z=await session();
+      if(z){
+        const lock=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
+        if(!lock.error){const d=lock.data?.data||{};const t=Date.parse(d.startedAt||lock.data?.updated_at||'');if(t>0)window.__signatureAccountingCleanupWatermark=t;}
+      }
       /* Repair only a missing accounting journal for payroll that is already
-         Posted/Paid. This NEVER recalculates or changes payroll status. */
+         Posted/Paid and was created after the cleanup watermark. This NEVER changes payroll status. */
       const repaired=ensureExistingPostedPayrollJournals();
       await publishPayrollJournals();
       // The general accounting journal cloud sync (v2-1-397) is the sole
