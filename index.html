@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<!-- Signature PMS v2.1.453 — FULL CLEAN START INCLUDES PAYROLL JOURNALS -->
+<!-- Signature PMS v2.1.467 — OTA JOURNAL SPLIT REPAIR AFTER CLEANUP LOCK -->
 
-<!-- SIGNATURE PMS PATCH VERSION: 2.1.450 ACCOUNTING CLEANUP SYNC LOCK -->
+<!-- SIGNATURE PMS PATCH VERSION: 2.1.467 OTA COMMISSION JOURNAL REPAIR -->
 
 
 <html lang="en"><head>
@@ -14815,9 +14815,9 @@ window.postDailyRevenue=function(){
     renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
-/* v2.1.466 — safely split legacy combined OTA commission lines into their own journal.
-   Migration runs only after the property's cloud cleanup lock is confirmed inactive,
-   preventing a local repair from racing a transaction cleanup or creating cross-device duplicates. */
+/* v2.1.467 — safely split legacy combined OTA commission lines into their own journal.
+   When a cleanup lock is active, only repair a journal created after that lock began;
+   pre-lock journals remain untouched until cleanup is confirmed complete. */
 (function signatureOtaJournalSeparationRepair(){
   'use strict';
   if(window.__signatureOtaJournalSeparationRepair466)return;
@@ -14836,12 +14836,18 @@ window.postDailyRevenue=function(){
     try{
       const c=initSupabaseClient();if(!c)return;
       const session=await c.auth.getSession();if(!session?.data?.session?.user)return;
-      const lock=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',LOCK_KEY).maybeSingle();
-      if(lock.error||lock.data?.data?.active===true)return;
+      const lock=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',LOCK_KEY).maybeSingle();
+      if(lock.error)return;
+      const lockData=lock.data?.data||{};
+      const cleanupLocked=lockData.active===true;
+      const lockStarted=Date.parse(lockData.startedAt||lock.data?.updated_at||'')||0;
       const all=read();let changed=false;const additions=[];
       const propertyRows=all.filter(j=>String(j?.propertyId||p)===p);
+      const createdAt=j=>{const m=String(j?.id||'').match(/^je_(\d{13})_/i);return m?Number(m[1]):Date.parse(j?.updatedAt||j?.postedAt||'')||0;};
       for(const j of propertyRows){
         if(String(j.source||'')!=='Daily Revenue')continue;
+        /* Do not mutate stale pre-cleanup journals while the lock is active. */
+        if(cleanupLocked&&(!lockStarted||createdAt(j)<=lockStarted))continue;
         const date=String(j.businessDate||j.date||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))continue;
         const lines=Array.isArray(j.lines)?j.lines:[];
         const exp=lines.filter(l=>String(l.account||'')==='OTA / Booking Commissions'&&Number(l.debit||0)>0&&(String(l.revenueSource||'')==='OTA Commission Expense'||!l.revenueSource));
@@ -14861,7 +14867,7 @@ window.postDailyRevenue=function(){
           additions.push({id:'je_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),propertyId:p,date,businessDate:date,reference:ref,description:'OTA Commission Expense — '+date,source:'Daily Revenue Commission',lines:[...exp,...pay],postedBy:(typeof currentUser!=='undefined'&&currentUser?.username)||'System',updatedAt:new Date().toISOString()});
         }
       }
-      if(changed){write(all.concat(additions));try{if(typeof renderAccounting==='function')renderAccounting();if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}console.info('OTA commission journal separation repair completed for property',p,'new commission journals:',additions.length);}
+      if(changed){write(all.concat(additions));try{if(typeof renderAccounting==='function')renderAccounting();if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}console.info('OTA commission journal separation repair completed for property',p,'new commission journals:',additions.length,'cleanup lock active:',cleanupLocked);}
     }catch(e){console.warn('OTA commission journal separation repair paused:',e?.message||e)}
     finally{busy=false}
   }
