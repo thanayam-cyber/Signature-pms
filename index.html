@@ -14248,8 +14248,24 @@ function journalEntries(){
 }
 window.postJournal=postJournal;
 function postJournal(date,ref,description,lines,source){
-  const clean=lines.map(x=>({...x,debit:Number(x.debit||0),credit:Number(x.credit||0)}))
-    .filter(x=>x.debit>0 || x.credit>0);
+  /* Persist an explicit account code with each journal line. This prevents duplicate
+     account names in legacy charts (for example 4000 and 7000 Room Revenue) from
+     sending the same posting to an arbitrary ledger account. */
+  const canonicalCodes={
+    'Cash on Hand':'1000','Bank Account':'1010','Card Receivables':'1020',
+    'Accounts Receivable':'1100','Inventory Assets':'1200','Employee Advances Receivable':'1300',
+    'Accounts Payable':'2000','Salary Payable':'2010','Guest Deposits / Advance Payments':'2030',
+    'Owner Equity':'3000','Room Revenue':'4000','Restaurant Revenue':'4100',
+    'Other Operating Revenue':'4200','Service Charge Payable':'2100','Tax Payable':'2200',
+    'Cost of Sales':'5000','Food Cost':'5100','Beverage Cost':'5200','Payroll & Staff Cost':'5300',
+    'Utilities':'5400','Repairs & Maintenance':'5500','Sales & Marketing':'5600',
+    'OTA / Booking Commissions':'6330','Administrative Expenses':'5700','Other Operating Expenses':'5800'
+  };
+  const clean=lines.map(x=>{
+    const account=String(x.account||'').trim();
+    const resolved=accountByName(account);
+    return {...x,account,accountCode:String(x.accountCode||canonicalCodes[account]||resolved?.code||''),debit:Number(x.debit||0),credit:Number(x.credit||0)};
+  }).filter(x=>x.debit>0 || x.credit>0);
   const d=clean.reduce((s,x)=>s+x.debit,0), c=clean.reduce((s,x)=>s+x.credit,0);
   if(Math.abs(d-c)>0.01) throw new Error("Journal is not balanced.");
   const all=accRead(ACC_STORE.journals);
@@ -14461,7 +14477,9 @@ function accountBalances(){
   ledgerLines().filter(x=>inRange(x.date)).forEach(x=>{
     const accountName=String(x.account||'').trim();
     const accountCode=String(x.accountCode||'').trim();
-    const a=accounts.find(a=>String(a.name).trim()===accountName || String(a.code).trim()===accountCode || String(a.code).trim()===accountName);
+    const a=(accountCode ? accounts.find(a=>String(a.code).trim()===accountCode) : null)
+      || accounts.find(a=>String(a.name).trim()===accountName)
+      || accounts.find(a=>String(a.code).trim()===accountName);
     if(!a) return;
     balances[a.code].debit+=Number(x.debit||0); balances[a.code].credit+=Number(x.credit||0);
   });
@@ -14771,9 +14789,16 @@ window.postDailyRevenue=function(){
     });
     lines=Object.values(grouped);
   }
-  /* Only the revenue delta increases Accounts Receivable. Commission is a separate
-     expense/payable pair and must never be confused with the BB meal allocation. */
-  if(gross>0.009)lines.unshift({account:'Accounts Receivable',debit:gross,credit:0,revenueSource:'Daily Revenue Receivable'});
+  /* Gross-up accounting: the meal-plan split is calculated on the base rate, while
+     the OTA uplift is recognized as additional Room Revenue. The gross OTA receivable
+     therefore equals base revenue + commission uplift. The commission is then booked
+     separately as an expense and payable. This keeps the journal balanced and makes
+     gross revenue less commission equal the hotel's base package value. */
+  if(commissionDelta>0.009){
+    lines.push({account:'Room Revenue',debit:0,credit:commissionDelta,revenueSource:'OTA Gross-up Revenue'});
+  }
+  const grossReceivable=Number(gross||0)+Number(commissionDelta||0);
+  if(grossReceivable>0.009)lines.unshift({account:'Accounts Receivable',debit:grossReceivable,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
   if(commissionDelta>0.009){
     lines.push({account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'});
     lines.push({account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'});
@@ -14782,7 +14807,7 @@ window.postDailyRevenue=function(){
     postJournal(d,ref,description,lines,'Daily Revenue');
     const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
     logAudit('DAILY_REVENUE_POSTED','REV-'+d,'Daily revenue posted: '+gross+'; OTA commission: '+commissionDelta,currentPropertyId);
-    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue and OTA commission posted successfully for '+d+'. Revenue: '+accMoney(gross)+'. OTA commission expense: '+accMoney(commissionDelta)+'.');
+    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue and OTA commission posted successfully for '+d+'. Base revenue: '+accMoney(gross)+'. Gross OTA receivable: '+accMoney(grossReceivable)+'. OTA commission expense: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
 let dailyPaymentSelectedDateOverride='';
