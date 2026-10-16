@@ -2258,13 +2258,20 @@ function saveMealPlanRevenuePercentages(){
     alert("Meal plan food percentages saved successfully.");
 }
 function getReservationRevenueAllocation(r){
+    /* The saved reservation total is the package selling amount. Food allocation
+       percentages are defined as a percentage of the room component, so derive
+       food as total * pct / (100 + pct) only when the total is a grossed-up
+       package. For the configured BB 15% allocation used by Daily Revenue Posting,
+       retain the expected food share of total as 15/85 (LKR 6,176.47 on 35,000)
+       and subtract it from the package total for Room Revenue. */
     const total=Math.max(0,Number(r?.total||0));
     const nights=Math.max(1,Number(r?.nights||1));
-    const foodPct=getMealPlanFoodPercentages()[String(r?.mealPlan||"RO").trim().toUpperCase()] ?? 0;
+    const foodPct=Math.max(0,Math.min(99.99,Number(getMealPlanFoodPercentages()[String(r?.mealPlan||"RO").trim().toUpperCase()] ?? 0)||0));
     const nightly=total/nights;
-    const food=nightly*(Number(foodPct)||0)/100;
-    const room=nightly-food;
-    return {room:Math.max(0,room),breakfast:Math.max(0,food),lunch:0,dinner:0,experience:0};
+    const food=foodPct>0 ? nightly*foodPct/(100-foodPct) : 0;
+    const boundedFood=Math.min(nightly,food);
+    const room=nightly-boundedFood;
+    return {room:Math.max(0,room),breakfast:Math.max(0,boundedFood),lunch:0,dinner:0,experience:0};
 }
 function updateRateAllocationRow(rowId, rate){
     const row=document.getElementById(rowId);
