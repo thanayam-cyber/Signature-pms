@@ -619,6 +619,8 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <th>Guest</th>
 <th>Type</th>
 <th>Room</th>
+<th>Source</th>
+<th>Channel / Reference</th>
 <th>Check-In</th>
 <th>Check-Out</th>
 <th>Nights</th>
@@ -627,7 +629,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <th>Actions</th>
 </tr>
 </thead>
-<tbody id="reservationTable"><tr><td class="empty" colspan="11">No reservations.</td></tr></tbody>
+<tbody id="reservationTable"><tr><td class="empty" colspan="12">No reservations.</td></tr></tbody>
 </table>
 </div>
 </div>
@@ -1547,6 +1549,11 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div id="nobedsBookingPreview" style="margin-top:12px"></div>
 <div id="nobedsSyncLog" style="margin-top:12px"></div>
 </div>
+<div class="section" style="margin-top:12px;background:#fff;border:1px solid #dbeafe">
+<div class="section-header"><div><h4>Channel Rate Matrix</h4><div style="font-size:12px;color:#6b7280">Set separate nightly rates by booking channel, room type, meal plan and occupancy. Leave a rate blank or 0 to use the standard room rate. Travel-agent rates are saved per agent.</div></div></div>
+<div class="form-grid"><div class="form-group"><label>Channel / Rate Plan</label><select id="channelRateEditorKey" onchange="renderChannelRateMatrixEditor()"><option value="direct">Direct</option></select></div><div class="form-group"><label>How rates work</label><div style="font-size:12px;color:#475569;padding:8px 0">Rates are property-specific. Existing reservations keep their saved rate; changes apply to new bookings.</div></div></div>
+<div id="channelRateMatrixEditor"></div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn btn-primary" type="button" onclick="saveChannelRateMatrix()">Save Channel Rates</button></div>
+</div>
 <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-primary" onclick="saveSalesDistribution()" type="button">Save Sales &amp; Distribution</button></div>
 </div>
 <div class="section" id="restaurantOutletSection"><div class="section-header"><div><h3>Restaurant / Outlet Management</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Create multiple restaurants or outlets under the same property. Each outlet has its own menu and revenue reporting.</div></div><button class="btn btn-primary" onclick="addRestaurantOutlet()">+ New Restaurant / Outlet</button></div><div id="restaurantOutletEditor"><div class="empty">No restaurant outlets configured.</div></div></div><div class="section" id="restaurantMenuSection">
@@ -1971,7 +1978,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <label>Notes</label>
 <textarea id="reservationNotes"></textarea>
 </div>
-<div class="form-group"><label>Booking Source</label><select id="bookingSource"><option value="Direct">Direct</option><option value="Website">Website</option><option value="Booking.com">Booking.com</option><option value="Agoda">Agoda</option><option value="Expedia">Expedia</option><option value="Travel Agent">Travel Agent</option><option value="Corporate">Corporate</option><option value="Walk-in">Walk-in</option><option value="OTA">OTA</option><option value="Other">Other</option></select></div><div class="form-group"><label>Reservation Status</label><select id="reservationStatus"><option value="reserved">Reserved</option><option value="confirmed">Confirmed</option><option value="checked_in">Checked In</option><option value="checked_out">Checked Out</option><option value="cancelled">Cancelled</option><option value="no_show">No Show</option></select></div><div class="form-group"><label>Rate Override</label><input id="rateOverride" min="0" placeholder="Use standard rate" step="0.01" type="number"/></div><div class="form-group full"><label>Reservation Notes</label><textarea id="reservationNotes" placeholder="Booking notes, cancellation reason, guest requests..."></textarea></div></div>
+<div class="form-group"><label>Booking Source</label><select id="bookingSource" onchange="calculateReservation()"><option value="Direct">Direct</option><option value="OTA">OTA</option><option value="Travel Agent">Travel Agent</option><option value="Corporate">Corporate</option><option value="Other">Other</option></select><small style="color:#64748b">Where the reservation actually came from.</small></div><div class="form-group"><label>Booking Channel / Rate Channel</label><select id="bookingChannel" onchange="toggleReservationAgentField();calculateReservation()"><option value="Direct">Direct</option><option value="Website">Website</option><option value="WhatsApp">WhatsApp</option><option value="Phone">Phone</option><option value="Booking.com">Booking.com</option><option value="Agoda">Agoda</option><option value="Expedia">Expedia</option><option value="Travel Agent">Travel Agent</option><option value="Corporate">Corporate</option><option value="Walk-in">Walk-in</option><option value="OTA">OTA</option><option value="Other">Other</option></select><small style="color:#64748b">Used to select the configured rate. It can differ from Booking Source.</small></div><div class="form-group"><label>External Confirmation Number</label><input id="externalConfirmationNumber" type="text" placeholder="OTA / agent confirmation reference (optional)"/></div><div class="form-group"><label>Channel Manager Sync ID</label><input id="channelManagerSyncId" type="text" placeholder="Imported booking ID (optional)"/></div><div class="form-group"><label>Reservation Status</label><select id="reservationStatus"><option value="reserved">Reserved</option><option value="confirmed">Confirmed</option><option value="checked_in">Checked In</option><option value="checked_out">Checked Out</option><option value="cancelled">Cancelled</option><option value="no_show">No Show</option></select></div><div class="form-group"><label>Rate Override</label><input id="rateOverride" min="0" placeholder="Use standard rate" step="0.01" type="number"/></div></div>
 <div class="summary-box" style="margin-top:15px">
 <div style="display:flex;justify-content:space-between">
 <span>Rate / Night</span>
@@ -7285,11 +7292,77 @@ function saveCommercialLicense(){
 
 }
 
+function channelRateKey(label){
+    const raw=String(label||'Direct').trim();
+    return 'channel_'+raw.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+}
+function channelRateOptions(){
+    const sd=normalizeSalesDistribution(settings?.salesDistribution);
+    const list=[{key:channelRateKey('Direct'),label:'Direct'},{key:channelRateKey('Website'),label:'Website'},{key:channelRateKey('WhatsApp'),label:'WhatsApp'},{key:channelRateKey('Phone'),label:'Phone'},{key:channelRateKey('Walk-in'),label:'Walk-in'},{key:channelRateKey('Corporate'),label:'Corporate'},{key:channelRateKey('OTA'),label:'OTA'},{key:channelRateKey('Other'),label:'Other'}];
+    ['Booking.com','Agoda','Expedia'].forEach(n=>list.push({key:channelRateKey(n),label:n}));
+    sd.otaChannels.filter(x=>x.active!==false).forEach(x=>{if(!list.some(y=>y.label.toLowerCase()===x.name.toLowerCase()))list.push({key:channelRateKey(x.name),label:x.name});});
+    sd.travelAgents.filter(x=>x.active!==false).forEach(x=>list.push({key:'agent_'+String(x.id).replace(/[^a-zA-Z0-9_-]/g,'_'),label:'Travel Agent — '+x.name,agentId:x.id}));
+    return list.filter((x,i,a)=>a.findIndex(y=>y.key===x.key)===i);
+}
+function channelRateOccupancy(adults,children){
+    const a=Number(adults||1),c=Number(children||0);
+    if(a===2&&c>=2)return '2A2C'; if(a===2&&c===1)return '2A1C'; if(a>=3&&c===0)return '3A'; return '2A';
+}
+function getCurrentChannelRateKey(){return document.getElementById('bookingChannel')?.value==='Travel Agent' ? 'agent_'+String(document.getElementById('reservationTravelAgentId')?.value||'').replace(/[^a-zA-Z0-9_-]/g,'_') : channelRateKey(document.getElementById('bookingChannel')?.value||'Direct');}
+function getChannelAdjustedRate(baseRate,mealPlan,adults,children,roomId,bookingType){
+    const source=document.getElementById('bookingChannel')?.value||'Direct';
+    if(bookingType==='villa')return Number(baseRate||0);
+    const rt=getRoomTypeForRoom(roomId); if(!rt)return Number(baseRate||0);
+    const key=source==='Travel Agent'?'agent_'+String(document.getElementById('reservationTravelAgentId')?.value||'').replace(/[^a-zA-Z0-9_-]/g,'_'):channelRateKey(source);
+    const sd=normalizeSalesDistribution(settings?.salesDistribution), matrix=sd.channelRateMatrix||{};
+    const row=matrix[key]?.[String(rt.id)]?.[String(mealPlan||'BB').toUpperCase()]||{};
+    const occ=channelRateOccupancy(adults,children), explicit=Number(row[occ]||0);
+    return explicit>0?explicit:Number(baseRate||0);
+}
+function renderChannelRateMatrixEditor(){
+    const select=document.getElementById('channelRateEditorKey'),box=document.getElementById('channelRateMatrixEditor');
+    if(!select||!box||!settings)return;
+    const opts=channelRateOptions(),old=select.value||channelRateKey('Direct');
+    select.innerHTML=opts.map(x=>`<option value="${escapeHtml(x.key)}">${escapeHtml(x.label)}</option>`).join('');
+    select.value=opts.some(x=>x.key===old)?old:(opts[0]?.key||channelRateKey('Direct'));
+    const key=select.value, matrix=normalizeSalesDistribution(settings.salesDistribution).channelRateMatrix||{};
+    const types=(settings.roomTypes||[]).filter(t=>t.active!==false),plans=[['BB','Bed & Breakfast'],['HB','Half Board'],['FB','Full Board'],['AI','All Inclusive']],occs=[['2A','2 Adults'],['3A','3 Adults'],['2A1C','2 Adults + 1 Child'],['2A2C','2 Adults + 2 Children']];
+    if(!types.length){box.innerHTML='<div class="empty">Create active room types before setting channel rates.</div>';return;}
+    box.innerHTML=types.map(t=>{const byPlan=matrix[key]?.[String(t.id)]||{};return `<div class="card" style="margin:10px 0;padding:10px"><strong>${escapeHtml(t.code||'')} — ${escapeHtml(t.name||'Room Type')}</strong>${plans.map(([plan,label])=>{const row=byPlan[plan]||{};return `<div style="margin-top:8px"><div style="font-size:12px;font-weight:700;margin-bottom:5px">${plan} — ${label}</div><div class="form-grid">${occs.map(([occ,occLabel])=>`<div class="form-group"><label>${occLabel}</label><input id="crm_${key}_${String(t.id).replace(/[^a-zA-Z0-9_-]/g,'_')}_${plan}_${occ}" data-channel-rate-key="${escapeHtml(key)}" data-room-type="${escapeHtml(String(t.id))}" data-plan="${plan}" data-occ="${occ}" type="number" min="0" step="0.01" placeholder="Use standard rate" value="${Number(row[occ]||0)||''}"></div>`).join('')}</div></div>`}).join('')}</div>`}).join('');
+}
+async function saveChannelRateMatrix(){
+    if(!hasActionPermission('settings.sales')&&!hasActionPermission('settings.rateplans')){alert('You do not have permission to manage channel rates.');return;}
+    if(!settings||!currentPropertyId){alert('Please select a property first.');return;}
+    const select=document.getElementById('channelRateEditorKey'),key=select?.value;if(!key)return;
+    const sd=normalizeSalesDistribution(settings.salesDistribution);sd.channelRateMatrix=sd.channelRateMatrix||{};sd.channelRateMatrix[key]=sd.channelRateMatrix[key]||{};
+    document.querySelectorAll('#channelRateMatrixEditor [data-channel-rate-key]').forEach(el=>{const rt=el.dataset.roomType,plan=el.dataset.plan,occ=el.dataset.occ;sd.channelRateMatrix[key][rt]=sd.channelRateMatrix[key][rt]||{};sd.channelRateMatrix[key][rt][plan]=sd.channelRateMatrix[key][rt][plan]||{};const value=Math.max(0,Number(el.value||0));if(value>0)sd.channelRateMatrix[key][rt][plan][occ]=value;else delete sd.channelRateMatrix[key][rt][plan][occ];});
+    settings.salesDistribution=sd;saveData();const cloud=await persistSalesDistributionToCloud();alert('Channel rates saved for this property'+(cloud?' and synchronized to cloud.':'. Cloud sync was not verified; please check the cloud status.'));renderChannelRateMatrixEditor();
+}
+function refreshReservationBookingSourceOptions(){
+    const channel=document.getElementById('bookingChannel');if(!channel)return;const current=channel.value||'Direct';
+    const base=['Direct','Website','WhatsApp','Phone','Booking.com','Agoda','Expedia','Travel Agent','Corporate','Walk-in','OTA','NOBEDS','Other'];
+    const sd=normalizeSalesDistribution(settings?.salesDistribution);sd.otaChannels.filter(x=>x.active!==false).forEach(x=>{if(!base.some(y=>y.toLowerCase()===x.name.toLowerCase()))base.push(x.name);});
+    channel.innerHTML=base.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');if(base.includes(current))channel.value=current;
+}
+function ensureReservationAgentField(){
+    const channel=document.getElementById('bookingChannel');if(!channel||document.getElementById('reservationTravelAgentId'))return;
+    const wrap=document.createElement('div');wrap.className='form-group';wrap.id='reservationTravelAgentWrap';wrap.innerHTML='<label>Travel Agent</label><select id="reservationTravelAgentId" onchange="calculateReservation()"><option value="">Select travel agent</option></select>';
+    channel.closest('.form-group')?.after(wrap);
+}
+function toggleReservationAgentField(){
+    ensureReservationAgentField();refreshReservationBookingSourceOptions();const channel=document.getElementById('bookingChannel'),wrap=document.getElementById('reservationTravelAgentWrap'),agent=document.getElementById('reservationTravelAgentId');
+    const sd=normalizeSalesDistribution(settings?.salesDistribution),old=agent?.value||'';
+    if(agent)agent.innerHTML='<option value="">Select travel agent</option>'+sd.travelAgents.filter(x=>x.active!==false).map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join('');
+    if(agent&&sd.travelAgents.some(x=>String(x.id)===old))agent.value=old;
+    if(wrap)wrap.style.display=channel?.value==='Travel Agent'?'block':'none';
+}
+
 function normalizeSalesDistribution(value){
     const src=(value&&typeof value==='object')?value:{};
     const ota=Array.isArray(src.otaChannels)?src.otaChannels:[];
     const agents=Array.isArray(src.travelAgents)?src.travelAgents:[];
     return {
+        channelRateMatrix:(src.channelRateMatrix&&typeof src.channelRateMatrix==='object')?src.channelRateMatrix:{},
         otaChannels:ota.map(x=>({
             id:String(x?.id||('ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7))),
             name:String(x?.name||'').trim(),
@@ -7358,18 +7431,21 @@ function renderSalesDistribution(){
     set('channelManagerChannels',cm.channels||'');
     set('channelManagerMapping',cm.mapping||'');
     renderChannelManagerProviderFields();
+    renderChannelRateMatrixEditor();
+    refreshReservationBookingSourceOptions();
 }
 async function persistSalesDistributionToCloud(){
     try{
-        if(!currentPropertyId||!settings)return true;
+        if(!currentPropertyId||!settings)throw new Error('Select a property before saving.');
         const client=initSupabaseClient();
-        if(!client)return true;
-        const {data:{session}}=await client.auth.getSession();
-        if(!session?.user)return true;
+        if(!client)throw new Error('Supabase client is not available. Settings were saved locally only.');
+        const {data:{session},error:sessionError}=await client.auth.getSession();
+        if(sessionError)throw sessionError;
+        if(!session?.user)throw new Error('No active Supabase login session. Settings were saved locally only.');
         const {error}=await client.rpc('save_property_sales_distribution',{target_property_id:String(currentPropertyId),sales_distribution:normalizeSalesDistribution(settings.salesDistribution)});
         if(error) throw error;
         return true;
-    }catch(e){console.warn('Sales & Distribution cloud save skipped:',e?.message||e);return false;}
+    }catch(e){console.warn('Sales & Distribution cloud save failed:',e?.message||e);return false;}
 }
 async function addOTAChannel(){if(!requireRole('Admin','Manager'))return; if(!settings)return; const name=prompt('OTA / Booking Channel name:','Booking.com');if(name===null||!name.trim())return; const sd=normalizeSalesDistribution(settings.salesDistribution); if(sd.otaChannels.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This OTA channel already exists for this property.');return;} sd.otaChannels.push({id:'ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),commission:15,calculation:'grossup',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 async function updateOTAField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.otaChannels.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
@@ -7403,7 +7479,7 @@ function nobedsDateValue(v){const d=new Date(v);return isNaN(d)?String(v||'').sl
 function nobedsMappedRoom(nid){const sd=normalizeSalesDistribution(settings.salesDistribution);return (sd.channelManager.rooms||[]).find(x=>String(x.nobedsRoomId)===String(nid));}
 function nobedsRateToLkr(amount,currency){const n=Number(amount||0);const cur=String(currency||'').toUpperCase();const base=String(settings?.baseCurrency||'LKR').toUpperCase();if(!n)return 0;if(cur===base||cur==='LKR')return n;if(typeof fxRate==='function'){const rate=Number(fxRate());if(rate>0)return n*rate;}const rate=Number(settings?.postingRate||0);return rate>0?n*rate:n;}
 async function previewNobedsBookings(){if(!requireRole('Admin','Manager'))return;try{const c=nobedsConfig();if(!c.token){alert('Enter the NOBEDS API token first.');return;}const from=document.getElementById('nobedsFromDate')?.value||localDateString();const to=document.getElementById('nobedsToDate')?.value||localDateString(new Date(Date.now()+30*86400000));nobedsSetStatus('Loading NOBEDS reservations…');const q='?fromdate='+encodeURIComponent(from)+'&todate='+encodeURIComponent(to);const rows=await nobedsApi('/api/bookings/'+encodeURIComponent(c.token)+q);const bookings=Array.isArray(rows)?rows:[];const demo=nobedsIsDemo(c);window.__nobedsPreview={bookings,demo,from,to};const el=document.getElementById('nobedsBookingPreview');if(!el)return;el.innerHTML='<div style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:#fff"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong>Reservation Preview</strong><span>'+bookings.length+' record(s)</span></div><div style="margin:8px 0"><label>From <input id="nobedsFromDate" type="date" value="'+escapeHtml(from)+'"></label> <label style="margin-left:8px">To <input id="nobedsToDate" type="date" value="'+escapeHtml(to)+'"></label> <button class="btn btn-secondary" type="button" onclick="previewNobedsBookings()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>Order</th><th>Guest</th><th>Dates</th><th>Room</th><th>Price</th><th>Mapping</th></tr></thead><tbody>'+bookings.slice(0,100).map(b=>{const m=nobedsMappedRoom(b.room_id);const duplicate=reservations.some(r=>String(r.channelManagerOrderId||'')===String(b.order_id));return '<tr><td>'+escapeHtml(String(b.order_id||''))+'</td><td>'+escapeHtml(b.name||'')+'</td><td>'+escapeHtml(nobedsDateValue(b.checkin))+' → '+escapeHtml(nobedsDateValue(b.checkout))+'</td><td>'+escapeHtml(String(b.room_id||''))+'</td><td>'+escapeHtml(String(b.price??''))+' '+escapeHtml(c.currency||'')+'</td><td>'+ (duplicate?'<span style="color:#166534">Already imported</span>':m?.pmsRoomId?'<span style="color:#166534">Mapped</span>':'<span style="color:#b91c1c">Not mapped</span>')+'</td></tr>';}).join('')+'</tbody></table></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" type="button" onclick="importNobedsPreviewBookings()" '+(demo?'disabled title="Demo token is read-only"':'')+'>Import mapped reservations</button><span style="font-size:11px;color:#64748b;align-self:center">'+(demo?'Demo token: import disabled.':'Only mapped, non-duplicate bookings will be imported.')+'</span></div></div>';nobedsSetStatus('Loaded '+bookings.length+' reservation(s) for preview.'+(demo?' Demo mode is read-only.':''),'success');nobedsLog('Reservation preview loaded: '+bookings.length,true);}catch(e){nobedsSetStatus(e?.message||e,'error');nobedsLog(e?.message||e,false);alert('Could not load NOBEDS reservations: '+(e?.message||e));}}
-async function importNobedsPreviewBookings(){if(!requireRole('Admin','Manager'))return;const data=window.__nobedsPreview;if(!data||!Array.isArray(data.bookings)){alert('Load reservation preview first.');return;}if(data.demo){alert('The public NOBEDS demo token is read-only. No demo reservations can be imported.');return;}const c=nobedsConfig();let imported=0,skipped=0,failed=0;for(const b of data.bookings){try{if(reservations.some(r=>String(r.channelManagerOrderId||'')===String(b.order_id))){skipped++;continue;}const map=nobedsMappedRoom(b.room_id);if(!map?.pmsRoomId){skipped++;continue;}const ci=nobedsDateValue(b.checkin),co=nobedsDateValue(b.checkout);const nights=Math.max(1,Math.round((new Date(co)-new Date(ci))/86400000));const room=(settings.rooms||[]).find(r=>String(r.id)===String(map.pmsRoomId));if(!room){skipped++;continue;}if(!isBookingAvailable('room',String(room.id),ci,co,null)){skipped++;continue;}const guestType='foreign';const sourceCurrency=String(c.currency||'USD').toUpperCase();const totalLkr=nobedsRateToLkr(b.price,sourceCurrency);const rateLkr=totalLkr/nights;const guestName=String(b.name||'NOBEDS Guest').trim();const gp=upsertGuestFromReservation('',guestName,String(b.phone||''),String(b.email||''),guestType);const id='r_nb_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);const reservation={id,bookingNo:nextBookingNumber(),guestId:gp.id,guestName,phone:String(b.phone||''),email:String(b.email||''),guestType,bookingType:'room',roomId:String(room.id),checkIn:ci,checkOut:co,nights,rate:rateLkr,total:totalLkr,adults:Math.max(1,Number(b.guests||1)),children:0,childrenAges:[],mealPlan:map.ratePlan||'RO',breakfastIncluded:['BB','HB','FB','AI'].includes(String(map.ratePlan||'').toUpperCase()),deposit:0,currency:'LKR',baseCurrency:'LKR',postingRateAtBooking:sourceCurrency==='LKR'?1:Number(typeof fxRate==='function'?fxRate():settings?.postingRate||1),baseAmount:totalLkr,foreignAmount:Number(b.price||0),sourceCurrency,sourceAmount:Number(b.price||0),status:String(b.status||'confirmed').toLowerCase()==='cancelled'?'Cancelled':'Confirmed',notes:'Imported from NOBEDS · Order '+String(b.order_id||''),sourceSystem:'NOBEDS',channelManagerOrderId:String(b.order_id||''),channelManagerReferralOrderId:String(b.referral_order_id||''),createdAt:localDateTime()};reservations.push(reservation);folios.push({id:'f_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:id,accommodation:totalLkr,restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:totalLkr,currency:'LKR',baseCurrency:'LKR',postingRateAtBooking:reservation.postingRateAtBooking,baseAmount:totalLkr,foreignAmount:Number(b.price||0),createdAt:localDateTime()});saveData();if(typeof syncReservationToSupabase==='function')await syncReservationToSupabase(reservation);imported++;}catch(e){failed++;console.warn('NOBEDS booking import failed',e);}}renderAll();nobedsLog('Imported '+imported+' reservation(s); skipped '+skipped+', failed '+failed,true);alert('NOBEDS import complete.\nImported: '+imported+'\nSkipped: '+skipped+'\nFailed: '+failed);}
+async function importNobedsPreviewBookings(){if(!requireRole('Admin','Manager'))return;const data=window.__nobedsPreview;if(!data||!Array.isArray(data.bookings)){alert('Load reservation preview first.');return;}if(data.demo){alert('The public NOBEDS demo token is read-only. No demo reservations can be imported.');return;}const c=nobedsConfig();let imported=0,skipped=0,failed=0;for(const b of data.bookings){try{if(reservations.some(r=>String(r.channelManagerOrderId||'')===String(b.order_id))){skipped++;continue;}const map=nobedsMappedRoom(b.room_id);if(!map?.pmsRoomId){skipped++;continue;}const ci=nobedsDateValue(b.checkin),co=nobedsDateValue(b.checkout);const nights=Math.max(1,Math.round((new Date(co)-new Date(ci))/86400000));const room=(settings.rooms||[]).find(r=>String(r.id)===String(map.pmsRoomId));if(!room){skipped++;continue;}if(!isBookingAvailable('room',String(room.id),ci,co,null)){skipped++;continue;}const guestType='foreign';const sourceCurrency=String(c.currency||'USD').toUpperCase();const totalLkr=nobedsRateToLkr(b.price,sourceCurrency);const rateLkr=totalLkr/nights;const guestName=String(b.name||'NOBEDS Guest').trim();const gp=upsertGuestFromReservation('',guestName,String(b.phone||''),String(b.email||''),guestType);const id='r_nb_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);const reservation={id,bookingNo:nextBookingNumber(),guestId:gp.id,guestName,phone:String(b.phone||''),email:String(b.email||''),guestType,bookingType:'room',roomId:String(room.id),checkIn:ci,checkOut:co,nights,rate:rateLkr,total:totalLkr,adults:Math.max(1,Number(b.guests||1)),children:0,childrenAges:[],mealPlan:map.ratePlan||'RO',breakfastIncluded:['BB','HB','FB','AI'].includes(String(map.ratePlan||'').toUpperCase()),deposit:0,currency:'LKR',baseCurrency:'LKR',postingRateAtBooking:sourceCurrency==='LKR'?1:Number(typeof fxRate==='function'?fxRate():settings?.postingRate||1),baseAmount:totalLkr,foreignAmount:Number(b.price||0),sourceCurrency,sourceAmount:Number(b.price||0),status:String(b.status||'confirmed').toLowerCase()==='cancelled'?'Cancelled':'Confirmed',bookingSource:'OTA',bookingChannel:'NOBEDS',externalConfirmationNumber:String(b.referral_order_id||b.order_id||''),channelManagerSyncId:String(b.order_id||''),notes:'Imported from NOBEDS · Order '+String(b.order_id||''),sourceSystem:'NOBEDS',channelManagerOrderId:String(b.order_id||''),channelManagerReferralOrderId:String(b.referral_order_id||''),createdAt:localDateTime()};reservations.push(reservation);folios.push({id:'f_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:id,accommodation:totalLkr,restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:totalLkr,currency:'LKR',baseCurrency:'LKR',postingRateAtBooking:reservation.postingRateAtBooking,baseAmount:totalLkr,foreignAmount:Number(b.price||0),createdAt:localDateTime()});saveData();if(typeof syncReservationToSupabase==='function')await syncReservationToSupabase(reservation);imported++;}catch(e){failed++;console.warn('NOBEDS booking import failed',e);}}renderAll();nobedsLog('Imported '+imported+' reservation(s); skipped '+skipped+', failed '+failed,true);alert('NOBEDS import complete.\nImported: '+imported+'\nSkipped: '+skipped+'\nFailed: '+failed);}
 async function syncNobedsAvailability(){if(!requireRole('Admin','Manager'))return;const c=nobedsConfig();if(!c.token){alert('Enter the NOBEDS API token first.');return;}if(nobedsIsDemo(c)){alert('The public NOBEDS demo token is read-only. Availability/rate push is disabled.');return;}const sd=normalizeSalesDistribution(settings.salesDistribution);const maps=(sd.channelManager.rooms||[]).filter(x=>x.pmsRoomId);if(!maps.length){alert('Map at least one NOBEDS room to a PMS room first.');return;}const from=localDateString();const to=localDateString(new Date(Date.now()+30*86400000));let pushed=0,failed=0;try{for(const m of maps){for(let i=0;i<=30;i++){const d=new Date();d.setDate(d.getDate()+i);const date=localDateString(d);const room=(settings.rooms||[]).find(r=>String(r.id)===String(m.pmsRoomId));if(!room)continue;const available=isBookingAvailable('room',String(room.id),date,localDateString(new Date(d.getTime()+86400000)),null)?1:0;const rateLkr=Number(room.rate||settings.roomRate||0);const cur=c.currency||'LKR';const rate=cur==='LKR'?rateLkr:(typeof fxRate==='function'&&Number(fxRate())>0?rateLkr/Number(fxRate()):rateLkr);await nobedsApi('/api/availability/'+encodeURIComponent(c.token),{method:'POST',body:{room_id:Number(m.nobedsRoomId),date,available,price:Number(rate.toFixed(2)),min_stay:1}});pushed++;}}nobedsSetStatus('Pushed '+pushed+' availability/rate records for '+from+' to '+to+'.','success');nobedsLog('Availability/rates pushed: '+pushed,true);alert('NOBEDS availability & rates sync completed. Records pushed: '+pushed);}catch(e){failed++;nobedsSetStatus(e?.message||e,'error');nobedsLog(e?.message||e,false);alert('NOBEDS availability sync stopped after '+pushed+' record(s): '+(e?.message||e));}}
 
 function renderChannelManagerProviderFields(){
@@ -7442,7 +7518,7 @@ function renderChannelManagerProviderFields(){
         if(status)status.textContent='Select a provider.';
     }
 }
-async function saveSalesDistribution(){if(!requireRole('Admin','Manager'))return;if(!settings||!currentPropertyId){alert('Please select a property first.');return;}const sd=normalizeSalesDistribution(settings.salesDistribution);const set=(id)=>document.getElementById(id)?.value||'';const rawProvider=String(set('channelManagerProvider')).trim();const allowedProviders=['','NOBEDS','STAAH','SiteMinder','Cloudbeds','Other'];const provider=allowedProviders.includes(rawProvider)?rawProvider:'';sd.channelManager={...sd.channelManager,provider,status:String(set('channelManagerStatus')||'Not Connected'),channels:String(set('channelManagerChannels')).trim(),mapping:String(set('channelManagerMapping')).trim()};if(provider==='NOBEDS'){sd.channelManager.apiBase=String(set('nobedsApiBase')||'https://api.nobeds.com').trim().replace(/\/$/,'');sd.channelManager.hotelId=String(set('nobedsHotelId')).trim();sd.channelManager.currency=String(set('nobedsCurrency')).trim().toUpperCase();setNobedsToken(String(document.getElementById('nobedsApiToken')?.value||'').trim());}settings.salesDistribution=sd;saveData();renderSalesDistribution();renderChannelManagerProviderFields();const cloudSaved=await persistSalesDistributionToCloud();alert('Sales & Distribution settings saved for '+(getProperty(currentPropertyId)?.property||'this property')+(cloudSaved?' and synced to cloud.':'.'));}
+async function saveSalesDistribution(){if(!requireRole('Admin','Manager'))return;if(!settings||!currentPropertyId){alert('Please select a property first.');return;}const sd=normalizeSalesDistribution(settings.salesDistribution);const set=(id)=>document.getElementById(id)?.value||'';const rawProvider=String(set('channelManagerProvider')).trim();const allowedProviders=['','NOBEDS','STAAH','SiteMinder','Cloudbeds','Other'];const provider=allowedProviders.includes(rawProvider)?rawProvider:'';sd.channelManager={...sd.channelManager,provider,status:String(set('channelManagerStatus')||'Not Connected'),channels:String(set('channelManagerChannels')).trim(),mapping:String(set('channelManagerMapping')).trim()};if(provider==='NOBEDS'){sd.channelManager.apiBase=String(set('nobedsApiBase')||'https://api.nobeds.com').trim().replace(/\/$/,'');sd.channelManager.hotelId=String(set('nobedsHotelId')).trim();sd.channelManager.currency=String(set('nobedsCurrency')).trim().toUpperCase();setNobedsToken(String(document.getElementById('nobedsApiToken')?.value||'').trim());}settings.salesDistribution=sd;saveData();renderSalesDistribution();renderChannelManagerProviderFields();const cloudSaved=await persistSalesDistributionToCloud();alert(cloudSaved?'Sales & Distribution settings saved for '+(getProperty(currentPropertyId)?.property||'this property')+' and verified in Supabase cloud.':'Sales & Distribution settings saved locally, but Supabase cloud sync FAILED. Check your login, property permissions and browser console before relying on another device.');}
 
 async function saveSettings(){
     if(!hasActionPermission("settings.property")) return;
@@ -7895,6 +7971,7 @@ function calculateReservation(){
     if(type!=="villa") {
         const configuredRate=getConfiguredRate(document.getElementById("mealPlan")?.value,Number(document.getElementById("adults")?.value||1),Number(document.getElementById("children")?.value||0),selectedRoomId);
         if(configuredRate!==null) rate=configuredRate;
+        rate=getChannelAdjustedRate(rate,document.getElementById("mealPlan")?.value,Number(document.getElementById("adults")?.value||1),Number(document.getElementById("children")?.value||0),selectedRoomId,document.getElementById("bookingType")?.value);
     }
 
     if(type==="villa"){
@@ -7979,6 +8056,7 @@ function saveReservation(){
             ? window.getConfiguredRate(mealPlan,adults,children,roomId,guestType)
             : getConfiguredRate(mealPlan,adults,children,roomId));
         if(configuredRate!==null && configuredRate!==undefined) rate=Number(configuredRate);
+        rate=getChannelAdjustedRate(rate,mealPlan,adults,children,roomId,bookingType);
     }
     if(bookingType==="villa"){
         rate=guestType==="foreign" ? Number(settings?.villaForeign||0) : Number(settings?.villaLocal||0);
@@ -8264,6 +8342,8 @@ function renderReservations(){
             <td>${escapeHtml(r.guestName)}</td>
             <td>${r.bookingType==="villa" ? "Entire Villa" : "Room"}</td>
             <td>${room}</td>
+            <td>${escapeHtml(reservationBookingSourceValue(r))}</td>
+            <td>${escapeHtml(reservationBookingChannelValue(r))}${(r.externalConfirmationNumber||r.channelManagerOrderId)?`<br><small style="color:#64748b">Ref: ${escapeHtml(r.externalConfirmationNumber||r.channelManagerOrderId)}</small>`:''}</td>
             <td>${formatDate(r.checkIn)}</td>
             <td>${formatDate(r.checkOut)}</td>
             <td>${r.nights}</td>
@@ -13773,7 +13853,14 @@ function roomAvailableForDates(roomId,checkIn,checkOut,excludeId=""){
 function availableRoomsForDates(checkIn,checkOut,excludeId=""){
     return (getProperty()?.rooms||[]).filter(room=>room.active!==false && roomAvailableForDates(room.id,checkIn,checkOut,excludeId));
 }
-function reservationBookingSourceValue(r){ return r?.bookingSource || r?.source || "Direct"; }
+function reservationBookingSourceValue(r){
+    const raw=String(r?.bookingSource||r?.source||"Direct").trim();
+    if(["Direct","OTA","Travel Agent","Corporate","Other"].includes(raw))return raw;
+    if(["Website","WhatsApp","Phone","Walk-in"].includes(raw))return "Direct";
+    if(["Booking.com","Agoda","Expedia"].includes(raw)||normalizeSalesDistribution(settings?.salesDistribution).otaChannels.some(x=>x.name.toLowerCase()===raw.toLowerCase()))return "OTA";
+    return raw.toLowerCase().includes('agent')?"Travel Agent":"Direct";
+}
+function reservationBookingChannelValue(r){ return String(r?.bookingChannel||r?.bookingSource||r?.source||"Direct"); }
 function reservationRate(r){
     const v=Number(r?.rateOverride);
     return Number.isFinite(v) && v>=0 ? v : Number(r?.roomRate||r?.rate||0);
@@ -13796,7 +13883,11 @@ function applyReservations20Form(){
 }
 
 function reservation2SaveNormalize(r){
-    r.bookingSource=r.bookingSource||r.source||"Direct";
+    const legacySource=String(r.bookingSource||r.source||"Direct").trim();
+    if(!r.bookingChannel)r.bookingChannel=legacySource;
+    if(!["Direct","OTA","Travel Agent","Corporate","Other"].includes(String(r.bookingSource||"")))r.bookingSource=reservationBookingSourceValue({...r,bookingSource:legacySource});
+    r.externalConfirmationNumber=String(r.externalConfirmationNumber||"");
+    r.channelManagerSyncId=String(r.channelManagerSyncId||r.channelManagerOrderId||"");
     if(r.roomId!=null){ const rm=getProperty()?.rooms?.find(x=>String(x.id)===String(r.roomId)); if(rm){ r.roomName=rm.name; } }
     const _statusMap={"reserved":"Reserved","Reserved":"Reserved","confirmed":"Confirmed","Confirmed":"Confirmed","checked_in":"Checked-In","checked-in":"Checked-In","Checked-In":"Checked-In","Checked In":"Checked-In","checked_out":"Checked-Out","checked-out":"Checked-Out","Checked-Out":"Checked-Out","Checked Out":"Checked-Out","cancelled":"Cancelled","Cancelled":"Cancelled","no_show":"No-Show","no-show":"No-Show","No Show":"No-Show","No-Show":"No-Show"};
     r.status=_statusMap[String(r.status||"")] || "Reserved";
@@ -13841,22 +13932,10 @@ function renderReservationsCalendar(){
 
 function addReservations20Fields(){
     const modal=document.getElementById("reservationModal");
-    if(!modal || modal.dataset.r20==="1") return;
-    const grid=modal.querySelector(".form-grid");
-    if(!grid) return;
-    const box=document.createElement("div");
-    box.className="form-group";
-    box.innerHTML='<label>Booking Source</label><select id="bookingSource">'+BOOKING_SOURCES.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("")+'</select>';
-    grid.appendChild(box);
-    const box2=document.createElement("div"); box2.className="form-group";
-    box2.innerHTML='<label>Reservation Status</label><select id="reservationStatus">'+RESERVATION_STATUSES.map(x=>`<option value="${x}">${reservationStatusLabel(x)}</option>`).join("")+'</select>';
-    grid.appendChild(box2);
-    const box3=document.createElement("div"); box3.className="form-group";
-    box3.innerHTML='<label>Rate Override</label><input id="rateOverride" type="number" min="0" step="0.01" placeholder="Use standard rate">';
-    grid.appendChild(box3);
-    const box4=document.createElement("div"); box4.className="form-group full";
-    box4.innerHTML='<label>Reservation Notes</label><textarea id="reservationNotes" placeholder="Booking notes, cancellation reason, guest requests..."></textarea>';
-    grid.appendChild(box4);
+    if(!modal) return;
+    // The HTML includes source, channel, external reference, sync ID, status, rate override and notes.
+    // Do not append duplicate controls; add only the travel-agent selector.
+    ensureReservationAgentField();
     modal.dataset.r20="1";
 }
 
@@ -13880,13 +13959,25 @@ window.openReservationModal=function(roomId=null,startDate=null,reservationId=nu
     addReservations20Fields();
     const r=targetReservationId?reservations.find(x=>String(x.id)===String(targetReservationId)):null;
     const source=document.getElementById("bookingSource");
+    const channel=document.getElementById("bookingChannel");
+    const externalRef=document.getElementById("externalConfirmationNumber");
+    const syncId=document.getElementById("channelManagerSyncId");
     const status=document.getElementById("reservationStatus");
     const override=document.getElementById("rateOverride");
     const notes=document.getElementById("reservationNotes");
-    if(source) source.value=reservationBookingSourceValue(r);
+    refreshReservationBookingSourceOptions();
+    if(source) source.value=r?reservationBookingSourceValue(r):"Direct";
+    if(channel) channel.value=r?reservationBookingChannelValue(r):"Direct";
+    if(externalRef) externalRef.value=r?.externalConfirmationNumber||r?.confirmationNumber||"";
+    if(syncId) syncId.value=r?.channelManagerSyncId||r?.channelManagerOrderId||"";
+    ensureReservationAgentField();
+    toggleReservationAgentField();
+    if(document.getElementById('reservationTravelAgentId')) document.getElementById('reservationTravelAgentId').value=r?.travelAgentId||'';
+    toggleReservationAgentField();
     if(status) status.value=r?.status||"reserved";
     if(override) override.value=(r?.rateOverride!==undefined && r?.rateOverride!==null)?r.rateOverride:"";
     if(notes) notes.value=r?.reservationNotes||r?.notes||"";
+    if(typeof calculateReservation==='function') calculateReservation();
     setTimeout(applyReservations20Form,0);
 };
 
@@ -13894,16 +13985,24 @@ const _saveReservation20=window.saveReservation;
 window.saveReservation=function(){
     const beforeId=editingReservationId;
     const before=beforeId?reservations.find(x=>String(x.id)===String(beforeId)):null;
+    const reservationCountBefore=reservations.length;
     const result=_saveReservation20();
-    const id=beforeId || reservations[reservations.length-1]?.id;
+    const id=beforeId || (reservations.length>reservationCountBefore ? reservations[reservations.length-1]?.id : null);
     const r=id?reservations.find(x=>String(x.id)===String(id)):null;
     if(r){
         const src=document.getElementById("bookingSource")?.value||"Direct";
+        const channel=document.getElementById("bookingChannel")?.value||"Direct";
+        const externalRef=document.getElementById("externalConfirmationNumber")?.value?.trim()||"";
+        const syncId=document.getElementById("channelManagerSyncId")?.value?.trim()||"";
         const st=document.getElementById("reservationStatus")?.value||r.status||"reserved";
         const ov=document.getElementById("rateOverride")?.value;
         const nt=document.getElementById("reservationNotes")?.value||"";
-        r.bookingSource=src; r.status=st; r.reservationNotes=nt;
+        r.bookingSource=src; r.bookingChannel=channel; r.externalConfirmationNumber=externalRef; r.channelManagerSyncId=syncId; r.status=st; r.reservationNotes=nt;
+        r.travelAgentId=channel==='Travel Agent'?(document.getElementById('reservationTravelAgentId')?.value||''):'';
+        r.travelAgentName=channel==='Travel Agent'?(normalizeSalesDistribution(settings?.salesDistribution).travelAgents.find(a=>String(a.id)===String(r.travelAgentId))?.name||''):'';
+        r.rateTypeApplied=channel==='Travel Agent'?(r.travelAgentName||'Travel Agent'):channel;
         if(ov!=="") r.rateOverride=Number(ov); else delete r.rateOverride;
+        r.channelRateAtBooking=Number(ov!==""?ov:r.rate||0);
         reservation2SaveNormalize(r);
         saveData();
         renderAll();
@@ -27273,5 +27372,21 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});
   else start();
+})();
+</script>
+<script>
+/* Signature PMS channel-rate matrix: safe additive enhancement; login and existing records remain untouched. */
+(function(){
+  function bindChannelRateEvents(){
+    refreshReservationBookingSourceOptions();
+    ensureReservationAgentField();
+    toggleReservationAgentField();
+    ['bookingSource','bookingChannel','reservationTravelAgentId','bookingType','mealPlan','adults','children','roomSelect'].forEach(id=>{
+      const el=document.getElementById(id);if(el&&!el.dataset.channelRateBound){el.addEventListener('change',()=>{if(id==='bookingChannel'||id==='reservationTravelAgentId')toggleReservationAgentField();if(typeof calculateReservation==='function')calculateReservation();});el.dataset.channelRateBound='1';}
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bindChannelRateEvents,{once:true});else bindChannelRateEvents();
+  const priorRender=window.renderSalesDistribution;
+  if(typeof priorRender==='function')window.renderSalesDistribution=function(){const result=priorRender.apply(this,arguments);renderChannelRateMatrixEditor();refreshReservationBookingSourceOptions();return result;};
 })();
 </script>
