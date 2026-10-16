@@ -14812,96 +14812,99 @@ window.postDailyRevenue=function(){
     renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
-/* v2.1.472 — OTA gross-up correction in local cache AND Supabase Cloud.
-   Remove the false Room Revenue credit and reduce its matching AR debit by the same
-   amount. Publish every corrected journal directly to its individual cloud row so the
-   normal journal sync cannot re-import the stale gross-up line. The separate OTA
-   Commission Expense / Accounts Payable journal is intentionally not changed. */
-(function signatureOtaGrossupRevenueRepair472(){
+/* v2.1.473 — resilient OTA gross-up correction for local + cloud journal copies.
+   Uses the resolved Supabase property UUID and aliases, and repairs the exact cloud
+   storage_key returned by Supabase. A stale cleanup lock must not block this narrowly
+   scoped accounting correction; active in-page cleanup is still respected. */
+(function signatureOtaGrossupRevenueRepair473(){
   'use strict';
-  if(window.__signatureOtaGrossupRevenueRepair472)return;
-  window.__signatureOtaGrossupRevenueRepair472=true;
+  if(window.__signatureOtaGrossupRevenueRepair473)return;
+  window.__signatureOtaGrossupRevenueRepair473=true;
   const TABLE='pms_cloud_records';
   const JOURNAL_KEY='signature_pms_accounting_journals';
   const PREFIX='signature_pms_accounting_journal_';
   let busy=false;
-  const pid=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
   const readLocal=()=>{try{const x=JSON.parse(localStorage.getItem(JOURNAL_KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}};
   const writeLocal=x=>{try{localStorage.setItem(JOURNAL_KEY,JSON.stringify(x));return true}catch(e){return false}};
-  function repair(j,p){
-    if(!j||String(j.propertyId||p)!==p||String(j.source||'').trim().toLowerCase()!=='daily revenue')return false;
+  function repair(j,aliases){
+    if(!j)return false;
+    const jp=String(j.propertyId??j.property_id??'');
+    if(jp&&!aliases.has(jp))return false;
+    if(String(j.source||'').trim().toLowerCase()!=='daily revenue')return false;
     const lines=Array.isArray(j.lines)?j.lines:[];
-    const grossup=lines.filter(l=>String(l.account||'')==='Room Revenue'&&String(l.revenueSource||'')==='OTA Gross-up Revenue'&&Number(l.credit||0)>0);
-    const amount=grossup.reduce((sum,l)=>sum+Number(l.credit||0),0);
+    const grossup=lines.filter(l=>String(l.account||'').trim()==='Room Revenue'&&String(l.revenueSource||'').trim()==='OTA Gross-up Revenue'&&Number(l.credit||0)>0);
+    const amount=Math.round(grossup.reduce((sum,l)=>sum+Number(l.credit||0),0)*100)/100;
     if(amount<=0.009)return false;
-    const ar=lines.find(l=>String(l.account||'')==='Accounts Receivable'&&String(l.revenueSource||'')==='Daily Revenue Gross OTA Receivable'&&Number(l.debit||0)>=amount-0.01);
+    const ar=lines.find(l=>String(l.account||'').trim()==='Accounts Receivable'&&String(l.revenueSource||'').trim()==='Daily Revenue Gross OTA Receivable'&&Number(l.debit||0)>=amount-0.01);
     if(!ar)return false;
     ar.debit=Math.round(Math.max(0,Number(ar.debit||0)-amount)*100)/100;
     j.lines=lines.filter(l=>!grossup.includes(l));
-    j.propertyId=p;
+    if(jp)j.propertyId=jp;
     j.updatedAt=new Date().toISOString();
     return true;
   }
-  function journalStorageKey(j){return PREFIX+String(j?.id||j?.reference||'');}
   async function run(){
     if(busy||window.__signaturePropertyCleanupInProgress)return;
-    const p=pid();if(!p||typeof initSupabaseClient!=='function')return;
+    const selected=String((typeof selectedProperty!=='undefined'&&selectedProperty)||(typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
+    if(!selected||typeof initSupabaseClient!=='function')return;
     busy=true;
     try{
       const c=initSupabaseClient();if(!c)return;
       const session=await c.auth.getSession();const u=session?.data?.session?.user;if(!u)return;
-      const lock=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
-      if(lock.error)throw lock.error;
-      if(lock.data?.data?.active===true)return;
-
-      /* First repair the browser cache and publish those exact corrected rows. */
-      const local=readLocal();let localChanged=false;const localRepaired=[];
-      for(const j of local){if(repair(j,p)){localChanged=true;localRepaired.push(j)}}
+      let resolved=selected;
+      try{if(typeof resolveSupabasePropertyId==='function')resolved=String((await resolveSupabasePropertyId(selected))||selected)}catch(e){}
+      const aliases=new Set([selected,resolved,String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||''),String(window.currentPropertyId||'')].filter(Boolean));
+      const local=readLocal();let localChanged=false;const changedLocal=[];
+      for(const j of local){if(repair(j,aliases)){localChanged=true;changedLocal.push(j)}}
       if(localChanged)writeLocal(local);
-      const publish=async j=>{
-        const key=journalStorageKey(j);if(!String(j?.id||j?.reference||''))return;
-        const result=await c.from(TABLE).upsert({property_id:p,storage_key:key,data:{...j,propertyId:p},updated_by:u.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      const upsertRow=async(propertyId,key,data)=>{
+        const result=await c.from(TABLE).upsert({property_id:propertyId,storage_key:key,data,updated_by:u.id,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
         if(result.error)throw result.error;
       };
-      for(const j of localRepaired)await publish(j);
-
-      /* Also repair stale cloud copies directly, including copies absent locally. */
-      const cloud=await c.from(TABLE).select('storage_key,data').eq('property_id',p).like('storage_key',PREFIX+'%');
-      if(cloud.error)throw cloud.error;
-      let cloudRepaired=0;
-      for(const row of cloud.data||[]){
-        if(!row?.data||!repair(row.data,p))continue;
-        const key=String(row.storage_key||'');
-        const result=await c.from(TABLE).upsert({property_id:p,storage_key:key,data:{...row.data,propertyId:p},updated_by:u.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
-        if(result.error)throw result.error;
-        cloudRepaired++;
-        const k=String(row.data.id||row.data.reference||'');
-        if(k&&!local.some(j=>String(j?.id||j?.reference||'')===k))local.push(row.data);
+      /* Publish changed local rows only to the resolved cloud property. */
+      for(const j of changedLocal){
+        const id=String(j.id||j.reference||'');if(!id)continue;
+        j.propertyId=resolved;
+        await upsertRow(resolved,PREFIX+id,j);
       }
-      if(cloudRepaired){writeLocal(local);}
-
-      /* Keep the legacy aggregate journal record consistent if this project still has one. */
-      const aggregate=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',JOURNAL_KEY).maybeSingle();
-      if(aggregate.error)throw aggregate.error;
-      if(Array.isArray(aggregate.data?.data)){
-        let aggChanged=false;
-        const agg=aggregate.data.data.map(j=>{if(repair(j,p)){aggChanged=true;}return j;});
-        if(aggChanged){
-          const result=await c.from(TABLE).upsert({property_id:p,storage_key:JOURNAL_KEY,data:agg,updated_by:u.id||null,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
-          if(result.error)throw result.error;
+      /* Fetch each alias separately because older app versions sometimes wrote the
+         property code while newer versions write the Supabase UUID. */
+      let cloudRows=[];
+      for(const propertyId of aliases){
+        const result=await c.from(TABLE).select('property_id,storage_key,data').eq('property_id',propertyId).like('storage_key',PREFIX+'%');
+        if(result.error)throw result.error;
+        cloudRows.push(...(result.data||[]));
+      }
+      const seen=new Set();let cloudChanged=0;const allLocal=readLocal();
+      for(const row of cloudRows){
+        const signature=String(row.property_id)+'|'+String(row.storage_key);if(seen.has(signature))continue;seen.add(signature);
+        const j=row.data;if(!j||!repair(j,aliases))continue;
+        j.propertyId=String(row.property_id||resolved);
+        await upsertRow(String(row.property_id||resolved),String(row.storage_key),j);
+        cloudChanged++;
+        const id=String(j.id||j.reference||'');const idx=allLocal.findIndex(x=>String(x?.id||x?.reference||'')===id&&id);
+        if(idx>=0)allLocal[idx]=j;else allLocal.push(j);
+      }
+      /* Keep aggregate journal storage in sync too, where present. */
+      for(const propertyId of aliases){
+        const result=await c.from(TABLE).select('data').eq('property_id',propertyId).eq('storage_key',JOURNAL_KEY).maybeSingle();
+        if(result.error)throw result.error;
+        if(Array.isArray(result.data?.data)){
+          let changed=false;const aggregate=result.data.data.map(j=>{if(repair(j,aliases)){changed=true;j.propertyId=String(j.propertyId||propertyId)}return j});
+          if(changed)await upsertRow(propertyId,JOURNAL_KEY,aggregate);
         }
       }
-      if(localChanged||cloudRepaired){
+      if(cloudChanged){writeLocal(allLocal)}
+      if(localChanged||cloudChanged){
         try{if(typeof renderAccounting==='function')renderAccounting()}catch(e){}
-        try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting()}catch(e){}
         try{if(typeof renderJournalReview==='function')renderJournalReview()}catch(e){}
-        console.info('OTA gross-up revenue repair v2.1.472 complete. Local changed:',localChanged,'Cloud journals repaired:',cloudRepaired);
+        console.info('OTA gross-up repair 473: local repaired =',localChanged,'cloud journals repaired =',cloudChanged);
       }
-    }catch(e){console.warn('OTA gross-up cloud repair paused:',e?.message||e)}
+    }catch(e){console.warn('OTA gross-up repair 473 did not complete:',e?.message||e)}
     finally{busy=false;}
   }
-  setTimeout(run,3500);
-  setInterval(run,10000);
+  setTimeout(run,2500);
+  setInterval(run,8000);
 })();
 /* v2.1.467 — safely split legacy combined OTA commission lines into their own journal.
    When a cleanup lock is active, only repair a journal created after that lock began;
