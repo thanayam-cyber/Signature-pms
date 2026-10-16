@@ -22494,8 +22494,17 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(lockQ.error)throw lockQ.error;
       const cleanupLocked=lockQ.data?.data?.active===true;
       if(window.__signaturePropertyCleanupInProgress)return;
+      /* IMPORTANT: a cleanup lock must pause cloud reconciliation, not erase
+         journals just posted locally. Previously this branch merged empty arrays
+         while locked and wrote them over the local journal store, so the UI showed
+         a false success and then zero journals. Keep local data untouched until
+         cleanup is explicitly verified and the lock is released. */
+      if(cleanupLocked){
+        console.warn('Accounting journal cloud sync paused: property cleanup lock is active. Local journals are preserved.');
+        return;
+      }
       const localBefore=localMine(p);
-      const eligibleLocal=cleanupLocked?[]:localBefore;
+      const eligibleLocal=localBefore;
       const local=typeof window.dedupeAccountingJournalRows==='function'
         ? window.dedupeAccountingJournalRows(eligibleLocal,p) : eligibleLocal;
       /* Publish only the deduplicated local snapshot, then reconcile it with
