@@ -22490,7 +22490,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 <script id="v2-1-397-accounting-journal-cloud-sync">
-/* v2.1.466 — ACCOUNTING JOURNAL CLOUD SYNC WITH CLEANUP LOCK
+/* v2.1.468 — MOBILE STALE JOURNAL CACHE / CLOUD SYNC FIX
    Makes Daily Revenue / Daily Payments posting status property-wide.
    Each journal is stored as its own pms_cloud_records row so Admin and
    Reception cannot overwrite one another's accounting journal array. */
@@ -22557,24 +22557,28 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(lockQ.error)throw lockQ.error;
       const lockData=lockQ.data?.data||{};
       const cleanupLocked=lockData.active===true;
+      const lockStarted=Date.parse(lockData.startedAt||lockQ.data?.updated_at||'');
+      /* A completed cleanup lock is also a watermark. Old operational journals
+         left in a mobile browser's localStorage must not be merged back into the
+         cleaned property or republished to cloud. Journal IDs carry creation time
+         (je_<milliseconds>_...), while payroll/manual journals are preserved. */
+      const createdAt=j=>{const m=String(j?.id||'').match(/^je_(\d{13})_/i);return m?Number(m[1]):Date.parse(j?.updatedAt||j?.postedAt||'')||0;};
+      const predatesCleanup=j=>lockStarted>0&&isOperationalResetJournal(j)&&createdAt(j)<=lockStarted;
       if(window.__signaturePropertyCleanupInProgress)return;
-      /* During an active cleanup lock, never pull older cloud journals: they may
-         be stale rows that cleanup was trying to remove. However, do allow journals
-         created AFTER the lock started to sync, so a valid Admin posting can reach
-         Reception without releasing an unverified cleanup lock. Journal IDs carry
-         the creation timestamp (je_<milliseconds>_...). */
+      /* While cleanup is active, do not pull old cloud rows. Sync only journals
+         created after the cleanup began, and discard stale pre-cleanup operational
+         journals from this device's cache. */
       if(cleanupLocked){
-        const lockStarted=Date.parse(lockData.startedAt||lockQ.data?.updated_at||'');
-        const createdAt=j=>{const m=String(j?.id||'').match(/^je_(\d{13})_/i);return m?Number(m[1]):Date.parse(j?.updatedAt||j?.postedAt||'')||0;};
-        const freshLocal=localMine(p).filter(j=>lockStarted>0&&createdAt(j)>lockStarted);
+        const localBefore=localMine(p);
+        const safeLocal=localBefore.filter(j=>!predatesCleanup(j));
+        const freshLocal=safeLocal.filter(j=>lockStarted>0&&createdAt(j)>lockStarted);
         for(const j of freshLocal){try{await publishOne(c,p,u,j)}catch(e){console.warn('New accounting journal publish during cleanup lock failed:',e?.message||e)}}
         if(lockStarted>0){
           const freshQ=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%').gt('updated_at',new Date(lockStarted).toISOString());
           if(freshQ.error)throw freshQ.error;
           if(window.__signaturePropertyCleanupInProgress)return;
-          const freshCloud=(freshQ.data||[]).filter(r=>r&&r.data).map(r=>({...r.data,propertyId:String(r.data.propertyId||p)}));
-          const localBefore=localMine(p);
-          const merged=mergeJournals(localBefore,freshCloud,p);
+          const freshCloud=(freshQ.data||[]).filter(r=>r&&r.data).map(r=>({...r.data,propertyId:String(r.data.propertyId||p)})).filter(j=>!predatesCleanup(j));
+          const merged=mergeJournals(safeLocal,freshCloud,p);
           if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
             writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
             try{if(typeof renderAccounting==='function')renderAccounting()}catch(e){}
@@ -22582,12 +22586,17 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             try{if(typeof renderDailyPaymentPosting==='function')renderDailyPaymentPosting()}catch(e){}
             try{if(typeof renderJournalReview==='function')renderJournalReview()}catch(e){}
           }
+        }else if(JSON.stringify(safeLocal)!==JSON.stringify(localBefore)){
+          writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(safeLocal));
         }
-        console.warn('Accounting journal sync is restricted by the active cleanup lock; only post-lock journals were synchronized.');
+        console.warn('Accounting journal sync is restricted by the active cleanup lock; stale pre-cleanup operational journals were excluded.');
         return;
       }
       const localBefore=localMine(p);
-      const eligibleLocal=localBefore;
+      const eligibleLocal=localBefore.filter(j=>!predatesCleanup(j));
+      if(JSON.stringify(eligibleLocal)!==JSON.stringify(localBefore)){
+        writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(eligibleLocal));
+      }
       const local=typeof window.dedupeAccountingJournalRows==='function'
         ? window.dedupeAccountingJournalRows(eligibleLocal,p) : eligibleLocal;
       /* Publish only the deduplicated local snapshot, then reconcile it with
@@ -22598,7 +22607,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(q.error)throw q.error;
       if(window.__signaturePropertyCleanupInProgress)return;
       const cloud=(q.data||[]).filter(r=>r&&r.data).map(r=>{const row={...r.data};if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});return row;})
-        .filter(j=>!cleanupLocked);
+        .filter(j=>!cleanupLocked&&!predatesCleanup(j));
       const merged=mergeJournals(local,cloud,p);
       if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
         writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
