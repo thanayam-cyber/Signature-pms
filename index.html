@@ -2258,13 +2258,21 @@ function saveMealPlanRevenuePercentages(){
     alert("Meal plan food percentages saved successfully.");
 }
 function getReservationRevenueAllocation(r){
-    /* The saved reservation total is the package selling amount. Food allocation
-       percentages are defined as a percentage of the room component, so derive
-       food as total * pct / (100 + pct) only when the total is a grossed-up
-       package. For the configured BB 15% allocation used by Daily Revenue Posting,
-       retain the expected food share of total as 15/85 (LKR 6,176.47 on 35,000)
-       and subtract it from the package total for Room Revenue. */
-    const total=Math.max(0,Number(r?.total||0));
+    /* Meal-plan revenue is split from the base rate before OTA commission gross-up.
+       A gross-up reservation stores the guest selling total (for example 41,176.47
+       when the base rate is 35,000 and OTA commission is 15%). Back out that gross-up
+       for the meal-plan split, while the OTA commission remains a separate expense
+       calculated from the saved gross reservation total in dailyRevenueOtaCommissionRows().
+       Food percentages are defined against the room component: at BB 15%, a 35,000
+       base rate allocates 6,176.47 to breakfast and 28,823.53 to room. */
+    const savedTotal=Math.max(0,Number(r?.total||0));
+    const channel=reservationBookingChannelValue(r).trim().toLowerCase();
+    const sd=normalizeSalesDistribution(settings?.salesDistribution);
+    const ota=(sd.otaChannels||[]).find(x=>String(x.name||'').trim().toLowerCase()===channel && x.active!==false);
+    const commission=Math.max(0,Math.min(99.99,Number(ota?.commission)||0));
+    const total=(ota && ota.calculation==='grossup' && commission>0)
+        ? savedTotal*(1-commission/100)
+        : savedTotal;
     const nights=Math.max(1,Number(r?.nights||1));
     const foodPct=Math.max(0,Math.min(99.99,Number(getMealPlanFoodPercentages()[String(r?.mealPlan||"RO").trim().toUpperCase()] ?? 0)||0));
     const nightly=total/nights;
