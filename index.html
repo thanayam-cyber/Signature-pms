@@ -14645,7 +14645,7 @@ function dailyRevenueOtaCommissionRows(date){
 }
 function dailyRevenuePostedOtaCommission(date){
   let total=0;
-  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date)).forEach(j=>{
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
     (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions')total+=Number(l.debit||0);});
   });
   return total;
@@ -14659,7 +14659,7 @@ function dailyRevenueTotals(date){
   return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Experience / Recreation Revenue':0,'Other Operating Revenue':0});
 }
 function dailyRevenueJournalExists(date){
-  return journalEntries().some(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date));
+  return journalEntries().some(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10));
 }
 /* v12 — allow F&B revenue created after the main daily revenue journal was posted.
    The old flow locked an entire business date after the first posting, which meant
@@ -14667,7 +14667,7 @@ function dailyRevenueJournalExists(date){
    already posted for the date and post only the unposted delta. */
 function dailyRevenuePostedFNB(date){
   const out={'Restaurant Revenue':0,'Bar Revenue':0};
-  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date)).forEach(j=>{
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
     (j.lines||[]).forEach(l=>{
       const a=String(l.account||'');
       if(Object.prototype.hasOwnProperty.call(out,a)) out[a]+=Number(l.credit||0);
@@ -14677,7 +14677,7 @@ function dailyRevenuePostedFNB(date){
 }
 function dailyRevenuePostedExperience(date){
   let total=0;
-  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||'')===String(date)).forEach(j=>{
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
     (j.lines||[]).forEach(l=>{
       if(String(l.account||'')==='Experience / Recreation Revenue') total+=Number(l.credit||0);
     });
