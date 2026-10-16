@@ -14678,7 +14678,7 @@ function dailyRevenueOtaCommissionRows(date){
 }
 function dailyRevenuePostedOtaCommission(date){
   let total=0;
-  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+  journalEntries().filter(j=>['Daily Revenue','Daily Revenue Commission'].includes(String(j.source||'')) && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
     (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions')total+=Number(l.debit||0);});
   });
   return total;
@@ -14789,27 +14789,84 @@ window.postDailyRevenue=function(){
     });
     lines=Object.values(grouped);
   }
-  /* Gross-up accounting: the meal-plan split is calculated on the base rate, while
-     the OTA uplift is recognized as additional Room Revenue. The gross OTA receivable
-     therefore equals base revenue + commission uplift. The commission is then booked
-     separately as an expense and payable. This keeps the journal balanced and makes
-     gross revenue less commission equal the hotel's base package value. */
+  /* Gross-up uplift belongs in the revenue journal so the receivable equals the
+     booking's gross amount. Commission expense/payable is a separate balanced journal;
+     keeping it separate makes the Daily Revenue journal total equal the booking revenue. */
   if(commissionDelta>0.009){
     lines.push({account:'Room Revenue',debit:0,credit:commissionDelta,revenueSource:'OTA Gross-up Revenue'});
   }
   const grossReceivable=Number(gross||0)+Number(commissionDelta||0);
   if(grossReceivable>0.009)lines.unshift({account:'Accounts Receivable',debit:grossReceivable,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
-  if(commissionDelta>0.009){
-    lines.push({account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'});
-    lines.push({account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'});
-  }
+  const commissionLines=commissionDelta>0.009?[
+    {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
+    {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
+  ]:[];
   try{
-    postJournal(d,ref,description,lines,'Daily Revenue');
-    const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
+    if(lines.length) {
+      postJournal(d,ref,description,lines,'Daily Revenue');
+      const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
+    }
+    if(commissionLines.length){
+      const commissionRef='OTA-COM-'+d.replace(/-/g,'')+(alreadyPosted?'-'+Date.now():'');
+      postJournal(d,commissionRef,'OTA Commission Expense — '+d,commissionLines,'Daily Revenue Commission');
+      const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
+    }
     logAudit('DAILY_REVENUE_POSTED','REV-'+d,'Daily revenue posted: '+gross+'; OTA commission: '+commissionDelta,currentPropertyId);
-    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue and OTA commission posted successfully for '+d+'. Base revenue: '+accMoney(gross)+'. Gross OTA receivable: '+accMoney(grossReceivable)+'. OTA commission expense: '+accMoney(commissionDelta)+'.');
+    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
+/* v2.1.466 — safely split legacy combined OTA commission lines into their own journal.
+   Migration runs only after the property's cloud cleanup lock is confirmed inactive,
+   preventing a local repair from racing a transaction cleanup or creating cross-device duplicates. */
+(function signatureOtaJournalSeparationRepair(){
+  'use strict';
+  if(window.__signatureOtaJournalSeparationRepair466)return;
+  window.__signatureOtaJournalSeparationRepair466=true;
+  const JOURNAL_KEY='signature_pms_accounting_journals';
+  const TABLE='pms_cloud_records';
+  const LOCK_KEY='signature_pms_revenue_cleanup_lock';
+  let busy=false;
+  const read=()=>{try{const x=JSON.parse(localStorage.getItem(JOURNAL_KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}};
+  const write=x=>localStorage.setItem(JOURNAL_KEY,JSON.stringify(x));
+  async function run(){
+    if(busy||window.__signaturePropertyCleanupInProgress)return;
+    const p=String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||'');
+    if(!p||typeof initSupabaseClient!=='function')return;
+    busy=true;
+    try{
+      const c=initSupabaseClient();if(!c)return;
+      const session=await c.auth.getSession();if(!session?.data?.session?.user)return;
+      const lock=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',LOCK_KEY).maybeSingle();
+      if(lock.error||lock.data?.data?.active===true)return;
+      const all=read();let changed=false;const additions=[];
+      const propertyRows=all.filter(j=>String(j?.propertyId||p)===p);
+      for(const j of propertyRows){
+        if(String(j.source||'')!=='Daily Revenue')continue;
+        const date=String(j.businessDate||j.date||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))continue;
+        const lines=Array.isArray(j.lines)?j.lines:[];
+        const exp=lines.filter(l=>String(l.account||'')==='OTA / Booking Commissions'&&Number(l.debit||0)>0&&(String(l.revenueSource||'')==='OTA Commission Expense'||!l.revenueSource));
+        const pay=lines.filter(l=>String(l.account||'')==='Accounts Payable'&&Number(l.credit||0)>0&&(String(l.revenueSource||'')==='OTA Commission Payable'));
+        const amount=exp.reduce((n,l)=>n+Number(l.debit||0),0);
+        const payable=pay.reduce((n,l)=>n+Number(l.credit||0),0);
+        if(amount<=0.009||Math.abs(amount-payable)>0.01)continue;
+        const existing=propertyRows.filter(x=>String(x.source||'')==='Daily Revenue Commission'&&String(x.businessDate||x.date||'').slice(0,10)===date)
+          .reduce((sum,x)=>sum+(x.lines||[]).filter(l=>String(l.account||'')==='OTA / Booking Commissions').reduce((n,l)=>n+Number(l.debit||0),0),0);
+        const alreadySplit=Math.abs(existing-amount)<=0.01;
+        j.lines=lines.filter(l=>!exp.includes(l)&&!pay.includes(l));
+        j.updatedAt=new Date().toISOString();
+        changed=true;
+        if(!alreadySplit){
+          const refBase='OTA-COM-'+date.replace(/-/g,'');
+          const ref=propertyRows.some(x=>String(x.reference||'')===refBase)||additions.some(x=>x.reference===refBase)?refBase+'-'+Date.now():refBase;
+          additions.push({id:'je_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),propertyId:p,date,businessDate:date,reference:ref,description:'OTA Commission Expense — '+date,source:'Daily Revenue Commission',lines:[...exp,...pay],postedBy:(typeof currentUser!=='undefined'&&currentUser?.username)||'System',updatedAt:new Date().toISOString()});
+        }
+      }
+      if(changed){write(all.concat(additions));try{if(typeof renderAccounting==='function')renderAccounting();if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}console.info('OTA commission journal separation repair completed for property',p,'new commission journals:',additions.length);}
+    }catch(e){console.warn('OTA commission journal separation repair paused:',e?.message||e)}
+    finally{busy=false}
+  }
+  setTimeout(run,6500);setInterval(run,15000);
+})();
 let dailyPaymentSelectedDateOverride='';
 function dailyPaymentSelectedDate(){
   const current=accountingBusinessDate();
@@ -22427,7 +22484,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 <script id="v2-1-397-accounting-journal-cloud-sync">
-/* v2.1.450 — ACCOUNTING JOURNAL CLOUD SYNC WITH CLEANUP LOCK
+/* v2.1.466 — ACCOUNTING JOURNAL CLOUD SYNC WITH CLEANUP LOCK
    Makes Daily Revenue / Daily Payments posting status property-wide.
    Each journal is stored as its own pms_cloud_records row so Admin and
    Reception cannot overwrite one another's accounting journal array. */
