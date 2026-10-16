@@ -22490,17 +22490,37 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const u=await uid(c); if(!u)return;
       if(window.__signaturePropertyCleanupInProgress)return;
       if(lastProperty!==p)lastProperty=p;
-      const lockQ=await c.from(TABLE).select('data').eq('property_id',p).eq('storage_key',CLEANUP_LOCK_KEY).maybeSingle();
+      const lockQ=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',CLEANUP_LOCK_KEY).maybeSingle();
       if(lockQ.error)throw lockQ.error;
-      const cleanupLocked=lockQ.data?.data?.active===true;
+      const lockData=lockQ.data?.data||{};
+      const cleanupLocked=lockData.active===true;
       if(window.__signaturePropertyCleanupInProgress)return;
-      /* IMPORTANT: a cleanup lock must pause cloud reconciliation, not erase
-         journals just posted locally. Previously this branch merged empty arrays
-         while locked and wrote them over the local journal store, so the UI showed
-         a false success and then zero journals. Keep local data untouched until
-         cleanup is explicitly verified and the lock is released. */
+      /* During an active cleanup lock, never pull older cloud journals: they may
+         be stale rows that cleanup was trying to remove. However, do allow journals
+         created AFTER the lock started to sync, so a valid Admin posting can reach
+         Reception without releasing an unverified cleanup lock. Journal IDs carry
+         the creation timestamp (je_<milliseconds>_...). */
       if(cleanupLocked){
-        console.warn('Accounting journal cloud sync paused: property cleanup lock is active. Local journals are preserved.');
+        const lockStarted=Date.parse(lockData.startedAt||lockQ.data?.updated_at||'');
+        const createdAt=j=>{const m=String(j?.id||'').match(/^je_(\d{13})_/i);return m?Number(m[1]):Date.parse(j?.updatedAt||j?.postedAt||'')||0;};
+        const freshLocal=localMine(p).filter(j=>lockStarted>0&&createdAt(j)>lockStarted);
+        for(const j of freshLocal){try{await publishOne(c,p,u,j)}catch(e){console.warn('New accounting journal publish during cleanup lock failed:',e?.message||e)}}
+        if(lockStarted>0){
+          const freshQ=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%').gt('updated_at',new Date(lockStarted).toISOString());
+          if(freshQ.error)throw freshQ.error;
+          if(window.__signaturePropertyCleanupInProgress)return;
+          const freshCloud=(freshQ.data||[]).filter(r=>r&&r.data).map(r=>({...r.data,propertyId:String(r.data.propertyId||p)}));
+          const localBefore=localMine(p);
+          const merged=mergeJournals(localBefore,freshCloud,p);
+          if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
+            writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
+            try{if(typeof renderAccounting==='function')renderAccounting()}catch(e){}
+            try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting()}catch(e){}
+            try{if(typeof renderDailyPaymentPosting==='function')renderDailyPaymentPosting()}catch(e){}
+            try{if(typeof renderJournalReview==='function')renderJournalReview()}catch(e){}
+          }
+        }
+        console.warn('Accounting journal sync is restricted by the active cleanup lock; only post-lock journals were synchronized.');
         return;
       }
       const localBefore=localMine(p);
