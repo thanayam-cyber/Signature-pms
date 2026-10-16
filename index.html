@@ -14789,13 +14789,10 @@ window.postDailyRevenue=function(){
     });
     lines=Object.values(grouped);
   }
-  /* Gross-up uplift belongs in the revenue journal so the receivable equals the
-     booking's gross amount. Commission expense/payable is a separate balanced journal;
-     keeping it separate makes the Daily Revenue journal total equal the booking revenue. */
-  if(commissionDelta>0.009){
-    lines.push({account:'Room Revenue',debit:0,credit:commissionDelta,revenueSource:'OTA Gross-up Revenue'});
-  }
-  const grossReceivable=Number(gross||0)+Number(commissionDelta||0);
+  /* OTA commission is an expense, not extra room revenue. Keep revenue at the
+     actual allocated amount (e.g. Room LKR 28,823.53 + Restaurant LKR 6,176.47
+     = LKR 35,000.00). Record commission only in its separate expense/payable journal. */
+  const grossReceivable=Number(gross||0);
   if(grossReceivable>0.009)lines.unshift({account:'Accounts Receivable',debit:grossReceivable,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
@@ -14815,6 +14812,63 @@ window.postDailyRevenue=function(){
     renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
+/* v2.1.470 — correct previously posted OTA gross-up revenue lines.
+   Remove the erroneous Room Revenue credit and reduce the matching AR debit by
+   the same amount, preserving journal balance. The separate OTA commission expense
+   journal is intentionally left untouched. The cloud journal sync loop publishes
+   the repaired local journal because updatedAt is refreshed. */
+(function signatureOtaGrossupRevenueRepair470(){
+  'use strict';
+  if(window.__signatureOtaGrossupRevenueRepair470)return;
+  window.__signatureOtaGrossupRevenueRepair470=true;
+  const KEY='signature_pms_accounting_journals';
+  let busy=false, completedFor='';
+  async function run(){
+    if(busy||window.__signaturePropertyCleanupInProgress)return;
+    const p=String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||'');
+    if(!p||completedFor===p)return;
+    if(typeof initSupabaseClient!=='function')return;
+    busy=true;
+    try{
+      const client=initSupabaseClient();
+      if(!client)return;
+      const auth=await client.auth.getSession();
+      if(!auth?.data?.session?.user)return;
+      const lock=await client.from('pms_cloud_records').select('data').eq('property_id',p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
+      if(lock.error)return;
+      if(lock.data?.data?.active===true)return;
+      let all=[];
+      try{all=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(all))all=[];}catch(e){all=[];}
+      let changed=false;
+      const hasRevenueJournal=all.some(j=>j&&String(j.propertyId||p)===p&&String(j.source||'').trim().toLowerCase()==='daily revenue');
+      for(const j of all){
+        if(!j||String(j.propertyId||p)!==p||String(j.source||'').trim().toLowerCase()!=='daily revenue')continue;
+        const lines=Array.isArray(j.lines)?j.lines:[];
+        const grossup=lines.filter(l=>String(l.account||'')==='Room Revenue'&&String(l.revenueSource||'')==='OTA Gross-up Revenue'&&Number(l.credit||0)>0);
+        const amount=grossup.reduce((sum,l)=>sum+Number(l.credit||0),0);
+        if(amount<=0.009)continue;
+        const ar=lines.find(l=>String(l.account||'')==='Accounts Receivable'&&String(l.revenueSource||'')==='Daily Revenue Gross OTA Receivable'&&Number(l.debit||0)>=amount-0.01);
+        /* Only repair when the matching AR debit exists, so the journal stays balanced. */
+        if(!ar)continue;
+        ar.debit=Math.max(0,Number(ar.debit||0)-amount);
+        j.lines=lines.filter(l=>!grossup.includes(l));
+        j.updatedAt=new Date().toISOString();
+        changed=true;
+      }
+      if(changed){
+        localStorage.setItem(KEY,JSON.stringify(all));
+        try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
+        try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){}
+        try{if(typeof renderJournalReview==='function')renderJournalReview();}catch(e){}
+        console.info('OTA gross-up revenue repair completed for property',p);
+      }
+      if(hasRevenueJournal)completedFor=p;
+    }catch(e){console.warn('OTA gross-up revenue repair paused:',e?.message||e)}
+    finally{busy=false;}
+  }
+  setTimeout(run,7000);
+  setInterval(run,5000);
+})();
 /* v2.1.467 — safely split legacy combined OTA commission lines into their own journal.
    When a cleanup lock is active, only repair a journal created after that lock began;
    pre-lock journals remain untouched until cleanup is confirmed complete. */
