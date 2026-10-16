@@ -7317,7 +7317,20 @@ function getChannelAdjustedRate(baseRate,mealPlan,adults,children,roomId,booking
     const sd=normalizeSalesDistribution(settings?.salesDistribution), matrix=sd.channelRateMatrix||{};
     const row=matrix[key]?.[String(rt.id)]?.[String(mealPlan||'BB').toUpperCase()]||{};
     const occ=channelRateOccupancy(adults,children), explicit=Number(row[occ]||0);
-    return explicit>0?explicit:Number(baseRate||0);
+    const selectedRate=explicit>0?explicit:Number(baseRate||0);
+
+    // OTA gross-up must be applied to the selected channel-matrix rate as well
+    // as the standard/base rate. Previously the matrix rate was returned as-is,
+    // so a Booking.com BB rate of LKR 35,000 ignored its configured 15% gross-up.
+    // Keep travel-agent and Deduct behaviour unchanged in this targeted fix.
+    if(source!=='Travel Agent'){
+        const ota=(sd.otaChannels||[]).find(x=>String(x.name||'').trim().toLowerCase()===String(source).trim().toLowerCase() && x.active!==false);
+        const commission=Math.max(0,Math.min(99.99,Number(ota?.commission)||0));
+        if(ota && ota.calculation==='grossup' && commission>0){
+            return selectedRate/(1-commission/100);
+        }
+    }
+    return selectedRate;
 }
 function renderChannelRateMatrixEditor(){
     const select=document.getElementById('channelRateEditorKey'),box=document.getElementById('channelRateMatrixEditor');
