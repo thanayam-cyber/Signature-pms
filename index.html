@@ -14789,10 +14789,15 @@ window.postDailyRevenue=function(){
     });
     lines=Object.values(grouped);
   }
-  /* OTA commission is an expense, not extra room revenue. Keep revenue at the
-     actual allocated amount (e.g. Room LKR 28,823.53 + Restaurant LKR 6,176.47
-     = LKR 35,000.00). Record commission only in its separate expense/payable journal. */
-  const grossReceivable=Number(gross||0);
+  /* v2.1.474 accounting fix:
+     When OTA commission is grossed up from the net package value, the guest/OTA
+     gross revenue and receivable must include that gross-up. Example: allocated
+     revenue LKR 35,000 + OTA commission/gross-up LKR 6,176.47 = gross LKR 41,176.47.
+     Keep the commission as a separate expense/payable journal; do not deduct it
+     from revenue. Apply gross-up only to the first full daily revenue journal. */
+  const otaGrossup=(!alreadyPosted && commissionDelta>0.009)?Number(commissionDelta):0;
+  if(otaGrossup>0.009)lines.push({account:'Room Revenue',debit:0,credit:otaGrossup,revenueSource:'OTA Gross-up Revenue'});
+  const grossReceivable=Number(gross||0)+otaGrossup;
   if(grossReceivable>0.009)lines.unshift({account:'Accounts Receivable',debit:grossReceivable,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
@@ -14812,35 +14817,46 @@ window.postDailyRevenue=function(){
     renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
-/* v2.1.473 — resilient OTA gross-up correction for local + cloud journal copies.
-   Uses the resolved Supabase property UUID and aliases, and repairs the exact cloud
-   storage_key returned by Supabase. A stale cleanup lock must not block this narrowly
-   scoped accounting correction; active in-page cleanup is still respected. */
+/* v2.1.474 — disable the legacy gross-up reversal repair. The correct gross-up is now
+   included in the initial Daily Revenue journal and its Accounts Receivable debit. */
 (function signatureOtaGrossupRevenueRepair473(){
   'use strict';
-  if(window.__signatureOtaGrossupRevenueRepair473)return;
-  window.__signatureOtaGrossupRevenueRepair473=true;
+  if(window.__signatureOtaGrossupRevenueRepair474)return;
+  window.__signatureOtaGrossupRevenueRepair474=true;
   const TABLE='pms_cloud_records';
   const JOURNAL_KEY='signature_pms_accounting_journals';
   const PREFIX='signature_pms_accounting_journal_';
   let busy=false;
   const readLocal=()=>{try{const x=JSON.parse(localStorage.getItem(JOURNAL_KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}};
   const writeLocal=x=>{try{localStorage.setItem(JOURNAL_KEY,JSON.stringify(x));return true}catch(e){return false}};
-  function repair(j,aliases){
+  function repair(j,aliases,journals){
     if(!j)return false;
     const jp=String(j.propertyId??j.property_id??'');
     if(jp&&!aliases.has(jp))return false;
     if(String(j.source||'').trim().toLowerCase()!=='daily revenue')return false;
     const lines=Array.isArray(j.lines)?j.lines:[];
-    const grossup=lines.filter(l=>String(l.account||'').trim()==='Room Revenue'&&String(l.revenueSource||'').trim()==='OTA Gross-up Revenue'&&Number(l.credit||0)>0);
-    const amount=Math.round(grossup.reduce((sum,l)=>sum+Number(l.credit||0),0)*100)/100;
-    if(amount<=0.009)return false;
-    const ar=lines.find(l=>String(l.account||'').trim()==='Accounts Receivable'&&String(l.revenueSource||'').trim()==='Daily Revenue Gross OTA Receivable'&&Number(l.debit||0)>=amount-0.01);
+    if(lines.some(l=>String(l.account||'').trim()==='Room Revenue'&&String(l.revenueSource||'').trim()==='OTA Gross-up Revenue'&&Number(l.credit||0)>0))return false;
+    const date=String(j.businessDate||j.date||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return false;
+    const ar=lines.find(l=>String(l.account||'').trim()==='Accounts Receivable'&&String(l.revenueSource||'').trim()==='Daily Revenue Gross OTA Receivable'&&Number(l.debit||0)>0);
     if(!ar)return false;
-    ar.debit=Math.round(Math.max(0,Number(ar.debit||0)-amount)*100)/100;
-    j.lines=lines.filter(l=>!grossup.includes(l));
-    if(jp)j.propertyId=jp;
-    j.updatedAt=new Date().toISOString();
+    const sameProperty=x=>{const xp=String(x?.propertyId??x?.property_id??jp??'');return !xp||!jp||aliases.has(xp)||xp===jp;};
+    const commission=Math.round((journals||[]).filter(x=>x&&sameProperty(x)&&String(x.source||'').trim()==='Daily Revenue Commission'&&String(x.businessDate||x.date||'').slice(0,10)===date).reduce((sum,x)=>sum+(Array.isArray(x.lines)?x.lines:[]).filter(l=>String(l.account||'').trim()==='OTA / Booking Commissions').reduce((n,l)=>n+Number(l.debit||0),0),0)*100)/100;
+    if(commission<=0.009)return false;
+    const currentAR=Math.round(Number(ar.debit||0)*100)/100;
+    const paymentExists=(journals||[]).some(x=>{
+      if(!x||!sameProperty(x)||String(x.source||'').trim()!=='Daily Payments')return false;
+      const pd=String(x.businessDate||x.date||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(pd)||pd<date)return false;
+      const pl=Array.isArray(x.lines)?x.lines:[];
+      const arCredit=Math.round(pl.filter(l=>String(l.account||'').trim()==='Accounts Receivable').reduce((n,l)=>n+Number(l.credit||0),0)*100)/100;
+      const cashDebit=Math.round(pl.filter(l=>['Cash on Hand','Bank Account','Card Receivables'].includes(String(l.account||'').trim())).reduce((n,l)=>n+Number(l.debit||0),0)*100)/100;
+      return Math.abs(arCredit-(currentAR+commission))<0.02&&Math.abs(cashDebit-arCredit)<0.02;
+    });
+    if(!paymentExists)return false;
+    /* Repair only the proven gross-up mismatch: matching payment equals AR + OTA commission. */
+    ar.debit=Math.round((Number(ar.debit||0)+commission)*100)/100;
+    lines.push({account:'Room Revenue',debit:0,credit:commission,revenueSource:'OTA Gross-up Revenue'});
+    j.lines=lines;j.updatedAt=new Date().toISOString();
     return true;
   }
   async function run(){
@@ -14855,7 +14871,7 @@ window.postDailyRevenue=function(){
       try{if(typeof resolveSupabasePropertyId==='function')resolved=String((await resolveSupabasePropertyId(selected))||selected)}catch(e){}
       const aliases=new Set([selected,resolved,String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||''),String(window.currentPropertyId||'')].filter(Boolean));
       const local=readLocal();let localChanged=false;const changedLocal=[];
-      for(const j of local){if(repair(j,aliases)){localChanged=true;changedLocal.push(j)}}
+      for(const j of local){if(repair(j,aliases,local)){localChanged=true;changedLocal.push(j)}}
       if(localChanged)writeLocal(local);
       const upsertRow=async(propertyId,key,data)=>{
         const result=await c.from(TABLE).upsert({property_id:propertyId,storage_key:key,data,updated_by:u.id,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
@@ -14876,9 +14892,10 @@ window.postDailyRevenue=function(){
         cloudRows.push(...(result.data||[]));
       }
       const seen=new Set();let cloudChanged=0;const allLocal=readLocal();
+      const cloudJournals=cloudRows.map(row=>row.data).filter(Boolean);
       for(const row of cloudRows){
         const signature=String(row.property_id)+'|'+String(row.storage_key);if(seen.has(signature))continue;seen.add(signature);
-        const j=row.data;if(!j||!repair(j,aliases))continue;
+        const j=row.data;if(!j||!repair(j,aliases,cloudJournals))continue;
         j.propertyId=String(row.property_id||resolved);
         await upsertRow(String(row.property_id||resolved),String(row.storage_key),j);
         cloudChanged++;
@@ -14890,7 +14907,7 @@ window.postDailyRevenue=function(){
         const result=await c.from(TABLE).select('data').eq('property_id',propertyId).eq('storage_key',JOURNAL_KEY).maybeSingle();
         if(result.error)throw result.error;
         if(Array.isArray(result.data?.data)){
-          let changed=false;const aggregate=result.data.data.map(j=>{if(repair(j,aliases)){changed=true;j.propertyId=String(j.propertyId||propertyId)}return j});
+          let changed=false;const aggregate=result.data.data.map(j=>{if(repair(j,aliases,result.data.data)){changed=true;j.propertyId=String(j.propertyId||propertyId)}return j});
           if(changed)await upsertRow(propertyId,JOURNAL_KEY,aggregate);
         }
       }
@@ -14898,7 +14915,7 @@ window.postDailyRevenue=function(){
       if(localChanged||cloudChanged){
         try{if(typeof renderAccounting==='function')renderAccounting()}catch(e){}
         try{if(typeof renderJournalReview==='function')renderJournalReview()}catch(e){}
-        console.info('OTA gross-up repair 473: local repaired =',localChanged,'cloud journals repaired =',cloudChanged);
+        console.info('OTA gross-up repair 474: local repaired =',localChanged,'cloud journals repaired =',cloudChanged);
       }
     }catch(e){console.warn('OTA gross-up repair 473 did not complete:',e?.message||e)}
     finally{busy=false;}
