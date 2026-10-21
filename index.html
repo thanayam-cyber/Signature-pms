@@ -5422,27 +5422,60 @@ function runDataIntegrityCheck(){
 function downloadJsonFile(filename,data){
     const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download=filename;
-    /* Keep the anchor attached and rendered off-screen. This is more reliable than
-       clicking and immediately removing a dynamically-created hidden link. */
-    a.style.position="fixed";
-    a.style.left="-10000px";
-    a.style.top="0";
-    a.style.width="1px";
-    a.style.height="1px";
-    a.style.opacity="0.01";
-    document.body.appendChild(a);
+
+    /* Keep a visible fallback because some browser contexts ignore scripted downloads. */
+    const oldNotice=document.getElementById("signaturePropertyBackupDownloadNotice");
+    if(oldNotice) oldNotice.remove();
     try{
-        a.click();
+        if(window.__signaturePmsPropertyBackupUrl) URL.revokeObjectURL(window.__signaturePmsPropertyBackupUrl);
+    }catch(e){}
+    window.__signaturePmsPropertyBackupUrl=url;
+
+    const link=document.createElement("a");
+    link.href=url;
+    link.download=filename;
+    link.textContent="Click here to download the backup JSON";
+    link.style.cssText="display:inline-block;margin-top:8px;padding:10px 14px;background:#17251d;color:#fff;border-radius:7px;font-weight:700;text-decoration:none";
+
+    const notice=document.createElement("div");
+    notice.id="signaturePropertyBackupDownloadNotice";
+    notice.style.cssText="position:fixed;right:18px;bottom:18px;z-index:1000000;max-width:min(460px,calc(100vw - 36px));padding:14px 16px;background:#fff;border:2px solid #198754;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.22);color:#17251d;font-size:13px";
+    const message=document.createElement("div");
+    message.textContent="Backup file is ready. If it did not download automatically, click the link below. Check your Downloads folder before closing this notice.";
+    notice.appendChild(message);
+    notice.appendChild(link);
+
+    const close=document.createElement("button");
+    close.type="button";
+    close.textContent="Close";
+    close.style.cssText="display:block;margin-top:8px;border:0;background:#e5e7eb;padding:6px 10px;border-radius:5px;cursor:pointer";
+    close.onclick=()=>notice.remove();
+    notice.appendChild(close);
+    document.body.appendChild(notice);
+
+    try{
+        const automaticLink=document.createElement("a");
+        automaticLink.href=url;
+        automaticLink.download=filename;
+        automaticLink.style.cssText="position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:.01";
+        document.body.appendChild(automaticLink);
+        automaticLink.click();
+        setTimeout(()=>automaticLink.remove(),1000);
     }catch(err){
-        setTimeout(()=>{try{a.remove();}catch(e){}},1000);
-        setTimeout(()=>URL.revokeObjectURL(url),60000);
-        throw new Error("Browser could not start the backup download. Check this site's download permissions and try again.");
+        /* Visible fallback link remains available. */
     }
-    setTimeout(()=>{try{a.remove();}catch(e){}},1000);
-    setTimeout(()=>URL.revokeObjectURL(url),60000);
+
+    setTimeout(()=>{
+        /* Keep the object URL alive for 10 minutes so the fallback link remains usable. */
+        try{
+            if(window.__signaturePmsPropertyBackupUrl===url){
+                URL.revokeObjectURL(url);
+                window.__signaturePmsPropertyBackupUrl=null;
+            }
+        }catch(e){}
+        const current=document.getElementById("signaturePropertyBackupDownloadNotice");
+        if(current===notice) current.remove();
+    },600000);
 }
 
 function safeFilePart(value){
@@ -5483,9 +5516,64 @@ function backupAllData(silent=false){
         new Date().toISOString().replace(/[:.]/g,"-")+
         ".json";
 
-    downloadJsonFile(filename,payload);
-    logAudit("BACKUP_FULL",filename,"Full PMS backup downloaded");
-    if(!silent) alert("Full PMS backup downloaded successfully.");
+    /*
+      Keep the normal automatic download attempt, but also leave a real,
+      visible download link. Some browser contexts ignore a programmatic
+      anchor.click(); the user can click this visible link as a fallback.
+      This change is limited to Full Backup and does not alter backup data.
+    */
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const oldNotice=document.getElementById("signatureFullBackupDownloadNotice");
+    if(oldNotice) oldNotice.remove();
+    try{
+        if(window.__signaturePmsFullBackupUrl){
+            URL.revokeObjectURL(window.__signaturePmsFullBackupUrl);
+        }
+    }catch(e){}
+    window.__signaturePmsFullBackupUrl=url;
+
+    const link=document.createElement("a");
+    link.href=url;
+    link.download=filename;
+    link.textContent="Click here to download the Full PMS Backup";
+    link.style.cssText="display:inline-block;margin-top:8px;padding:10px 14px;background:#17251d;color:#fff;border-radius:7px;font-weight:700;text-decoration:none";
+
+    const notice=document.createElement("div");
+    notice.id="signatureFullBackupDownloadNotice";
+    notice.style.cssText="position:fixed;right:18px;bottom:18px;z-index:1000000;max-width:min(460px,calc(100vw - 36px));padding:14px 16px;background:#fff;border:2px solid #198754;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.22);color:#17251d;font-size:13px";
+    const message=document.createElement("div");
+    message.textContent="Full backup is ready. If the file did not download automatically, use this link:";
+    notice.appendChild(message);
+    notice.appendChild(link);
+    const close=document.createElement("button");
+    close.type="button";
+    close.textContent="Close";
+    close.style.cssText="display:block;margin-top:8px;border:0;background:#e5e7eb;padding:6px 10px;border-radius:5px;cursor:pointer";
+    close.onclick=()=>notice.remove();
+    notice.appendChild(close);
+    document.body.appendChild(notice);
+
+    try{
+        const automaticLink=document.createElement("a");
+        automaticLink.href=url;
+        automaticLink.download=filename;
+        automaticLink.style.cssText="position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:.01";
+        document.body.appendChild(automaticLink);
+        automaticLink.click();
+        setTimeout(()=>automaticLink.remove(),1000);
+    }catch(err){
+        /* The visible fallback link remains available if automatic download fails. */
+    }
+
+    logAudit("BACKUP_FULL",filename,"Full PMS backup download requested");
+    if(!silent) alert("Full backup is ready. If it did not download automatically, click the visible 'Click here to download the Full PMS Backup' link.");
+    setTimeout(()=>{
+        try{URL.revokeObjectURL(url);}catch(e){}
+        if(window.__signaturePmsFullBackupUrl===url) window.__signaturePmsFullBackupUrl=null;
+        const current=document.getElementById("signatureFullBackupDownloadNotice");
+        if(current===notice) current.remove();
+    },600000);
     return true;
 }
 
@@ -5497,37 +5585,55 @@ function backupCurrentProperty(silent=false){
         return false;
     }
 
-    const property=properties.find(p=>p.id===currentPropertyId);
-    if(!property){
-        alert("Current property not found.");
-        return false;
-    }
+    const property=properties.find(p=>String(p.id)===String(currentPropertyId));
+    if(!property){ alert("Current property not found."); return false; }
 
+    const propertyId=String(currentPropertyId);
+    const ownReservations=(Array.isArray(reservations)?reservations:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId);
+    const reservationIds=new Set(ownReservations.map(x=>String(x.id)));
+    const ownFolios=(Array.isArray(folios)?folios:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId || reservationIds.has(String(x?.reservationId||"")));
+    const ownPayments=(Array.isArray(payments)?payments:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId || reservationIds.has(String(x?.reservationId||"")));
+    const ownSales=(Array.isArray(sales)?sales:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId || reservationIds.has(String(x?.reservationId||"")));
+    const ownPmAccounts=(Array.isArray(pmAccounts)?pmAccounts:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId);
+    const ownPmTransactions=(Array.isArray(pmTransactions)?pmTransactions:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId);
+    const ownCashierClosings=readArray(STORAGE.cashierClosings)
+        .filter(x=>String(x?.propertyId||"")===propertyId);
+    const ownAudit=readArray(STORAGE.audit)
+        .filter(x=>String(x?.propertyId||"")===propertyId);
+    const guestIds=new Set(ownReservations.map(x=>String(x.guestId||"")).filter(Boolean));
+    const ownGuests=(Array.isArray(guests)?guests:[])
+        .filter(x=>String(x?.propertyId||"")===propertyId || guestIds.has(String(x?.id||"")));
+    const exportedAt=new Date().toISOString();
     const payload={
         format:"Signature PMS Property Backup",
-        backupVersion:1,
+        backupVersion:2,
         app:APP_NAME,
         edition:APP_EDITION,
         appVersion:APP_VERSION,
-        exportedAt:new Date().toISOString(),
+        exportedAt,
+        propertyId,
         property:JSON.parse(JSON.stringify(property)),
-        reservations:JSON.parse(JSON.stringify(reservations||[])),
-        folios:JSON.parse(JSON.stringify(folios||[])),
-        payments:JSON.parse(JSON.stringify(payments||[])),
-        sales:JSON.parse(JSON.stringify(sales||[])),
-        pmAccounts:JSON.parse(JSON.stringify(pmAccounts||[])),
-        pmTransactions:JSON.parse(JSON.stringify(pmTransactions||[])),
-        cashierClosings:readArray(STORAGE.cashierClosings).filter(x=>x.propertyId===currentPropertyId),
-        extras:collectModuleData(currentPropertyId)
+        reservations:JSON.parse(JSON.stringify(ownReservations)),
+        folios:JSON.parse(JSON.stringify(ownFolios)),
+        payments:JSON.parse(JSON.stringify(ownPayments)),
+        sales:JSON.parse(JSON.stringify(ownSales)),
+        guests:JSON.parse(JSON.stringify(ownGuests)),
+        pmAccounts:JSON.parse(JSON.stringify(ownPmAccounts)),
+        pmTransactions:JSON.parse(JSON.stringify(ownPmTransactions)),
+        audit:JSON.parse(JSON.stringify(ownAudit)),
+        cashierClosings:JSON.parse(JSON.stringify(ownCashierClosings)),
+        extras:collectModuleData(propertyId)
     };
-
-    const filename="Signature_PMS_"+safeFilePart(property.property)+"_BACKUP_"+
-        new Date().toISOString().replace(/[:.]/g,"-")+
-        ".json";
-
+    const filename="Signature_PMS_"+safeFilePart(property.property)+"_PROPERTY_BACKUP_"+exportedAt.replace(/[:.]/g,"-")+".json";
     downloadJsonFile(filename,payload);
     logAudit("BACKUP_PROPERTY",filename,"Property backup downloaded",property.id);
-    if(!silent) alert(property.property+" backup downloaded successfully.");
+    if(!silent) alert(property.property+" property-only backup is ready. If it did not download automatically, use the visible backup link on the screen. Export time: "+exportedAt);
     return true;
 }
 
@@ -18650,8 +18756,11 @@ window.showPage=function(page,btn){
 window.confirmBackupFileSeen=function(){
   if(!confirm('Have you checked Ctrl+J or the Downloads folder and confirmed that the Full PMS backup file is present?'))return;
   try{localStorage.setItem(BK_KEY,String(Date.now()));}catch(e){}
-  try{sessionStorage.removeItem('signature_pms_backup_dismissed');}catch(e){}
-  renderBackupReminder();
+  /* Once the user confirms, dismiss this reminder immediately for this session. */
+  try{sessionStorage.setItem('signature_pms_backup_dismissed','1');}catch(e){}
+  const reminder=document.getElementById('backupReminder');
+  if(reminder)reminder.remove();
+  try{renderBackupReminder();}catch(e){console.warn('Backup reminder refresh failed',e);}
 };
 const prevAll=window.renderAll;
 window.renderAll=function(){
@@ -18819,7 +18928,7 @@ function renderBackupReminder(){
   const last=Number(localStorage.getItem(BK_KEY)||0),days=last?Math.floor((Date.now()-last)/86400000):null;
   const show=currentUser?.role==='Admin'&&(properties||[]).length>0&&(days===null||days>=7)&&sessionStorage.getItem('signature_pms_backup_dismissed')!=='1';
   if(!show){box?.remove();return;}
-  if(!box){dash.insertAdjacentHTML('afterbegin','<div id="backupReminder" class="no-print" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div id="backupReminderText" style="flex:1;font-size:13px;color:#78350f"></div><button class="btn btn-primary btn-small" onclick="backupAllData()">Download Full Backup</button><button class="btn btn-secondary btn-small" onclick="confirmBackupFileSeen()">I see the file</button><button class="btn btn-secondary btn-small" onclick="sessionStorage.setItem(\'signature_pms_backup_dismissed\',\'1\');document.getElementById(\'backupReminder\').remove()">Later</button><div id="backupReminderStatus" style="width:100%;font-size:12px;color:#92400e"></div></div>');box=byId('backupReminder');}
+  if(!box){dash.insertAdjacentHTML('afterbegin','<div id="backupReminder" class="no-print" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div id="backupReminderText" style="flex:1;font-size:13px;color:#78350f"></div><button class="btn btn-primary btn-small" onclick="backupCurrentProperty()">Download Current Property Backup</button><button class="btn btn-secondary btn-small" onclick="backupAllData()">Download Full Backup</button><button class="btn btn-secondary btn-small" onclick="confirmBackupFileSeen()">I see the file</button><button class="btn btn-secondary btn-small" onclick="sessionStorage.setItem(\'signature_pms_backup_dismissed\',\'1\');document.getElementById(\'backupReminder\').remove()">Later</button><div id="backupReminderStatus" style="width:100%;font-size:12px;color:#92400e"></div></div>');box=byId('backupReminder');}
   byId('backupReminderText').innerHTML='<strong>Back up your data.</strong> '+(days===null?'No backup has been downloaded yet. All data is stored in this browser only.':'Last backup was '+days+' day'+(days>1?'s':'')+' ago. All data is stored in this browser only.');
 }
 const prevAll=window.renderAll;
