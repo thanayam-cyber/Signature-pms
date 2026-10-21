@@ -5282,19 +5282,13 @@ function toggleUserStatus(id){
 }
 
 
-function deleteUser(id){
-
+async function deleteUser(id){
     if(!canManageUsers()){
         alert("Access denied. User Management rights are required.");
         return;
     }
 
-
-    const user=
-        users.find(
-            u=>u.id===id
-        );
-
+    const user=users.find(u=>String(u.id)===String(id));
     if(!user) return;
 
     if(!canManageUserRecord(user)){
@@ -5302,54 +5296,70 @@ function deleteUser(id){
         return;
     }
 
-
-    if(user.id===currentUser.id){
-
-        alert(
-            "You cannot delete the account you are currently using."
-        );
-
+    if(String(user.id)===String(currentUser?.id)){
+        alert("You cannot delete the account you are currently using.");
         return;
-
     }
 
-
-    if(
-        user.role==="Admin" &&
-        user.active &&
-        !hasAnotherActiveAdmin(user.id)
-    ){
-
-        alert(
-            "You cannot delete the last active Admin."
-        );
-
+    if(user.role==="Admin" && user.active && !hasAnotherActiveAdmin(user.id)){
+        alert("You cannot delete the last active Admin.");
         return;
-
     }
 
+    const isCloudAuthUser=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.authUserId||user.id||""));
+    const warning=isCloudAuthUser
+        ? "This permanently deletes the Supabase Auth account and its user-management profile/assignments. Historical PMS transactions (reservations, folios, payments and accounting records) are not intentionally deleted. This cannot be undone."
+        : "This removes this local-only PMS user record. No Supabase Auth account was detected. This cannot be undone.";
+    if(!confirm("Permanently delete user '"+user.username+"'?\n\n"+warning)) return;
 
-    if(!confirm(
-        "Delete user '"+user.username+"'?\n\n"+
-        "This action cannot be undone."
-    )) return;
+    try{
+        if(isCloudAuthUser){
+            const client=initSupabaseClient();
+            if(!client) throw new Error("Supabase client unavailable. No changes were made.");
+            const {data:{session},error:sessionError}=await client.auth.getSession();
+            if(sessionError) throw sessionError;
+            if(!session?.access_token) throw new Error("Your Supabase session has expired. Please sign in again. No changes were made.");
 
+            // Server-side Edge Function verifies the caller's Admin role and performs
+            // Auth deletion. Never put a service-role key in this browser file.
+            const {data,error}=await client.functions.invoke("delete-pms-user",{
+                body:{userId:String(user.authUserId||user.id)}
+            });
+            if(error){
+                let detail=error.message||"The secure delete function failed.";
+                try{
+                    const ctx=error?.context;
+                    if(ctx&&typeof ctx.clone==="function"){
+                        const response=ctx.clone();
+                        const body=await response.json().catch(()=>null);
+                        detail=body?.error||body?.message||detail;
+                    }
+                }catch(_){ }
+                throw new Error(detail);
+            }
+            if(!data?.success) throw new Error(data?.error||"The server did not confirm permanent deletion.");
+        }
 
-    users=
-        users.filter(
-            u=>u.id!==id
-        );
+        // Change the local list only after the cloud deletion succeeds.
+        users=users.filter(u=>String(u.id)!==String(id));
+        saveUsers();
+        if(window.signaturePMSState){
+            window.signaturePMSState.users=users;
+            if(typeof window.signaturePMSState.saveUsers==="function") window.signaturePMSState.saveUsers();
+        }
+        renderUsers();
+        logAudit("USER_DELETED",user.username,isCloudAuthUser?"Supabase Auth user permanently deleted; historical PMS records preserved":"Local-only PMS user deleted");
+        alert("User permanently deleted successfully.");
 
-
-    saveUsers();
-
-    renderUsers();
-
-    logAudit("USER_DELETED",user.username,"User account deleted");
-    alert(
-        "User deleted successfully."
-    );
-
+        // Refresh the cloud directory so a deleted account cannot be rehydrated
+        // from stale local state. Do not report success as failure if refresh alone fails.
+        if(isCloudAuthUser && typeof syncSupabaseUsers==="function"){
+            try{await syncSupabaseUsers();}catch(refreshError){console.warn("User deleted, but cloud directory refresh failed",refreshError);}
+        }
+    }catch(err){
+        console.error("Permanent user deletion failed",err);
+        alert("User was NOT removed from the local list because cloud deletion was not confirmed.\n\n"+(err?.message||err));
+    }
 }
 
 
