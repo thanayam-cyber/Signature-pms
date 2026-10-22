@@ -5794,6 +5794,7 @@ function showPage(page,button=null){
 
     if(target)
         target.classList.add("active");
+    if(page==="accounting") setTimeout(()=>{if(typeof renderAccounting==="function")renderAccounting();else if(typeof renderDailyPaymentPosting==="function")renderDailyPaymentPosting();},0);
     if(page==="settings" && currentUser?.role==="Admin") setTimeout(renderAuditLog,0);
     if(page==="availability") setTimeout(renderAvailability,0);
     if(page==="cashiershift") setTimeout(cashierShiftRefresh,0);
@@ -10444,6 +10445,21 @@ function savePayment(reservationId){
 
 
     saveData();
+    // v2.1.476 — persist a newly recorded folio payment through the reservation's
+    // existing Supabase cloud record. saveData() only writes localStorage; without
+    // this sync, a later cloud refresh / another device can miss the payment.
+    if(typeof syncReservationToSupabase==="function" && navigator.onLine){
+        Promise.resolve()
+            .then(()=>syncReservationToSupabase(reservation))
+            .then(ok=>{
+                if(!ok && typeof setSupabaseCloudMessage==="function"){
+                    setSupabaseCloudMessage("Payment recorded locally, but cloud sync was not confirmed. Please check the cloud connection before relying on another device.","error");
+                }
+            })
+            .catch(syncError=>console.warn("Folio payment cloud sync failed:",syncError));
+    }
+    // Refresh accounting payment-posting figures immediately after a folio payment is saved.
+    try{if(typeof renderDailyPaymentPosting==="function")renderDailyPaymentPosting();}catch(refreshError){console.warn("Daily payment posting refresh skipped:",refreshError);}
 
     closePaymentModal();
 
@@ -14870,8 +14886,26 @@ function renderDailyRevenuePosting(){
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
   }
-  const previewRows=rows.concat(commissionRows.map(r=>({...r,source:'OTA Commission Expense',description:r.description+' (expense; separate from BB allocation)'})));
-  tb.innerHTML=previewRows.length?previewRows.map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(r.reference)}</td><td>${escapeHtml(r.description)}</td><td style="text-align:right">${accMoney(r.amount)}</td></tr>`).join(''):`<tr><td colspan="5" class="empty">No daily revenue transactions found for ${escapeHtml(d)}.</td></tr>`;
+  /* Display gross OTA revenue and commission expense in separate sections.
+     The OTA gross-up is revenue; the matching commission is an expense and
+     must not be added to the Daily Revenue total a second time. This is display-only. */
+  const grossupRows=commissionRows.map(r=>({...r,source:'OTA Gross-up Revenue',revenueSource:'OTA Gross-up Revenue',description:r.description.replace(/ commission$/i,' commission gross-up (revenue)')}));
+  const revenueRows=rows.concat(grossupRows);
+  const revenueTotal=revenueRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
+  const expenseTotal=commissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
+  const renderRow=r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(r.reference)}</td><td>${escapeHtml(r.description)}</td><td style="text-align:right">${accMoney(r.amount)}</td></tr>`;
+  let display='';
+  if(revenueRows.length){
+    display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">DAILY REVENUE</td></tr>`;
+    display+=revenueRows.map(renderRow).join('');
+    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total Daily Revenue</td><td style="text-align:right;font-weight:700">${accMoney(revenueTotal)}</td></tr>`;
+  }
+  if(commissionRows.length){
+    display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">OTA COMMISSION EXPENSE (NOT INCLUDED IN REVENUE TOTAL)</td></tr>`;
+    display+=commissionRows.map(r=>renderRow({...r,source:'OTA Commission Expense',description:r.description+' (expense)'})).join('');
+    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total OTA Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(expenseTotal)}</td></tr>`;
+  }
+  tb.innerHTML=display||`<tr><td colspan="5" class="empty">No daily revenue transactions found for ${escapeHtml(d)} in the selected property.</td></tr>`;
 }
 window.postDailyRevenue=function(){
   if(!requireRole('Admin','Manager'))return;
@@ -15201,8 +15235,11 @@ function arAgeBucket(days){
 function arGuestLedgerRows(asOf){
   const out=[];
   accProp(reservations||[]).forEach(r=>{
-    const status=String(r.status||'').toLowerCase();
-    if(['cancelled','no_show'].includes(status)) return;
+    const status=String(r.status||'').trim().toLowerCase().replace(/[ _]+/g,'-');
+    // AR represents posted/earned guest folio balances, not the value of a future
+    // or unoccupied reservation. Reservation accommodation is prefilled in the
+    // folio for quoting, so only checked-in/out stays qualify as guest receivables.
+    if(!['checked-in','checked-out'].includes(status)) return;
     if(r.cityLedgerAccountId) return;
     const ci=String(r.checkIn||r.date||'').slice(0,10), co=String(r.checkOut||'').slice(0,10);
     if(ci && ci>asOf) return;
