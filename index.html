@@ -1468,6 +1468,12 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <button class="btn btn-danger" id="clearRevenueBtn" onclick="clearRevenueHistory()" style="margin-top:15px">
             Clear Revenue History
         </button>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+  <button class="btn btn-danger" type="button" onclick="clearAccountsHistory()">Delete Accounts History</button>
+  <button class="btn btn-danger" type="button" onclick="clearPurchasingHistory()">Delete Purchasing History</button>
+  <button class="btn btn-danger" type="button" onclick="clearStoresHistory()">Delete Stores History</button>
+</div>
+<p style="font-size:12px;color:#92400e;margin-top:6px">These actions apply only to the selected property. They do not clear Revenue history or master/setup records. Deletions are permanent.</p>
 </div>
 <div class="section" id="sriLankaTaxConfigurationSection" style="border:2px solid #dbeafe;background:#f8fbff">
 <div class="section-header"><div><h3>Sri Lanka Tax &amp; Billing Configuration</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Configure customer-facing VAT/service charge separately from statutory turnover levies. Rates are property-specific.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
@@ -7692,6 +7698,109 @@ async function saveSettings(){
     }
 }
 
+
+/* =========================================================
+   PROPERTY-SCOPED MODULE HISTORY CLEANUP
+   Revenue cleanup is intentionally separate and untouched.
+========================================================= */
+async function clearSelectedModuleHistory(moduleName, storageKeys, keyPrefixes, extraConfirm){
+ if(!requireRole("Admin")) return;
+ const propertyName=settings?.property||"this property";
+ if(!confirm("Delete "+moduleName+" history for "+propertyName+" only?\n\nThis permanently removes the selected module's transaction/history records from this property. Revenue history, master/setup data, and other properties will be kept.\n\nContinue?")) return;
+ if(!confirm("FINAL CONFIRMATION\n\nDelete "+moduleName+" history for "+propertyName+"?\n\nThis cannot be undone.")) return;
+ const selectedProperty=String(currentPropertyId||'');
+ let resolvedCloudPropertyId='';
+ try{resolvedCloudPropertyId=String(await resolveSupabasePropertyId(selectedProperty)||'');}catch(e){console.warn('Property alias resolution failed:',e?.message||e);}
+ const aliases=[...new Set([selectedProperty,resolvedCloudPropertyId].filter(Boolean))];
+ if(!aliases.length){alert('Could not identify the selected property. Nothing was deleted.');return;}
+ window.__signaturePropertyCleanupInProgress=true;
+ let cloudError='';
+ try{
+   const client=initSupabaseClient();
+   if(!client) throw new Error('Supabase client is unavailable. No history was deleted.');
+   const {data:authData,error:authError}=await client.auth.getSession();
+   if(authError) throw authError;
+   if(!authData?.session?.user?.id) throw new Error('Please sign in again. The signed-in user could not be verified.');
+   const {data:records,error:readError}=await client.from('pms_cloud_records').select('storage_key,data').in('property_id',aliases);
+   if(readError) throw readError;
+   const exact=new Set(storageKeys);
+   const targets=(records||[]).filter(r=>exact.has(String(r.storage_key||''))||keyPrefixes.some(prefix=>String(r.storage_key||'').startsWith(prefix)));
+   for(const rec of targets){
+     const key=String(rec.storage_key||'');
+     // If a cloud array contains explicitly tagged rows from other properties, preserve them.
+     if(Array.isArray(rec.data)){
+       const kept=rec.data.filter(row=>{
+         if(!row||typeof row!=='object') return false;
+         const rp=row.propertyId??row.property_id??'';
+         return rp!=='' && !aliases.includes(String(rp));
+       });
+       if(kept.length){
+         const {error:updateError}=await client.from('pms_cloud_records').update({data:kept,updated_by:authData.session.user.id,updated_at:new Date().toISOString()}).in('property_id',aliases).eq('storage_key',key);
+         if(updateError) throw updateError;
+       }else{
+         const {data:deleted,error:deleteError}=await client.from('pms_cloud_records').delete().in('property_id',aliases).eq('storage_key',key).select('storage_key');
+         if(deleteError) throw deleteError;
+         if(!Array.isArray(deleted)||!deleted.length){
+           const {data:still,error:verifyError}=await client.from('pms_cloud_records').select('storage_key').in('property_id',aliases).eq('storage_key',key);
+           if(verifyError) throw verifyError;
+           if(Array.isArray(still)&&still.length) throw new Error('Supabase did not confirm deletion of '+key+'. Check permissions/RLS.');
+         }
+       }
+     }else{
+       const {data:deleted,error:deleteError}=await client.from('pms_cloud_records').delete().in('property_id',aliases).eq('storage_key',key).select('storage_key');
+       if(deleteError) throw deleteError;
+       if(!Array.isArray(deleted)||!deleted.length){
+         const {data:still,error:verifyError}=await client.from('pms_cloud_records').select('storage_key').in('property_id',aliases).eq('storage_key',key);
+         if(verifyError) throw verifyError;
+         if(Array.isArray(still)&&still.length) throw new Error('Supabase did not confirm deletion of '+key+'. Check permissions/RLS.');
+       }
+     }
+   }
+ }catch(e){cloudError=e?.message||String(e);}
+ if(cloudError){
+   window.__signaturePropertyCleanupInProgress=false;
+   alert('Cloud deletion was not verified, so local history was NOT intentionally cleared.\n\n'+cloudError+'\n\nDo not continue entering test transactions until this is checked.');
+   return;
+ }
+ const keepOtherRows=(rows)=>rows.filter(row=>{
+   if(!row||typeof row!=='object') return false;
+   const rp=row.propertyId??row.property_id??'';
+   return rp!=='' && !aliases.includes(String(rp));
+ });
+ const localKeys=new Set(storageKeys);
+ try{
+   for(let i=0;i<localStorage.length;i++){
+     const key=localStorage.key(i);
+     if(key && keyPrefixes.some(prefix=>key.startsWith(prefix))) localKeys.add(key);
+   }
+ }catch(e){}
+ localKeys.forEach(key=>{
+   try{
+     const raw=localStorage.getItem(key); if(raw===null)return;
+     const parsed=JSON.parse(raw);
+     if(Array.isArray(parsed)) localStorage.setItem(key,JSON.stringify(keepOtherRows(parsed)));
+     else localStorage.removeItem(key);
+   }catch(e){console.warn('Could not clear local module history key '+key,e?.message||e);}
+ });
+ window.__signaturePropertyCleanupInProgress=false;
+ alert(moduleName+' history cleanup completed for '+propertyName+'.\n\nCloud cleanup was accepted and local records were cleared for the selected property. Revenue history, master/setup data, and other properties were kept. The page will now reload to avoid stale in-memory data being saved again.');
+ window.location.reload();
+}
+function clearAccountsHistory(){
+ return clearSelectedModuleHistory('Accounts',[
+  'signature_pms_accounting_journals','signature_pms_accounting_expenses'
+ ],['signature_pms_accounting_journal_je_']);
+}
+function clearPurchasingHistory(){
+ return clearSelectedModuleHistory('Purchasing',[
+  'signature_pms_purchase_orders','signature_pms_grns','signature_pms_purchase_requests','signature_pms_supplier_payments'
+ ],[]);
+}
+function clearStoresHistory(){
+ return clearSelectedModuleHistory('Stores',[
+  'signature_pms_stock_movements','signature_pms_store_requisitions'
+ ],[]);
+}
 
 /* =========================================================
    CLEAR REVENUE HISTORY
