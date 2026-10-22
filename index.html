@@ -22633,25 +22633,12 @@ async function cloud(){const z=await clientReady();if(!z)return null;try{const q
 async function push(list){const z=await clientReady();if(!z)return false;const data=clean(list);try{const q=await z.c.from(CLOUD).upsert({property_id:z.p,storage_key:KEY,data,updated_by:z.u,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});if(q.error)throw q.error;replaceMine(data);return true;}catch(e){console.warn('v370 article cloud publish:',e?.message||e);return false;}}
 let busy=false;
 async function reconcile(){
- if(busy||!pid())return false;busy=true;
- try{
-  const local=clean(read());
-  replaceMine(local);
-  const cl=await cloud();
-  if(cl===null){
-    if(local.length) await push(local);
-    return false;
-  }
-  /* Union first: never lose an article that exists only on one user's browser. */
-  const merged=clean(cl.concat(local));
-  replaceMine(merged);
-  const cloudSig=JSON.stringify(cl.map(x=>({id:x.id,code:x.code,name:x.name,category:x.category,unit:x.unit,defaultCost:x.defaultCost,reorderLevel:x.reorderLevel,active:x.active})));
-  const mergedSig=JSON.stringify(merged.map(x=>({id:x.id,code:x.code,name:x.name,category:x.category,unit:x.unit,defaultCost:x.defaultCost,reorderLevel:x.reorderLevel,active:x.active})));
-  if(cloudSig!==mergedSig) await push(merged);
-  try{if(typeof renderArticles==='function')renderArticles();}catch(e){}
-  try{if(typeof renderArticleManagerList==='function')renderArticleManagerList();}catch(e){}
-  return true;
- }finally{busy=false;}
+ /* v2.1.475 follow-up: all article hydration must go through the tombstone-aware
+    canonical sync. The old v370 union reconciler resurrected deleted cloud rows. */
+ if(typeof window.hydrateSupabasePurchaseArticles==='function'){
+   return await window.hydrateSupabasePurchaseArticles();
+ }
+ return false;
 }
 window.signatureArticlesReconcile=reconcile;
 /* Save Article: original save remains responsible for local record creation; we publish after it. */
