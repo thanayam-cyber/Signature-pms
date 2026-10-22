@@ -510,10 +510,10 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="gm-kpis">
 <div class="gm-kpi"><div class="gm-label">Occupancy</div><div class="gm-value" id="dashOccupancy">0%</div><div class="gm-sub" id="gmOccSub">0 / 0 rooms</div></div>
-<div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average Daily Rate</div></div>
-<div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Revenue per available room</div></div>
-<div class="gm-kpi"><div class="gm-label">Rooms Revenue</div><div class="gm-value" id="dashRevenue">LKR 0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Actual occupied-room revenue basis</div></div>
-<div class="gm-kpi"><div class="gm-label">Total Revenue</div><div class="gm-value" id="dashTotalRevenue">LKR 0.00</div><div class="gm-sub">Rooms + Restaurant / POS</div></div>
+<div class="gm-kpi"><div class="gm-label">ADR</div><div class="gm-value" id="dashADR">$0.00</div><div class="gm-sub">Average rate on occupied rooms (actual basis)</div></div>
+<div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Actual room revenue per available room</div></div>
+<div class="gm-kpi"><div class="gm-label">Actual Rooms Revenue</div><div class="gm-value" id="dashRevenue">LKR 0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Checked-in / completed stays; meal allocation excluded</div></div>
+<div class="gm-kpi"><div class="gm-label">Actual Total Revenue</div><div class="gm-value" id="dashTotalRevenue">LKR 0.00</div><div class="gm-sub">Actual room + allocated meals + Restaurant / POS; OTA gross-up allocation applied</div></div>
 <div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
 </div>
 <div class="gm-section"><h3>Commercial Outlook — Next 7 Days</h3>
@@ -524,7 +524,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="gm-cell"><span>Pickup — Last 7 Days</span><strong id="gmPickup">—</strong></div>
 </div>
 <div id="dashboard7Day"></div>
-<div class="gm-note">Forecast revenue is based on booked room nights and their configured reservation value. It is an outlook, not a posted accounting figure.</div>
+<div class="gm-note">Forecast revenue is based on booked room nights and their configured reservation value, including eligible upcoming bookings. It is an outlook, not actual or posted accounting revenue.</div>
 </div>
 <div class="gm-section"><h3>Today's Hotel — Operational Snapshot</h3>
 <div class="gm-ops">
@@ -547,8 +547,9 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div class="gm-section"><h3>Management Controls</h3><div class="gm-actions">
-<button class="btn btn-primary" onclick="openReservationModal()">New Reservation</button><button class="btn btn-success" onclick="showPage('checkin')">Guest Check-In</button><button class="btn btn-warning" onclick="showPage('checkout')">Guest Check-Out</button><button class="btn btn-blue" onclick="showPage('pos')">Restaurant POS</button><button class="btn btn-secondary" onclick="showPage('reports')">Reports</button>
+<button class="btn btn-secondary" type="button" onclick="showPage('reports')">Reports</button>
 </div></div>
+
 </div>
 </section>
 <!-- =========================================================
@@ -12601,6 +12602,9 @@ function renderDashboard(){
     const roomCount=Math.max(1,getRoomCount());
     const activeStatuses=["Reserved","Confirmed","Checked-In"];
     const activeRoomRes=reservations.filter(r=>r.bookingType==="room"&&activeStatuses.includes(r.status));
+    // Actual revenue is limited to stays that have checked in or completed; upcoming Reserved/Confirmed bookings remain forecast only.
+    const recognizedRoomRes=reservations.filter(r=>r.bookingType==="room"&&["Checked-In","Checked-Out"].includes(r.status));
+    const recognizedVillaRes=reservations.filter(r=>r.bookingType==="villa"&&["Checked-In","Checked-Out"].includes(r.status));
     const villaRes=reservations.filter(r=>r.bookingType==="villa"&&activeStatuses.includes(r.status));
     const overlaps=(r,d)=>r.status!=="Cancelled"&&r.status!=="No-Show"&&String(r.checkIn||"")<=d&&String(r.checkOut||"")>d;
     const bookedForDate=(d)=>{
@@ -12612,6 +12616,8 @@ function renderDashboard(){
     const nightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);return dashboardBaseAmount(r)/n;};
     const roomNightlyValue=r=>{const n=Math.max(1,Number(r.nights||0)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||1);const a=getReservationRevenueAllocation(r);return Number(a.room||0)*Number(r?.postingRateAtBooking&&String(r.currency||"USD").toUpperCase()!==String(r.baseCurrency||settings?.baseCurrency||"LKR").toUpperCase()?r.postingRateAtBooking:1)/n;};
     const roomRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>s+roomNightlyValue(r),0)+((villaRes.find(r=>overlaps(r,d)))?Math.max(0,Number(villaRes.find(r=>overlaps(r,d)).total||0)/Math.max(1,Number(villaRes.find(r=>overlaps(r,d)).nights||1))):0):0;
+    // Recognized room revenue excludes future bookings and keeps meal-plan allocation out of Rooms Revenue.
+    const actualRoomRevenueForDate=d=>recognizedRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>s+roomNightlyValue(r),0)+((recognizedVillaRes.find(r=>overlaps(r,d)))?Math.max(0,Number(recognizedVillaRes.find(r=>overlaps(r,d)).total||0)/Math.max(1,Number(recognizedVillaRes.find(r=>overlaps(r,d)).nights||1))):0);
     const restaurantForDate=d=>sales.filter(s=>String(s.date||"").slice(0,10)===d&&Number(s.total||0)>0).reduce((s,x)=>s+fnbSaleAmountLKR(x,Number(x.total||0)),0);
     const occupiedForDate=d=>bookedForDate(d);
     const arrivals=reservations.filter(r=>r.checkIn===today&&r.status!=="Cancelled"&&r.status!=="No-Show");
@@ -12620,9 +12626,9 @@ function renderDashboard(){
     let occupied=0; roomIds.forEach(roomId=>{const b=getBookingForRoom(roomId,today); if(b&&b.status==="Checked-In") occupied++;}); const villaToday=getVillaBooking(today); if(villaToday&&villaToday.status==="Checked-In") occupied=roomCount; const reserved=reservations.filter(r=>r.checkIn===today&&["Reserved","Confirmed"].includes(r.status)).length,available=Math.max(0,roomCount-occupied-reserved),oos=0;
     roomIds.forEach(roomId=>{if(getRoomOperationalConfig(roomId)?.housekeepingStatus==="oos")oos++;});
     const occPct=Math.round((occupied/roomCount)*100);
-    const roomRevenueToday=roomRevenueForDate(today),restaurantRevenue=restaurantForDate(today);
-    const packageFnbRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();const rate=(cur===base||cur==="LKR")?1:Number(r?.postingRateAtBooking||settings?.postingRate||320)||320;return s+(Number(a.breakfast||0)+Number(a.lunch||0)+Number(a.dinner||0))*rate;},0):0;
-    const packageExperienceRevenueForDate=d=>activeStatuses.length?activeRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();const rate=(cur===base||cur==="LKR")?1:Number(r?.postingRateAtBooking||settings?.postingRate||320)||320;return s+Number(a.experience||0)*rate;},0):0;
+    const roomRevenueToday=actualRoomRevenueForDate(today),restaurantRevenue=restaurantForDate(today);
+    const packageFnbRevenueForDate=d=>recognizedRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();const rate=(cur===base||cur==="LKR")?1:Number(r?.postingRateAtBooking||settings?.postingRate||320)||320;return s+(Number(a.breakfast||0)+Number(a.lunch||0)+Number(a.dinner||0))*rate;},0);
+    const packageExperienceRevenueForDate=d=>recognizedRoomRes.filter(r=>overlaps(r,d)).reduce((s,r)=>{const a=getReservationRevenueAllocation(r);const cur=String(r?.currency||settings?.guestCurrency||settings?.currency||"USD").toUpperCase();const base=String(settings?.baseCurrency||"LKR").toUpperCase();const rate=(cur===base||cur==="LKR")?1:Number(r?.postingRateAtBooking||settings?.postingRate||320)||320;return s+Number(a.experience||0)*rate;},0);
     const totalRevenueToday=roomRevenueToday+restaurantRevenue+packageFnbRevenueForDate(today)+packageExperienceRevenueForDate(today);
     const adr=occupied>0?roomRevenueToday/occupied:0,revpar=roomRevenueToday/roomCount;
     const apOutstanding=apTotals(today).total;
@@ -12633,10 +12639,10 @@ function renderDashboard(){
     window.__gmPeriod=window.__gmPeriod||"today";
     const kind=window.__gmPeriod, ps=periodStart(kind), pe=periodEnd(kind);
     const days=[];for(let d=new Date(ps+"T00:00:00");d<=new Date(pe+"T00:00:00");d.setDate(d.getDate()+1))days.push(localDateString(new Date(d)));
-    const periodRooms=days.reduce((s,d)=>s+roomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0),periodPackageFnb=days.reduce((s,d)=>s+packageFnbRevenueForDate(d)+packageExperienceRevenueForDate(d),0);
+    const periodRooms=days.reduce((s,d)=>s+actualRoomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0),periodPackageFnb=days.reduce((s,d)=>s+packageFnbRevenueForDate(d)+packageExperienceRevenueForDate(d),0);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
     set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",accMoney(periodAdr));set("dashRevPAR",accMoney(periodRevpar));set("dashRevenue",accMoney(periodRooms));set("dashTotalRevenue",accMoney(periodRooms+periodPackageFnb+periodFnb));set("gmGop","—");set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",accMoney(apOutstanding));set("dashOutstanding",accMoney(outstanding));set("dashRestaurant",accMoney(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
-    set("gmRoomRevenueSub",kind==="today"?"Estimated room-night revenue":"Period room-night revenue");
+    set("gmRoomRevenueSub",kind==="today"?"Checked-in / completed stays; meal allocation excluded":"Actual recognized room-night revenue; meal allocation excluded");
     ["today","mtd","ytd"].forEach(k=>{const e=document.getElementById("gm"+({today:"Today",mtd:"Mtd",ytd:"Ytd"}[k])+"Btn");if(e)e.classList.toggle("active",k===kind);});
 
     const outlook=[];let rev7=0,occ7=0;for(let i=0;i<7;i++){const d=new Date(today+"T00:00:00");d.setDate(d.getDate()+i);const ds=localDateString(d),sold=bookedForDate(ds),occ=Math.round(sold/roomCount*100),arr=reservations.filter(r=>r.checkIn===ds&&r.status!=="Cancelled"&&r.status!=="No-Show").length,dep=reservations.filter(r=>r.checkOut===ds&&["Reserved","Confirmed","Checked-In","Checked-Out"].includes(r.status)).length,rr=roomRevenueForDate(ds),a=sold?rr/sold:0;rev7+=rr;occ7+=occ;outlook.push({ds,sold,occ,arr,dep,adr:a,rr});}
