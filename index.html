@@ -10,7 +10,7 @@
 <meta content="#17251d" name="theme-color"/>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxMDFjMmMiLz48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iNTgiIGhlaWdodD0iNTgiIHJ4PSI5IiBmaWxsPSJub25lIiBzdHJva2U9IiNkNmIzNmEiIHN0cm9rZS13aWR0aD0iMiIvPjx0ZXh0IHg9IjMyIiB5PSI0MyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsVGltZXMgTmV3IFJvbWFuLHNlcmlmIiBmb250LXNpemU9IjMxIiBmb250LXdlaWdodD0iNzAwIiBsZXR0ZXItc3BhY2luZz0iLTMiIGZpbGw9IiNlM2M0N2UiPlNIPC90ZXh0PjxwYXRoIGQ9Ik0xMyA0OSBINTEiIHN0cm9rZT0iI2Q2YjM2YSIgc3Ryb2tlLXdpZHRoPSIxIiBvcGFjaXR5PSIuNzUiLz48L3N2Zz4="/>
 <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxMDFjMmMiLz48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iNTgiIGhlaWdodD0iNTgiIHJ4PSI5IiBmaWxsPSJub25lIiBzdHJva2U9IiNkNmIzNmEiIHN0cm9rZS13aWR0aD0iMiIvPjx0ZXh0IHg9IjMyIiB5PSI0MyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsVGltZXMgTmV3IFJvbWFuLHNlcmlmIiBmb250LXNpemU9IjMxIiBmb250LXdlaWdodD0iNzAwIiBsZXR0ZXItc3BhY2luZz0iLTMiIGZpbGw9IiNlM2M0N2UiPlNIPC90ZXh0PjxwYXRoIGQ9Ik0xMyA0OSBINTEiIHN0cm9rZT0iI2Q2YjM2YSIgc3Ryb2tlLXdpZHRoPSIxIiBvcGFjaXR5PSIuNzUiLz48L3N2Zz4="/>
-<title>Signature PMS — Hotel Edition v2.1.0</title>
+<title>Signature PMS — Hotel Edition v2.1.475</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;color:#17251d}
@@ -340,7 +340,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="auth-brand">
 <h1>Signature</h1>
 <p>PMS &amp; POS</p>
-<small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.209</small>
+<small style="display:block;margin-top:6px;opacity:.75">Hotel Edition · v2.1.475</small>
 </div>
 <!-- LOGIN -->
 <div id="loginView" style="display: block;">
@@ -1604,7 +1604,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div>
 <h3>Property Management</h3>
 <div style="font-size:12px;color:#6b7280;margin-top:4px">
-                    Commercial Hotel Edition · Version 2.1.265
+                    Commercial Hotel Edition · Version 2.1.475
                 </div>
 </div>
 <div class="toolbar">
@@ -1667,7 +1667,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 <div style="margin-top:12px;padding:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;font-size:12px;color:#4b5563">
-<strong>Signature PMS Hotel Edition v2.1.0</strong><br/>
+<strong>Signature PMS Hotel Edition v2.1.475</strong><br/>
         Licensed for operational use by the configured property. Keep your license key and regular backups secure.
         Support and future software updates are provided according to your commercial agreement with Signature Hospitality.
     </div>
@@ -1822,7 +1822,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section></div>
 <footer>
-    Signature PMS &amp; POS — Hotel Edition · Version 2.1.431 · © Signature Hospitality
+    Signature PMS &amp; POS — Hotel Edition · Version 2.1.475 · © Signature Hospitality
 </footer>
 </main>
 <!-- =========================================================
@@ -2731,7 +2731,7 @@ const MASTER_PROPERTY_NEUTRAL=true;
 
 const APP_NAME="Signature PMS";
 const APP_EDITION="Hotel Edition";
-const APP_VERSION="2.1.328-channel-manager-generic";
+const APP_VERSION="2.1.475";
 
 let properties=[];
 let currentPropertyId=null;
@@ -14580,6 +14580,7 @@ function journalEntries(){
   });
   return dedupeAccountingJournalRows(mine,currentPropertyId);
 }
+window.journalEntries=journalEntries;
 window.postJournal=postJournal;
 function postJournal(date,ref,description,lines,source){
   /* Persist an explicit account code with each journal line. This prevents duplicate
@@ -28138,7 +28139,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const ORIGINAL_AMOUNT=13764.71;
   function moneyEqual(a,b){return Math.abs(Number(a||0)-Number(b||0))<0.011;}
   function findTarget(){
-    try{return journalEntries().find(j=>String(j.reference||'')===TARGET_JOURNAL && String(j.source||'')==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===TARGET_DATE)||null;}catch(e){return null;}
+    try{return window.journalEntries().find(j=>String(j.reference||'')===TARGET_JOURNAL && String(j.source||'')==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===TARGET_DATE)||null;}catch(e){return null;}
   }
   function hasExpectedOriginal(j){
     if(!j)return false;
@@ -28190,7 +28191,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const selectedRevenueDate=String(document.getElementById('dailyRevenuePostingDate')?.value||'').slice(0,10);
       if(selectedRevenueDate!==TARGET_DATE)throw new Error('Select Revenue Date 2026-10-22 in the Daily Revenue Posting date field first. Current selected field value: '+(selectedRevenueDate||'(blank)')+'. No correction was posted.');
       if(typeof window.signatureAccountingJournalCloud?.sync!=='function')throw new Error('Accounting cloud sync is not available. No correction was posted. Refresh the PMS and try again.');
-      if(journalEntries().some(j=>String(j.reference||'')===CORRECTION_REF))throw new Error('This correction reference already exists. Do not repeat it; refresh General Ledger and Journal Review.');
+      if(window.journalEntries().some(j=>String(j.reference||'')===CORRECTION_REF))throw new Error('This correction reference already exists. Do not repeat it; refresh General Ledger and Journal Review.');
       const target=findTarget();
       if(!hasExpectedOriginal(target))throw new Error('The original incremental journal does not match the expected amount/source. No correction was posted.');
       if(matchingPosInvoiceExists())throw new Error('A matching Restaurant POS invoice is present in this property/date. No correction was posted.');
@@ -28200,15 +28201,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(!moneyEqual(Number(alloc.breakfast||0),11700)||!moneyEqual(Number(alloc.room||0),66300))throw new Error('Current ASA allocation is not LKR 11,700 breakfast / LKR 66,300 room. No correction was posted.');
       const ok=confirm('Post one correcting journal for Signature Hotel, business date 2026-10-22?\n\nDebit Restaurant Revenue: LKR 2,064.71\nCredit Accounts Receivable: LKR 2,064.71\n\nThis reduces the old LKR 13,764.71 restaurant entry to the correct LKR 11,700 breakfast allocation. It does not post the pending LKR 66,300 room revenue. Continue only if no matching POS invoice exists.');
       if(!ok)return;
-      postJournal(TARGET_DATE,CORRECTION_REF,'Correction of ASA meal-plan over-allocation — reduce Restaurant Revenue by LKR 2,064.71',[
+      window.postJournal(TARGET_DATE,CORRECTION_REF,'Correction of ASA meal-plan over-allocation — reduce Restaurant Revenue by LKR 2,064.71',[
         {account:'Restaurant Revenue',debit:EXCESS,credit:0,revenueSource:'Meal Plan Allocation Correction'},
         {account:'Accounts Receivable',debit:0,credit:EXCESS,revenueSource:'Meal Plan Allocation Correction'}
       ],'Revenue Allocation Correction');
-      const all=accRead(ACC_STORE.journals);
-      const created=all.find(j=>String(j.reference||'')===CORRECTION_REF && String(j.propertyId??currentPropertyId)===String(currentPropertyId));
-      if(created)created.businessDate=TARGET_DATE;
-      accWrite(ACC_STORE.journals,all);
-      if(typeof logAudit==='function')logAudit('ACCOUNTING_REVENUE_ALLOCATION_CORRECTED',CORRECTION_REF,'Restaurant Revenue reduced by LKR 2,064.71 for ASA meal allocation correction.',currentPropertyId);
+      /* postJournal persists the entry itself. Avoid reaching into the accounting
+         module's private accRead/accWrite bindings from this isolated correction IIFE. */
       await window.signatureAccountingJournalCloud.sync();
       if(typeof renderAccounting==='function')renderAccounting();
       if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();
@@ -28224,3 +28222,36 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else window.updateAsaMealAllocationCorrectionButton();
 })();
 </script>
+
+<style id="signature-pms-navy-light-theme-patch">
+
+/* Signature PMS navy/light visual theme patch. CSS-only; application logic and data untouched. */
+:root{color-scheme:light;--sig-navy:#102a43;--sig-navy-2:#173f63;--sig-blue:#2563eb;--sig-bg:#f3f7fb;--sig-border:#dbe4ee;--sig-text:#172b3a;--sig-muted:#64788b;}
+body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
+.sidebar{background:linear-gradient(180deg,#102a43 0%,#173f63 100%)!important;color:#f8fafc!important;}
+.nav-btn{color:#dbeafe!important;transition:background .15s ease,color .15s ease;}
+.nav-btn:hover,.nav-btn.active{background:#2563eb!important;color:#fff!important;}
+.brand{border-bottom-color:rgba(219,234,254,.22)!important;}
+.brand small{color:#bfdbfe!important;}
+.main .topbar{background:#fff!important;border-bottom-color:var(--sig-border)!important;box-shadow:0 2px 8px rgba(16,42,67,.04);}
+.main .topbar h1,.main .current-user strong{color:var(--sig-navy)!important;}
+.main .current-user{background:#eaf1f8!important;color:#334e68!important;}
+.content{background:var(--sig-bg)!important;}
+.main .card,.main .section,.main .summary-box{background:#fff!important;border-color:var(--sig-border)!important;box-shadow:0 2px 8px rgba(16,42,67,.035);}
+.main .card-title,.main .date-now,.main .kpi-sub{color:var(--sig-muted)!important;}
+.main .btn-primary{background:var(--sig-navy)!important;color:#fff!important;}
+.main .btn-primary:hover{background:var(--sig-navy-2)!important;}
+.main .btn-blue{background:var(--sig-blue)!important;color:#fff!important;}
+.main .btn-secondary{background:#e8eef5!important;color:#17324d!important;border:1px solid #d4dfeb!important;}
+.main .nav-btn:focus-visible,.main button:focus-visible{outline:2px solid #60a5fa;outline-offset:2px;}
+.main input,.main select,.main textarea{border-color:#cbd7e3!important;background:#fff!important;color:#172b3a!important;}
+.main input:focus,.main select:focus,.main textarea:focus{border-color:#6096ce!important;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;}
+.main table th{background:#edf3f9!important;color:#334e68!important;}
+.main table td{border-bottom-color:#e3eaf2!important;}
+.main .room-card{box-shadow:0 2px 7px rgba(16,42,67,.035);}
+.main .room-card.occupied{border-left-color:#2563eb!important;}
+.main .room-card.available{border-left-color:#16a34a!important;}
+.main .room-card.reserved{border-left-color:#d97706!important;}
+/* Preserve semantic status colours and the original layouts. */
+
+</style>
