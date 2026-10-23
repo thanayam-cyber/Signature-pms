@@ -14981,7 +14981,7 @@ function dailyRevenueRows(date){
     const outletName=String(x.outletName||outlet?.name||'').toLowerCase();
     const isBar=outletType==='bar' || outletName.includes('bar') || itemBar;
     const revenueAccount=isBar?'Bar Revenue':'Restaurant Revenue';
-    rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,r||x),account:revenueAccount});
+    rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,x),account:revenueAccount});
   });
   accProp(folios||[]).forEach(f=>{
     const r=reservations.find(z=>z.id===f.reservationId);
