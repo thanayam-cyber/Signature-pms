@@ -975,7 +975,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="form-group"><label>Opening Float (LKR)</label><input id="csOpeningFloat" min="0" step="0.01" type="number" value="0"/></div>
 <div class="form-group"><label>Cashier</label><input id="csCashierName" readonly="" type="text"/></div>
 </div>
-<div id="csShiftMessage" style="font-size:12px;color:#6b7280;margin-top:8px"></div>
+<div id="csShiftMessage" style="font-size:12px;color:#6b7280;margin-top:8px"></div><div style="font-size:12px;color:#6b7280;margin-top:6px">Admin: if another cashier has closed the business day, use Reopen Cashier Day in the Closing Record section first, then open your own shift. The audit log records the reopening.</div>
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-success" onclick="openCashierShift()">Open Cashier Shift</button></div>
 </div>
 <div class="section" style="padding:14px;background:#f8faf9;margin-top:14px">
@@ -1000,6 +1000,15 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section" style="padding:14px;background:#f8faf9;margin-top:14px">
 <div class="section-header" style="margin-bottom:8px"><h3>4. Closing Record</h3><div id="csReopenWrap" style="display:none"><button class="btn btn-warning" onclick="window.reopenCashierDay()" type="button">Reopen Cashier Day</button></div></div>
 <div class="empty" id="csClosingRecord">No cashier closing recorded for this business date.</div>
+</div>
+<div class="section" id="adminCashierFloatManager" style="padding:14px;background:#f8faf9;margin-top:14px;display:none">
+<div class="section-header"><div><h3>5. Admin — Cashier Float Management</h3><div style="font-size:12px;color:#6b7280">Admin can open or close a cashier's float for the selected property's current business date. Each action is recorded in the audit log.</div></div><button class="btn btn-secondary" type="button" onclick="window.renderAdminCashierFloatManager()">Refresh</button></div>
+<div class="form-grid" style="margin:10px 0">
+<div class="form-group"><label for="adminFloatCashier">Cashier username</label><input id="adminFloatCashier" type="text" placeholder="e.g. Reception 01"/></div>
+<div class="form-group"><label for="adminFloatOpening">Opening Float (LKR)</label><input id="adminFloatOpening" type="number" min="0" step="0.01" value="0"/></div>
+</div>
+<div class="toolbar" style="margin-bottom:12px"><button class="btn btn-primary" type="button" onclick="window.adminOpenCashierFloat()">Open Cashier Float</button></div>
+<div class="table-wrap"><table><thead><tr><th>Cashier</th><th>Business Date</th><th>Status</th><th>Opening Float</th><th>Opened At</th><th>Action</th></tr></thead><tbody id="adminCashierFloatTable"><tr><td colspan="6" class="empty">No cashier shifts found.</td></tr></tbody></table></div>
 </div>
 </div>
 </section>
@@ -1261,7 +1270,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section">
 <div class="section-header">
 <div class="section" id="dailyRevenuePostingSection">
-<div class="section-header"><div><h3>Daily Revenue Posting</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Post operational revenue for a selected business date. Previous business dates remain available after Night Audit until they are posted.</div></div><div class="toolbar"><label style="font-size:12px;color:#6b7280">Revenue Date</label><input id="dailyRevenuePostingDate" onchange="renderDailyRevenuePosting()" type="date"/><button class="btn btn-secondary" onclick="selectCurrentRevenueDate()">Current Business Date</button><button class="btn btn-primary" onclick="postDailyRevenue()">Post Daily Revenue</button></div></div>
+<div class="section-header"><div><h3>Daily Revenue Posting</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Post operational revenue for a selected business date. Previous business dates remain available after Night Audit until they are posted.</div></div><div class="toolbar"><label style="font-size:12px;color:#6b7280">Revenue Date</label><input id="dailyRevenuePostingDate" onchange="renderDailyRevenuePosting()" type="date"/><button class="btn btn-secondary" onclick="selectCurrentRevenueDate()">Current Business Date</button><button class="btn btn-primary" onclick="postDailyRevenue()">Post Daily Revenue</button><button class="btn btn-secondary" id="asaMealAllocationCorrectionBtn" style="display:none" type="button" onclick="window.correctAsaMealAllocationJournal()">Correct ASA Allocation (LKR 2,064.71)</button></div></div>
 <div class="grid-4" style="margin-bottom:12px">
 <div class="kpi"><span>Room Revenue</span><strong id="dailyPostRoom">LKR0.00</strong></div>
 <div class="kpi"><span>Restaurant Revenue</span><strong id="dailyPostRestaurant">LKR0.00</strong></div>
@@ -2265,28 +2274,26 @@ function saveMealPlanRevenuePercentages(){
     alert("Meal plan food percentages saved successfully.");
 }
 function getReservationRevenueAllocation(r){
-    /* Meal-plan revenue is split from the base rate before OTA commission gross-up.
-       A gross-up reservation stores the guest selling total (for example 41,176.47
-       when the base rate is 35,000 and OTA commission is 15%). Back out that gross-up
-       for the meal-plan split, while the OTA commission remains a separate expense
-       calculated from the saved gross reservation total in dailyRevenueOtaCommissionRows().
-       Food percentages are defined against the room component: at BB 15%, a 35,000
-       base rate allocates 6,176.47 to breakfast and 28,823.53 to room. */
+    /* Meal-plan food percentage is defined against the guest-facing booking total,
+       matching the Accounting settings example (BB at 15%: Food 25.50 + Room 144.50
+       for a total of 170). For OTA gross-up bookings, the room/food split must still
+       fit the pre-commission base; calculate food as the configured percentage of
+       the saved guest total, then subtract it from the pre-gross-up base. The separate
+       OTA gross-up revenue line accounts for the difference between base and saved total.
+       For non-gross-up bookings, split the saved total directly. */
     const savedTotal=Math.max(0,Number(r?.total||0));
     const channel=reservationBookingChannelValue(r).trim().toLowerCase();
     const sd=normalizeSalesDistribution(settings?.salesDistribution);
     const ota=(sd.otaChannels||[]).find(x=>String(x.name||'').trim().toLowerCase()===channel && x.active!==false);
     const commission=Math.max(0,Math.min(99.99,Number(ota?.commission)||0));
-    const total=(ota && ota.calculation==='grossup' && commission>0)
-        ? savedTotal*(1-commission/100)
-        : savedTotal;
+    const isGrossup=!!(ota && ota.calculation==='grossup' && commission>0);
+    const baseTotal=isGrossup ? savedTotal*(1-commission/100) : savedTotal;
     const nights=Math.max(1,Number(r?.nights||1));
     const foodPct=Math.max(0,Math.min(99.99,Number(getMealPlanFoodPercentages()[String(r?.mealPlan||"RO").trim().toUpperCase()] ?? 0)||0));
-    const nightly=total/nights;
-    const food=foodPct>0 ? nightly*foodPct/(100-foodPct) : 0;
-    const boundedFood=Math.min(nightly,food);
-    const room=nightly-boundedFood;
-    return {room:Math.max(0,room),breakfast:Math.max(0,boundedFood),lunch:0,dinner:0,experience:0};
+    const savedFoodTotal=savedTotal*foodPct/100;
+    const foodTotal=Math.min(baseTotal,savedFoodTotal);
+    const roomTotal=Math.max(0,baseTotal-foodTotal);
+    return {room:Math.max(0,roomTotal/nights),breakfast:Math.max(0,foodTotal/nights),lunch:0,dinner:0,experience:0};
 }
 function updateRateAllocationRow(rowId, rate){
     const row=document.getElementById(rowId);
@@ -2813,7 +2820,7 @@ const ACTION_PERMISSION_KEYS=ACTION_PERMISSION_OPTIONS.map(x=>x[0]);
 /* Roles are labels only. Non-Admin permissions are intentionally NOT hard-coded;
    access is granted only by the selected User Rights checkboxes. */
 function getUserPermissions(user=currentUser){
-    if(user?.role==="Admin") return {pages:PERMISSION_PAGES.map(x=>x[0]),actions:ACTION_PERMISSION_KEYS.slice()};
+    if(String(user?.role||'').trim().toLowerCase()==='admin') return {pages:PERMISSION_PAGES.map(x=>x[0]),actions:ACTION_PERMISSION_KEYS.slice()};
     return {
         pages:[...new Set(Array.isArray(user?.permissions?.pages)?user.permissions.pages:[])],
         actions:[...new Set(Array.isArray(user?.permissions?.actions)?user.permissions.actions:[])]
@@ -2821,7 +2828,7 @@ function getUserPermissions(user=currentUser){
 }
 function hasActionPermission(permission,user=currentUser){
     if(!user)return false;
-    if(user.role==="Admin")return true;
+    if(String(user.role||'').trim().toLowerCase()==='admin')return true;
     const stored=user?.permissions?.actions;
     return Array.isArray(stored) && stored.includes(permission);
 }
@@ -12538,7 +12545,7 @@ function closeCashierDay(){
     cashierShiftRefresh(); if(typeof renderAll==='function')renderAll(); if(typeof naRender==='function')naRender(); alert('Cashier day closed successfully. Variance: '+accMoney(result.variance));
 }
 function reopenCashierDay(){
-    if(!currentUser || currentUser.role!=='Admin'){ alert('Only an Admin can reopen a closed cashier day.'); return; }
+    if(!currentUser || String(currentUser.role||'').trim().toLowerCase()!=='admin'){ alert('Only an Admin can reopen a closed cashier day.'); return; }
     const d=String(cashierBusinessDate()||localDateString());
     const closing=cashierClosingForBusinessDate();
     if(!closing){ alert('There is no closed cashier day for '+formatDate(d)+'.'); return; }
@@ -12585,9 +12592,88 @@ function cashierShiftRefresh(){
     const av=document.getElementById('cashierActualCash');if(av){if(!(sh||cl))av.value='';else if(cl)av.value=String(actual);else if(hasActual)av.value=String(actual);}
     const cv=document.getElementById('csVariance');if(cv)cv.value=accMoney(variance);
     const cm=document.getElementById('csShiftMessage');if(cm)cm.textContent=cl?'Cashier day is closed.':sh?'Shift opened by '+sh.cashier+' at '+sh.openedAt+'.':anyCashierShift()?'Another cashier has an open cashier shift.':'No cashier shift is open for this business date.';
-    const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+accMoney(cl.expectedCash)+' | Actual: '+accMoney(cl.actualCash)+' | Variance: '+accMoney(cl.variance)):'No cashier closing recorded for this business date.'; const rw=document.getElementById('csReopenWrap'); if(rw)rw.style.display=(cl&&currentUser?.role==='Admin')?'block':'none';
+    const rec=document.getElementById('csClosingRecord');if(rec)rec.innerHTML=cl?('<strong>Closed</strong><br>Closed by '+(cl.closedBy||'')+' at '+(cl.closedAt||'')+'<br>Expected: '+accMoney(cl.expectedCash)+' | Actual: '+accMoney(cl.actualCash)+' | Variance: '+accMoney(cl.variance)):'No cashier closing recorded for this business date.'; const rw=document.getElementById('csReopenWrap'); if(rw)rw.style.display=(cl&&String(currentUser?.role||'').trim().toLowerCase()==='admin')?'block':'none'; try{renderAdminCashierFloatManager();}catch(e){}
 }
 bindCashierOpeningFloatPersistence();
+
+function isPmsAdmin(user=currentUser){return String(user?.role||'').trim().toLowerCase()==='admin';}
+function adminCashierShiftPayments(shift){
+  const all=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
+  const cashier=String(shift?.cashier||'').trim().toLowerCase();
+  const shiftId=String(shift?.id||'');
+  const date=String(shift?.businessDate||'').slice(0,10);
+  return all.filter(p=>{
+    if(String(p.propertyId||currentPropertyId)!==String(shift.propertyId||currentPropertyId))return false;
+    const pd=String(paymentBusinessDate(p)||'').slice(0,10);
+    if(pd!==date)return false;
+    if(p.shiftId && shiftId)return String(p.shiftId)===shiftId;
+    return String(p.cashier||p.receivedBy||'').trim().toLowerCase()===cashier;
+  });
+}
+function renderAdminCashierFloatManager(){
+  const wrap=document.getElementById('adminCashierFloatManager');
+  const tb=document.getElementById('adminCashierFloatTable');
+  if(!wrap||!tb)return;
+  if(!isPmsAdmin()){wrap.style.display='none';return;}
+  wrap.style.display='block';
+  const date=String(cashierBusinessDate()||'').slice(0,10),prop=String(currentPropertyId||'');
+  const rows=cashierShiftRows().filter(s=>String(s.propertyId??'')===prop&&String(s.businessDate||'').slice(0,10)===date);
+  tb.innerHTML=rows.length?rows.map(s=>{
+    const open=String(s.status||'').toLowerCase()==='open';
+    const action=open
+      ? `<button class="btn btn-warning btn-small" type="button" onclick="window.adminCloseCashierFloat('${String(s.id).replace(/'/g,"\\'")}')">Close Float</button>`
+      : `<span class="badge badge-green">Closed</span>`;
+    return `<tr><td>${escapeHtml(s.cashier||'')}</td><td>${escapeHtml(s.businessDate||'')}</td><td>${escapeHtml(s.status||'')}</td><td style="text-align:right">${accMoney(s.openingFloat||0)}</td><td>${escapeHtml(s.openedAt||'')}</td><td>${action}</td></tr>`;
+  }).join(''):`<tr><td colspan="6" class="empty">No cashier shifts for ${escapeHtml(date)}.</td></tr>`;
+}
+window.renderAdminCashierFloatManager=renderAdminCashierFloatManager;
+window.adminOpenCashierFloat=function(){
+  if(!isPmsAdmin()){alert('Only Admin can open a cashier float for another user.');return;}
+  const date=String(cashierBusinessDate()||'').slice(0,10),prop=String(currentPropertyId||'');
+  if(cashierClosingForBusinessDate()){alert('The cashier day is already closed. Use Reopen Cashier Day first, then open the float.');return;}
+  const name=String(document.getElementById('adminFloatCashier')?.value||'').trim();
+  const amount=Number(document.getElementById('adminFloatOpening')?.value||0);
+  if(!name){alert('Enter the cashier username.');return;}
+  if(!Number.isFinite(amount)||amount<0){alert('Opening float cannot be negative.');return;}
+  const rows=cashierShiftRows();
+  const exists=rows.some(s=>String(s.propertyId??'')===prop&&String(s.businessDate||'').slice(0,10)===date&&String(s.cashier||'').trim().toLowerCase()===name.toLowerCase()&&String(s.status||'').toLowerCase()==='open');
+  if(exists){alert('An open float already exists for '+name+' on '+date+'.');return;}
+  const shift={id:'CS_ADMIN_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),propertyId:currentPropertyId,businessDate:date,cashier:name,openingFloat:Math.round(amount*100)/100,openedAt:localDateTime(),openedBy:currentUser?.username||'Admin',status:'Open'};
+  rows.push(shift);saveCashierShiftRows(rows);
+  logAudit('CASHIER_SHIFT_OPENED_BY_ADMIN',shift.id,'Admin '+(currentUser?.username||'')+' opened cashier float for '+name+'. Opening float '+shift.openingFloat,currentPropertyId);
+  renderAdminCashierFloatManager();cashierShiftRefresh();
+  alert('Cashier float opened for '+name+'.');
+};
+window.adminCloseCashierFloat=function(shiftId){
+  if(!isPmsAdmin()){alert('Only Admin can close a cashier float for another user.');return;}
+  const date=String(cashierBusinessDate()||'').slice(0,10),prop=String(currentPropertyId||'');
+  if(cashierClosingForBusinessDate()){alert('The cashier day is already closed. Use Reopen Cashier Day first, then close the selected float.');return;}
+  const rows=cashierShiftRows();
+  const shift=rows.find(s=>String(s.id)===String(shiftId)&&String(s.propertyId??'')===prop&&String(s.businessDate||'').slice(0,10)===date&&String(s.status||'').toLowerCase()==='open');
+  if(!shift){alert('The selected open cashier float was not found for this property and business date.');return;}
+  const list=adminCashierShiftPayments(shift),sum=cashierPaymentSummaryLKR(list);
+  const expected=Math.round((Number(shift.openingFloat||0)+Number(sum.cash||0)-Number(sum.cashRefunds||0))*100)/100;
+  const raw=prompt('Close cashier float for '+shift.cashier+'\nBusiness date: '+date+'\nExpected cash: '+accMoney(expected)+'\n\nEnter actual cash counted (LKR):',''+expected);
+  if(raw===null)return;
+  const actual=Number(String(raw).trim());
+  if(String(raw).trim()===''||!Number.isFinite(actual)||actual<0){alert('Enter a valid non-negative actual cash count. Float was not closed.');return;}
+  const variance=Math.round((actual-expected)*100)/100,now=localDateTime();
+  const updated=rows.map(s=>String(s.id)===String(shift.id)?({...s,status:'Closed',closedAt:now,closedBy:currentUser?.username||'Admin',expectedCash:expected,actualCash:actual,variance,adminClosed:true}):s);
+  saveCashierShiftRows(updated);
+  const remaining=updated.filter(s=>String(s.propertyId??'')===prop&&String(s.businessDate||'').slice(0,10)===date&&String(s.status||'').toLowerCase()==='open');
+  logAudit('CASHIER_SHIFT_CLOSED_BY_ADMIN',shift.id,'Admin '+(currentUser?.username||'')+' closed cashier float for '+shift.cashier+'. Expected '+expected+', actual '+actual+', variance '+variance,currentPropertyId);
+  if(!remaining.length){
+    const closing={id:'CC_'+Date.now(),propertyId:currentPropertyId,date,closedAt:now,closedBy:currentUser?.username||'Admin',cashier:shift.cashier,openingFloat:Number(shift.openingFloat||0),cashReceived:Number(sum.cash||0),cashRefunds:Number(sum.cashRefunds||0),expectedCash:expected,actualCash:actual,variance};
+    const closings=readArray(STORAGE.cashierClosings);
+    if(!closings.some(c=>String(c.propertyId||currentPropertyId)===prop&&String(c.date||'').slice(0,10)===date))closings.push(closing);
+    localStorage.setItem(STORAGE.cashierClosings,JSON.stringify(closings));
+    const finalRows=updated.map(s=>String(s.id)===String(shift.id)?({...s,closingId:closing.id}):s);
+    saveCashierShiftRows(finalRows);
+    logAudit('CASHIER_DAY_CLOSED_BY_ADMIN','CC_'+date,'Admin closed cashier day after closing final cashier float. Variance '+variance,currentPropertyId);
+  }
+  renderAdminCashierFloatManager();cashierShiftRefresh();
+  alert('Cashier float closed for '+shift.cashier+'. Expected: '+accMoney(expected)+', actual: '+accMoney(actual)+', variance: '+accMoney(variance)+(remaining.length?'\nOther cashier shifts remain open; business day remains open.':'\nAll cashier shifts are closed; cashier day is now closed.'));
+};
 
 function printCashierSummary(){const d=cashierBusinessDate(),list=getTodayCashierPayments(),sum=cashierPaymentSummaryLKR(list),w=window.open('','_blank');if(!w)return;const cl=cashierClosingForBusinessDate(),sh=currentCashierShift()||cl;const expected=Number(sh?.openingFloat||0)+sum.cash-sum.cashRefunds;w.document.write(`<html><head><title>Cashier Report ${d}</title><style>body{font-family:Arial;padding:30px}.line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #ddd}</style></head><body><h2>Signature PMS — Daily Cashier Report</h2><div>Business Date: ${d}</div><div>Cashier: ${currentUser?.username||''}</div><div class='line'><span>Opening Float</span><strong>${accMoney(sh?.openingFloat||0)}</strong></div><div class='line'><span>Gross Received</span><strong>${accMoney(sum.gross)}</strong></div><div class='line'><span>Cash Received</span><strong>${accMoney(sum.cash)}</strong></div><div class='line'><span>Card</span><strong>${accMoney(sum.card)}</strong></div><div class='line'><span>Bank / Online</span><strong>${accMoney(sum.bank)}</strong></div><div class='line'><span>Refunds</span><strong>${accMoney(sum.refunds)}</strong></div><div class='line'><span>Net Collections</span><strong>${accMoney(sum.net)}</strong></div><div class='line'><span>Expected Cash</span><strong>${accMoney(cl?.expectedCash??expected)}</strong></div><div class='line'><span>Actual Cash</span><strong>${accMoney(cl?.actualCash??Number(document.getElementById('csActualCash')?.value||0))}</strong></div><div class='line'><span>Variance</span><strong>${accMoney(cl?.variance??(Number(document.getElementById('csActualCash')?.value||0)-expected))}</strong></div></body></html>`);w.document.close();w.focus();w.print();}
 
@@ -14983,10 +15069,46 @@ function dailyRevenueHasUnpostedFNB(date){
   const d=dailyRevenueFNBDelta(date);
   return d['Restaurant Revenue']>0.009 || d['Bar Revenue']>0.009;
 }
+function dailyRevenuePostedAccountTotals(date){
+  const out={};
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{
+      const account=String(l.account||'');
+      const revenueSource=String(l.revenueSource||'');
+      if(!account || account==='Accounts Receivable' || revenueSource==='OTA Gross-up Revenue') return;
+      out[account]=(out[account]||0)+Number(l.credit||0);
+    });
+  });
+  return out;
+}
+function dailyRevenueAccountDeltas(date){
+  const current=dailyRevenueTotals(date), posted=dailyRevenuePostedAccountTotals(date), out={};
+  Object.keys(current).forEach(account=>{
+    out[account]=Math.max(0,Math.round((Number(current[account]||0)-Number(posted[account]||0))*100)/100);
+  });
+  return out;
+}
+function dailyRevenuePostedGrossup(date){
+  let total=0;
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{
+      if(String(l.account||'')==='Room Revenue' && String(l.revenueSource||'')==='OTA Gross-up Revenue') total+=Number(l.credit||0);
+    });
+  });
+  return Math.round(total*100)/100;
+}
+function dailyRevenueGrossupDelta(date){
+  const expected=dailyRevenueOtaCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
+  return Math.max(0,Math.round((expected-dailyRevenuePostedGrossup(date))*100)/100);
+}
 function dailyRevenueHasUnpostedRevenue(date){
-  return dailyRevenueHasUnpostedFNB(date) || dailyRevenueExperienceDelta(date)>0.009 || dailyRevenueOtaCommissionDelta(date)>0.009;
+  const accountDeltas=dailyRevenueAccountDeltas(date);
+  return Object.values(accountDeltas).some(v=>Number(v||0)>0.009) ||
+    dailyRevenueGrossupDelta(date)>0.009 ||
+    dailyRevenueOtaCommissionDelta(date)>0.009;
 }
 function renderDailyRevenuePosting(){
+  try{if(typeof updateAsaMealAllocationCorrectionButton==='function')updateAsaMealAllocationCorrectionButton();}catch(e){}
   const tb=document.getElementById('dailyRevenuePostingTable'); if(!tb)return;
   const current=accountingBusinessDate();
   const dateEl=document.getElementById('dailyRevenuePostingDate');
@@ -14997,7 +15119,7 @@ function renderDailyRevenuePosting(){
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
   if(st){
-    if(posted && dailyRevenueHasUnpostedRevenue(d)) st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Restaurant: ${accMoney(fnbDelta['Restaurant Revenue']||0)} · Bar: ${accMoney(fnbDelta['Bar Revenue']||0)} · Experience: ${accMoney(experienceDelta||0)}. These amounts were created after the earlier daily revenue posting.`;
+    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))}. Only new unposted amounts will be posted.`;}
     else if(posted) st.innerHTML=`<strong>Already Posted</strong> — Revenue for business date ${escapeHtml(d)} is fully posted.`;
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
@@ -15029,25 +15151,29 @@ window.postDailyRevenue=function(){
   if(d>accountingBusinessDate()){alert('Revenue date cannot be after the current business date.');return;}
   const alreadyPosted=dailyRevenueJournalExists(d);
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
-  const fnbDelta=dailyRevenueFNBDelta(d);
-  const experienceDelta=dailyRevenueExperienceDelta(d);
-  const commissionRows=dailyRevenueOtaCommissionRows(d);
+  const accountDeltas=dailyRevenueAccountDeltas(d);
   const commissionDelta=dailyRevenueOtaCommissionDelta(d);
-  let lines=[];
-  let gross=0;
-  let ref='REV-'+d.replace(/-/g,'');
-  let description='Daily Revenue Posting';
+  const grossupDelta=alreadyPosted?dailyRevenueGrossupDelta(d):commissionDelta;
+  let lines=[], revenueAmount=0;
+  let ref=alreadyPosted?'REV-INC-'+d.replace(/-/g,'')+'-'+Date.now():'REV-'+d.replace(/-/g,'');
+  let description=alreadyPosted?'Daily Revenue Posting (Incremental)':'Daily Revenue Posting';
+
   if(alreadyPosted){
-    if(!dailyRevenueHasUnpostedRevenue(d)){alert('Daily revenue for '+d+' has already been fully posted.');return;}
-    if(fnbDelta['Restaurant Revenue']>0.009)lines.push({account:'Restaurant Revenue',debit:0,credit:fnbDelta['Restaurant Revenue'],revenueSource:'Restaurant POS'});
-    if(fnbDelta['Bar Revenue']>0.009)lines.push({account:'Bar Revenue',debit:0,credit:fnbDelta['Bar Revenue'],revenueSource:'Bar POS'});
-    if(experienceDelta>0.009)lines.push({account:'Experience / Recreation Revenue',debit:0,credit:experienceDelta,revenueSource:'Experience Revenue'});
-    gross=lines.reduce((sum,x)=>sum+Number(x.credit||0),0);
-    ref='REV-INC-'+d.replace(/-/g,'')+'-'+Date.now();
-    description='Daily Revenue Posting (Incremental)';
+    Object.entries(accountDeltas).forEach(([account,amount])=>{
+      const a=Math.round(Number(amount||0)*100)/100;
+      if(a>0.009)lines.push({account,debit:0,credit:a,revenueSource:'Incremental Operational Revenue'});
+    });
+    if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
+    revenueAmount=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+    if(revenueAmount<=0.009 && commissionDelta<=0.009){
+      alert('Daily revenue for '+d+' has already been fully posted. No new revenue was found.');
+      return;
+    }
   }else{
-    gross=Object.values(totals).reduce((sum,v)=>sum+Number(v||0),0);
-    if(gross<=0 && commissionDelta<=0.009){alert('No revenue or OTA commission is available to post for business date '+d+'.');return;}
+    revenueAmount=Object.values(totals).reduce((sum,v)=>sum+Number(v||0),0);
+    if(revenueAmount<=0.009 && commissionDelta<=0.009){
+      alert('No revenue or OTA commission is available to post for business date '+d+'.');return;
+    }
     const grouped={};
     rows.forEach(r=>{
       const amount=Number(r.amount||0); if(amount<=0)return;
@@ -15056,33 +15182,30 @@ window.postDailyRevenue=function(){
       grouped[key].credit+=amount;
     });
     lines=Object.values(grouped);
+    if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
   }
-  /* v2.1.474 accounting fix:
-     When OTA commission is grossed up from the net package value, the guest/OTA
-     gross revenue and receivable must include that gross-up. Example: allocated
-     revenue LKR 35,000 + OTA commission/gross-up LKR 6,176.47 = gross LKR 41,176.47.
-     Keep the commission as a separate expense/payable journal; do not deduct it
-     from revenue. Apply gross-up only to the first full daily revenue journal. */
-  const otaGrossup=(!alreadyPosted && commissionDelta>0.009)?Number(commissionDelta):0;
-  if(otaGrossup>0.009)lines.push({account:'Room Revenue',debit:0,credit:otaGrossup,revenueSource:'OTA Gross-up Revenue'});
-  const grossReceivable=Number(gross||0)+otaGrossup;
-  if(grossReceivable>0.009)lines.unshift({account:'Accounts Receivable',debit:grossReceivable,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
+
+  // Debit AR for the newly recognized revenue only, including any new OTA gross-up.
+  const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+  if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
+
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
     {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
   ]:[];
   try{
-    if(lines.length) {
+    if(lines.length){
       postJournal(d,ref,description,lines,'Daily Revenue');
-      const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
+      const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
     }
     if(commissionLines.length){
       const commissionRef='OTA-COM-'+d.replace(/-/g,'')+(alreadyPosted?'-'+Date.now():'');
       postJournal(d,commissionRef,'OTA Commission Expense — '+d,commissionLines,'Daily Revenue Commission');
-      const all=accRead(ACC_STORE.journals), j=all[all.length-1]; if(j)j.businessDate=d; accWrite(ACC_STORE.journals,all);
+      const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
     }
-    logAudit('DAILY_REVENUE_POSTED','REV-'+d,'Daily revenue posted: '+gross+'; OTA commission: '+commissionDelta,currentPropertyId);
-    renderAccounting();renderDailyRevenuePosting();alert('Daily revenue posting processed for '+d+'. Revenue journal: '+accMoney(grossReceivable)+'. Separate OTA commission journal: '+accMoney(commissionDelta)+'.');
+    logAudit('DAILY_REVENUE_POSTED',ref,'Daily revenue posted: '+newRevenueCredits+'; OTA commission: '+commissionDelta,currentPropertyId);
+    renderAccounting();renderDailyRevenuePosting();
+    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission delta: '+accMoney(commissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
 /* v2.1.474 — disable the legacy gross-up reversal repair. The correct gross-up is now
@@ -15276,7 +15399,47 @@ function dailyPaymentRows(date){
   return rows;
 }
 function dailyPaymentJournalExists(date){
-  return journalEntries().some(j=>j.source==='Daily Payments' && String(j.businessDate||'')===String(date));
+  return journalEntries().some(j=>j.source==='Daily Payments' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10));
+}
+function dailyPaymentPostedTotals(date){
+  const out={debit:{'Cash on Hand':0,'Card Receivables':0,'Bank Account':0},arCredit:0,depositCredit:0};
+  journalEntries().filter(j=>j.source==='Daily Payments' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{
+      const account=String(l.account||'');
+      if(Object.prototype.hasOwnProperty.call(out.debit,account))out.debit[account]+=Number(l.debit||0);
+      if(account==='Accounts Receivable')out.arCredit+=Number(l.credit||0);
+      if(account==='Guest Deposits / Advance Payments')out.depositCredit+=Number(l.credit||0);
+    });
+  });
+  Object.keys(out.debit).forEach(k=>out.debit[k]=Math.round(out.debit[k]*100)/100);
+  out.arCredit=Math.round(out.arCredit*100)/100;
+  out.depositCredit=Math.round(out.depositCredit*100)/100;
+  return out;
+}
+function dailyPaymentPostingDelta(date){
+  const expected={debit:{'Cash on Hand':0,'Card Receivables':0,'Bank Account':0},arCredit:0,depositCredit:0};
+  dailyPaymentRows(date).forEach(r=>{
+    const m=String(r.method||'').toLowerCase(),isDeposit=r.type==='Deposit'||r.type==='Advance';
+    const account=m==='cash'?'Cash on Hand':(m==='card'||m.includes('credit')?'Card Receivables':'Bank Account');
+    expected.debit[account]+=Number(r.amount||0);
+    if(isDeposit)expected.depositCredit+=Number(r.amount||0);else expected.arCredit+=Number(r.amount||0);
+  });
+  const posted=dailyPaymentPostedTotals(date),delta={debit:{},arCredit:0,depositCredit:0},overposted=[];
+  Object.keys(expected.debit).forEach(account=>{
+    const amount=Math.round((expected.debit[account]-posted.debit[account])*100)/100;
+    delta.debit[account]=Math.max(0,amount);
+    if(amount < -0.009)overposted.push(account);
+  });
+  const ar=Math.round((expected.arCredit-posted.arCredit)*100)/100;
+  const dep=Math.round((expected.depositCredit-posted.depositCredit)*100)/100;
+  delta.arCredit=Math.max(0,ar);delta.depositCredit=Math.max(0,dep);
+  if(ar < -0.009)overposted.push('Accounts Receivable');
+  if(dep < -0.009)overposted.push('Guest Deposits / Advance Payments');
+  delta.total=Object.values(delta.debit).reduce((s,v)=>s+v,0);
+  delta.creditTotal=delta.arCredit+delta.depositCredit;
+  delta.overposted=[...new Set(overposted)];
+  delta.hasDelta=delta.total>0.009||delta.creditTotal>0.009;
+  return delta;
 }
 function latestUnpostedPaymentBusinessDate(current){
   const dates=[...new Set(accProp(payments||[]).map(p=>paymentBusinessDate(p)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d<=current&&!dailyPaymentJournalExists(d)))];
@@ -15294,31 +15457,47 @@ function renderDailyPaymentPosting(){
   rows.forEach(r=>{const m=String(r.method).toLowerCase(); if(r.type==='Deposit'||r.type==='Advance')sums.Deposit+=r.amount; else if(m==='cash')sums.Cash+=r.amount; else if(m==='card'||m.includes('credit'))sums.Card+=r.amount; else sums.Bank+=r.amount;});
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPayCash',sums.Cash);set('dailyPayCard',sums.Card);set('dailyPayBank',sums.Bank);set('dailyPayDeposits',sums.Deposit);
-  const posted=dailyPaymentJournalExists(d), st=document.getElementById('dailyPaymentPostingStatus');
-  if(st){if(posted)st.innerHTML=`<strong>Already Posted</strong> — Payments for ${escapeHtml(d)} have already been posted and are locked.`;else if(rows.length)st.innerHTML=`<strong>Ready to Post</strong> — Payment date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}.`;else st.innerHTML=`<strong>No Payments Found</strong> — No payment transactions were found for ${escapeHtml(d)} in the selected property.`;}
+  const posted=dailyPaymentJournalExists(d), delta=dailyPaymentPostingDelta(d), st=document.getElementById('dailyPaymentPostingStatus');
+  if(st){
+    if(delta.overposted.length)st.innerHTML=`<strong>Reconciliation Required</strong> — Posted ledger amounts exceed current payment records for: ${escapeHtml(delta.overposted.join(', '))}. Do not repost; review the journal and payment records.`;
+    else if(posted&&delta.hasDelta)st.innerHTML=`<strong>Additional Payments Ready to Post</strong> — New unposted payments: ${accMoney(delta.total)} debits / ${accMoney(delta.creditTotal)} credits. Only the unposted difference will be posted.`;
+    else if(posted)st.innerHTML=`<strong>Already Posted</strong> — All payments for ${escapeHtml(d)} are posted. No additional payment journal is needed.`;
+    else if(rows.length)st.innerHTML=`<strong>Ready to Post</strong> — Payment date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}.`;
+    else st.innerHTML=`<strong>No Payments Found</strong> — No payment transactions were found for ${escapeHtml(d)} in the selected property.`;
+  }
   tb.innerHTML=rows.length?rows.map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.reference)}</td><td>${escapeHtml(r.description)}</td><td>${escapeHtml(r.type)}</td><td>${escapeHtml(r.method)}</td><td style="text-align:right">${accMoney(r.amount)}</td></tr>`).join(''):`<tr><td colspan="6" class="empty">No payment transactions found for ${escapeHtml(d)}.</td></tr>`;
 }
 window.postDailyPayments=function(){
   if(!requireRole('Admin','Manager'))return;
   const d=dailyPaymentSelectedDate();
   if(d>accountingBusinessDate()){alert('Payment date cannot be after the current business date.');return;}
-  if(dailyPaymentJournalExists(d)){alert('Daily payments for '+d+' have already been posted.');return;}
-  const rows=dailyPaymentRows(d); if(!rows.length){alert('No payments are available to post for '+d+'.');return;}
-  const debit={}; let arCredit=0,depositCredit=0;
-  rows.forEach(r=>{
-    const m=String(r.method).toLowerCase(), isDeposit=r.type==='Deposit'||r.type==='Advance';
-    let account=m==='cash'?'Cash on Hand':(m==='card'||m.includes('credit')?'Card Receivables':'Bank Account');
-    debit[account]=(debit[account]||0)+r.amount;
-    if(isDeposit)depositCredit+=r.amount; else arCredit+=r.amount;
+  const rows=dailyPaymentRows(d);
+  if(!rows.length){alert('No payments are available to post for '+d+'.');return;}
+  const alreadyPosted=dailyPaymentJournalExists(d);
+  const delta=dailyPaymentPostingDelta(d);
+  if(delta.overposted.length){
+    alert('Daily payment reconciliation is required before posting. Posted amounts exceed current payment records for: '+delta.overposted.join(', ')+'. No journal was created.');
+    return;
+  }
+  if(!delta.hasDelta){
+    alert('All daily payments for '+d+' have already been posted. No new payment journal is needed.');
+    return;
+  }
+  const lines=[];
+  Object.entries(delta.debit).forEach(([account,amount])=>{
+    if(Number(amount)>0.009)lines.push({account,debit:Number(amount),credit:0,revenueSource:'Daily Payments Incremental'});
   });
-  const lines=Object.entries(debit).map(([account,amount])=>({account,debit:amount,credit:0}));
-  if(arCredit)lines.push({account:'Accounts Receivable',debit:0,credit:arCredit});
-  if(depositCredit)lines.push({account:'Guest Deposits / Advance Payments',debit:0,credit:depositCredit});
+  if(delta.arCredit>0.009)lines.push({account:'Accounts Receivable',debit:0,credit:delta.arCredit,revenueSource:'Daily Payments Incremental'});
+  if(delta.depositCredit>0.009)lines.push({account:'Guest Deposits / Advance Payments',debit:0,credit:delta.depositCredit,revenueSource:'Daily Payments Incremental'});
+  const debitTotal=lines.reduce((s,l)=>s+Number(l.debit||0),0),creditTotal=lines.reduce((s,l)=>s+Number(l.credit||0),0);
+  if(Math.abs(debitTotal-creditTotal)>0.01){alert('Payment delta does not balance. No journal was created. Debit: '+accMoney(debitTotal)+' Credit: '+accMoney(creditTotal));return;}
+  const ref=alreadyPosted?'PAY-INC-'+d.replace(/-/g,'')+'-'+Date.now():'PAY-'+d.replace(/-/g,'');
   try{
-    postJournal(d,'PAY-'+d.replace(/-/g,''),'Daily Payment Posting',lines,'Daily Payments');
+    postJournal(d,ref,alreadyPosted?'Daily Payment Posting (Incremental)':'Daily Payment Posting',lines,'Daily Payments');
     const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
-    logAudit('DAILY_PAYMENTS_POSTED','PAY-'+d.replace(/-/g,''),'Daily payments posted: '+rows.reduce((s,r)=>s+r.amount,0),currentPropertyId);
-    renderAccounting();renderDailyPaymentPosting();alert('Daily payments posted successfully for '+d+'.');
+    logAudit('DAILY_PAYMENTS_POSTED',ref,(alreadyPosted?'Incremental ':'')+'daily payments posted: '+accMoney(debitTotal),currentPropertyId);
+    renderAccounting();renderDailyPaymentPosting();
+    alert((alreadyPosted?'Additional payments posted successfully':'Daily payments posted successfully')+' for '+d+'. Journal: '+ref+'. Amount: '+accMoney(debitTotal)+'.');
   }catch(e){alert('Daily payments could not be posted. '+(e?.message||e));}
 };
 
@@ -27944,5 +28123,103 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bindChannelRateEvents,{once:true});else bindChannelRateEvents();
   const priorRender=window.renderSalesDistribution;
   if(typeof priorRender==='function')window.renderSalesDistribution=function(){const result=priorRender.apply(this,arguments);renderChannelRateMatrixEditor();refreshReservationBookingSourceOptions();return result;};
+})();
+
+/* v2.1.475 — guarded one-time correction for the confirmed ASA breakfast over-allocation.
+   This does not delete or rewrite any existing journal. It posts only the LKR 2,064.71
+   excess as Dr Restaurant Revenue / Cr Accounts Receivable, then the existing pending
+   LKR 66,300 Room Revenue can be posted separately after the correction is verified. */
+(function signatureAsaMealAllocationCorrection(){
+  'use strict';
+  const TARGET_DATE='2026-10-22';
+  const TARGET_JOURNAL='REV-INC-20261022-1792696082284';
+  const CORRECTION_REF='REV-CORR-MEAL-20261022-ASA-001';
+  const EXCESS=2064.71;
+  const ORIGINAL_AMOUNT=13764.71;
+  function moneyEqual(a,b){return Math.abs(Number(a||0)-Number(b||0))<0.011;}
+  function findTarget(){
+    try{return journalEntries().find(j=>String(j.reference||'')===TARGET_JOURNAL && String(j.source||'')==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===TARGET_DATE)||null;}catch(e){return null;}
+  }
+  function hasExpectedOriginal(j){
+    if(!j)return false;
+    const lines=Array.isArray(j.lines)?j.lines:[];
+    const ar=lines.reduce((s,l)=>s+(String(l.account||'').trim()==='Accounts Receivable'?Number(l.debit||0):0),0);
+    const restaurant=lines.reduce((s,l)=>s+(String(l.account||'').trim()==='Restaurant Revenue' && Number(l.credit||0)>0?Number(l.credit||0):0),0);
+    const posTagged=lines.some(l=>String(l.account||'').trim()==='Restaurant Revenue' && String(l.revenueSource||'').trim()==='Restaurant POS' && Number(l.credit||0)>0);
+    return posTagged && moneyEqual(ar,ORIGINAL_AMOUNT) && moneyEqual(restaurant,ORIGINAL_AMOUNT);
+  }
+  function asaReservation(){
+    try{return (reservations||[]).find(r=>String(r.bookingNo||r.bookingNumber||r.reservationNo||'').trim()==='H001-2026-0001' && String(r.guestName||'').trim().toLowerCase()==='asa')||null;}catch(e){return null;}
+  }
+  function matchingPosInvoiceExists(){
+    try{return (typeof dailyRevenueRows==='function'?dailyRevenueRows(TARGET_DATE):[]).some(r=>String(r.source||'')==='F&B POS' && moneyEqual(r.amount,ORIGINAL_AMOUNT));}catch(e){return true;}
+  }
+  window.updateAsaMealAllocationCorrectionButton=function(){
+    const btn=document.getElementById('asaMealAllocationCorrectionBtn');if(!btn)return;
+    /* Show the action for Admin on the target date even while cloud data is still
+       hydrating. The click handler below performs strict checks before any write,
+       so a visible button does not mean the correction is automatically allowed. */
+    let show=false;
+    try{
+      const selected=typeof dailyRevenueSelectedDate==='function'?dailyRevenueSelectedDate():
+        (document.getElementById('dailyRevenuePostingDate')?.value||'');
+      const isAdmin=!!(typeof currentUser!=='undefined' && currentUser && String(currentUser.role||'').trim().toLowerCase()==='admin');
+      show=selected===TARGET_DATE && isAdmin;
+    }catch(e){show=false;}
+    btn.style.display=show?'inline-block':'none';
+    btn.title=show?'Click to validate the original journal and cloud sync before posting a correction.':'Select 2026-10-22 as Admin to inspect the guarded correction action.';
+  };
+  /* Refresh visibility after date changes and after accounting data renders/hydrates. */
+  const correctionDate=document.getElementById('dailyRevenuePostingDate');
+  if(correctionDate&&!correctionDate.dataset.asaCorrectionBound){
+    correctionDate.addEventListener('change',()=>window.updateAsaMealAllocationCorrectionButton());
+    correctionDate.dataset.asaCorrectionBound='1';
+  }
+  ['renderAccounting','renderDailyRevenuePosting'].forEach(name=>{
+    const original=window[name];
+    if(typeof original==='function'&&!original.__asaCorrectionVisibilityWrapped){
+      const wrapped=function(){const result=original.apply(this,arguments);try{window.updateAsaMealAllocationCorrectionButton();}catch(e){}return result;};
+      wrapped.__asaCorrectionVisibilityWrapped=true;window[name]=wrapped;
+    }
+  });
+  window.correctAsaMealAllocationJournal=async function(){
+    if(typeof requireRole==='function'&&!requireRole('Admin'))return;
+    const btn=document.getElementById('asaMealAllocationCorrectionBtn');
+    if(btn)btn.disabled=true;
+    try{
+      if(typeof dailyRevenueSelectedDate!=='function'||dailyRevenueSelectedDate()!==TARGET_DATE)throw new Error('Select business date 2026-10-22 first.');
+      if(typeof window.signatureAccountingJournalCloud?.sync!=='function')throw new Error('Accounting cloud sync is not available. No correction was posted. Refresh the PMS and try again.');
+      if(journalEntries().some(j=>String(j.reference||'')===CORRECTION_REF))throw new Error('This correction reference already exists. Do not repeat it; refresh General Ledger and Journal Review.');
+      const target=findTarget();
+      if(!hasExpectedOriginal(target))throw new Error('The original incremental journal does not match the expected amount/source. No correction was posted.');
+      if(matchingPosInvoiceExists())throw new Error('A matching Restaurant POS invoice is present in this property/date. No correction was posted.');
+      const asa=asaReservation();
+      if(!asa||typeof getReservationRevenueAllocation!=='function')throw new Error('ASA reservation/allocation could not be verified. No correction was posted.');
+      const alloc=getReservationRevenueAllocation(asa);
+      if(!moneyEqual(Number(alloc.breakfast||0),11700)||!moneyEqual(Number(alloc.room||0),66300))throw new Error('Current ASA allocation is not LKR 11,700 breakfast / LKR 66,300 room. No correction was posted.');
+      const ok=confirm('Post one correcting journal for Signature Hotel, business date 2026-10-22?\n\nDebit Restaurant Revenue: LKR 2,064.71\nCredit Accounts Receivable: LKR 2,064.71\n\nThis reduces the old LKR 13,764.71 restaurant entry to the correct LKR 11,700 breakfast allocation. It does not post the pending LKR 66,300 room revenue. Continue only if no matching POS invoice exists.');
+      if(!ok)return;
+      postJournal(TARGET_DATE,CORRECTION_REF,'Correction of ASA meal-plan over-allocation — reduce Restaurant Revenue by LKR 2,064.71',[
+        {account:'Restaurant Revenue',debit:EXCESS,credit:0,revenueSource:'Meal Plan Allocation Correction'},
+        {account:'Accounts Receivable',debit:0,credit:EXCESS,revenueSource:'Meal Plan Allocation Correction'}
+      ],'Revenue Allocation Correction');
+      const all=accRead(ACC_STORE.journals);
+      const created=all.find(j=>String(j.reference||'')===CORRECTION_REF && String(j.propertyId??currentPropertyId)===String(currentPropertyId));
+      if(created)created.businessDate=TARGET_DATE;
+      accWrite(ACC_STORE.journals,all);
+      if(typeof logAudit==='function')logAudit('ACCOUNTING_REVENUE_ALLOCATION_CORRECTED',CORRECTION_REF,'Restaurant Revenue reduced by LKR 2,064.71 for ASA meal allocation correction.',currentPropertyId);
+      await window.signatureAccountingJournalCloud.sync();
+      if(typeof renderAccounting==='function')renderAccounting();
+      if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();
+      alert('Correction journal created and accounting cloud sync completed. Verify '+CORRECTION_REF+' in General Ledger / Journal Review before posting the remaining LKR 66,300.00 Room Revenue.');
+    }catch(e){
+      alert('Correction was not confirmed complete: '+(e&&e.message?e.message:String(e))+'\n\nDo not post Daily Revenue yet. Check General Ledger for reference '+CORRECTION_REF+' before retrying.');
+      if(btn)btn.disabled=false;
+    }finally{
+      try{if(typeof updateAsaMealAllocationCorrectionButton==='function')updateAsaMealAllocationCorrectionButton();}catch(e){}
+    }
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.updateAsaMealAllocationCorrectionButton());
+  else window.updateAsaMealAllocationCorrectionButton();
 })();
 </script>
