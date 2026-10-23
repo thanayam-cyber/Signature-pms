@@ -826,6 +826,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <th>Guest</th>
 <th>Booking</th>
 <th>Room</th>
+<th>Meal Plan</th>
 <th>Accommodation</th>
 <th>Restaurant</th>
 <th>Payments</th>
@@ -9680,6 +9681,11 @@ function viewFolio(reservationId){
         </div>
 
         <div>
+            <strong>Meal Plan</strong>
+            <p><span class="badge badge-success">${escapeHtml(mealPlanLabel(r.mealPlan))}</span></p>
+        </div>
+
+        <div>
             <strong>Check-In</strong>
             <p>${formatDate(r.checkIn)}</p>
         </div>
@@ -11431,6 +11437,10 @@ function renderFolios(){
 
                 <td>
                     ${room}
+                </td>
+
+                <td>
+                    <strong>${escapeHtml(mealPlanLabel(r.mealPlan))}</strong>
                 </td>
 
                 <td>
