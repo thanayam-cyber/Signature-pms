@@ -28187,7 +28187,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const btn=document.getElementById('asaMealAllocationCorrectionBtn');
     if(btn)btn.disabled=true;
     try{
-      if(typeof dailyRevenueSelectedDate!=='function'||dailyRevenueSelectedDate()!==TARGET_DATE)throw new Error('Select business date 2026-10-22 first.');
+      const selectedRevenueDate=String(document.getElementById('dailyRevenuePostingDate')?.value||'').slice(0,10);
+      if(selectedRevenueDate!==TARGET_DATE)throw new Error('Select Revenue Date 2026-10-22 in the Daily Revenue Posting date field first. Current selected field value: '+(selectedRevenueDate||'(blank)')+'. No correction was posted.');
       if(typeof window.signatureAccountingJournalCloud?.sync!=='function')throw new Error('Accounting cloud sync is not available. No correction was posted. Refresh the PMS and try again.');
       if(journalEntries().some(j=>String(j.reference||'')===CORRECTION_REF))throw new Error('This correction reference already exists. Do not repeat it; refresh General Ledger and Journal Review.');
       const target=findTarget();
