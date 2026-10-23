@@ -19506,7 +19506,10 @@ function cloudPropertyToLocal(row,existing){
        load as well as manual Cloud Refresh. */
     const CONFIG_KEYS=[
       'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
-      'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+      'serviceChargeRate','taxRate',
+    'vatEnabled','vatRate','vatInclusive','serviceChargeEnabled',
+    'tdlEnabled','tdlRate','tdlSmallRate','ssclEnabled','ssclRate',
+    'roomRate','roomBaseLocal','roomBaseForeign',
       'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
       'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
       'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
@@ -22400,28 +22403,48 @@ function taxCfg(p){p=p||cfg();return {
   ssclRate:Math.max(0,num(p.ssclRate,2.5))
 };}
 
-window.saveSriLankaTaxSettings=function(){
+window.saveSriLankaTaxSettings=async function(){
   if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;
-  if(typeof settings==='undefined'||!settings){alert('Please select a property first.');return;}
+  if(!currentPropertyId){alert('Please select a property first.');return;}
+  const property=Array.isArray(properties)?properties.find(p=>String(p.id)===String(currentPropertyId)):null;
+  if(!property){alert('Selected property could not be found. No settings were changed.');return;}
   const v=id=>document.getElementById(id)?.value;
   const tax={
-    vatEnabled:v('slVatEnabled')==='yes',vatRate:Math.max(0,num(v('slVatRate'),18)),vatInclusive:v('slVatInclusive')==='yes',
-    serviceChargeEnabled:v('slServiceChargeEnabled')==='yes',serviceChargeRate:Math.max(0,num(v('slServiceChargeRate'),10)),
-    tdlEnabled:v('slTdlEnabled')==='yes',tdlRate:Math.max(0,num(v('slTdlRate'),1)),tdlSmallRate:Math.max(0,num(v('slTdlSmallRate'),0.5)),
-    ssclEnabled:v('slSsclEnabled')==='yes',ssclRate:Math.max(0,num(v('slSsclRate'),2.5))
+    vatEnabled:v('slVatEnabled')==='yes',
+    vatRate:Math.max(0,num(v('slVatRate'),18)),
+    vatInclusive:v('slVatInclusive')==='yes',
+    serviceChargeEnabled:v('slServiceChargeEnabled')==='yes',
+    serviceChargeRate:Math.max(0,num(v('slServiceChargeRate'),10)),
+    tdlEnabled:v('slTdlEnabled')==='yes',
+    tdlRate:Math.max(0,num(v('slTdlRate'),1)),
+    tdlSmallRate:Math.max(0,num(v('slTdlSmallRate'),0.5)),
+    ssclEnabled:v('slSsclEnabled')==='yes',
+    ssclRate:Math.max(0,num(v('slSsclRate'),2.5))
   };
-  Object.assign(settings,tax);
-  if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p)Object.assign(p,tax);}
-  // Keep the legacy fields aligned for existing reports/calculations.
-  settings.taxRate=tax.vatEnabled?tax.vatRate:0;
-  settings.serviceChargeRate=tax.serviceChargeEnabled?tax.serviceChargeRate:0;
-  if(typeof properties!=='undefined'){const p=properties.find(x=>x.id===currentPropertyId);if(p){p.taxRate=settings.taxRate;p.serviceChargeRate=settings.serviceChargeRate;}}
-  save();
-  alert('Sri Lanka tax & billing settings saved.');
+  // Scope the update by the selected property ID, never by a shared/default object.
+  Object.assign(property,tax);
+  property.taxRate=tax.vatEnabled?tax.vatRate:0;
+  property.serviceChargeRate=tax.serviceChargeEnabled?tax.serviceChargeRate:0;
+  if(typeof settings!=='undefined'&&settings&&String(settings.id||currentPropertyId)===String(currentPropertyId)){
+    Object.assign(settings,tax);
+    settings.taxRate=property.taxRate;
+    settings.serviceChargeRate=property.serviceChargeRate;
+  }
+  if(typeof saveProperties==='function')saveProperties();
+  if(typeof saveData==='function')saveData();
+  try{
+    if(typeof window.__signatureSavePropertyConfigToCloud==='function'&&!window.__signatureCloudHydrating){
+      const ok=await window.__signatureSavePropertyConfigToCloud();
+      if(!ok)throw new Error('Cloud configuration save did not complete.');
+    }
+    alert('Tax & billing settings saved for '+(property.property||property.name||'the selected property')+'.');
+  }catch(err){
+    console.error('Property-scoped tax settings cloud save failed:',err);
+    alert('Tax settings were saved locally for '+(property.property||property.name||'the selected property')+', but cloud sync failed: '+(err?.message||err)+'. Please check the cloud status before switching devices.');
+  }
 };
-
 function loadSriLankaTaxSettings(){
-  const p=cfg(),t=taxCfg(p);
+  const p=(Array.isArray(properties)?properties.find(x=>String(x.id)===String(currentPropertyId)):null)||currentProp(),t=taxCfg(p);
   const set=(id,val)=>{const e=document.getElementById(id);if(e)e.value=val;};
   set('slVatEnabled',t.vatEnabled?'yes':'no');set('slVatRate',t.vatRate);set('slVatInclusive',t.vatInclusive?'yes':'no');
   set('slServiceChargeEnabled',t.serviceChargeEnabled?'yes':'no');set('slServiceChargeRate',t.serviceChargeRate);
