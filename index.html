@@ -15683,7 +15683,35 @@ function transferARToCityLedger(reservationId){
 }
 window.printCityLedgerStatement=printCityLedgerStatement; window.transferARToCityLedger=transferARToCityLedger;
 
+function repairRefundAccountingJournals(){
+  // Idempotently create missing accounting reversals for recorded refunds.
+  // Existing journals and payment records are left untouched.
+  if(!Array.isArray(payments) || typeof postJournal!=='function' || !currentPropertyId) return 0;
+  let created=0;
+  const all=accRead(ACC_STORE.journals);
+  const existing=new Set(all.filter(j=>String(j.propertyId??currentPropertyId)===String(currentPropertyId)).map(j=>String(j.reference||'')));
+  const refunds=payments.filter(p=>String(p.propertyId??currentPropertyId)===String(currentPropertyId) && paymentIsRefund(p) && Number(p.amount||0)!==0);
+  for(const refund of refunds){
+    const ref=String(refund.reference||'').trim();
+    if(!ref || existing.has(ref)) continue;
+    const amount=Math.abs(Number(refund.amount||0));
+    if(!(amount>0)) continue;
+    const method=String(refund.method||'Cash').toLowerCase();
+    const cashAccount=method.includes('card')?'Card Receivables':(method.includes('bank')||method.includes('online')||method.includes('transfer'))?'Bank Account':'Cash on Hand';
+    const date=String(refund.businessDate||refund.transactionDate||refund.date||accountingBusinessDate()).slice(0,10);
+    try{
+      postJournal(date,ref,'Payment refund — '+(refund.guestName||'Guest')+' — '+(refund.refundOf||''),[
+        {account:'Accounts Receivable',debit:amount,credit:0},
+        {account:cashAccount,debit:0,credit:amount}
+      ],'Payment Refund');
+      existing.add(ref); created++;
+    }catch(e){ console.warn('Refund accounting repair skipped for '+ref,e); }
+  }
+  return created;
+}
+window.repairRefundAccountingJournals=repairRefundAccountingJournals;
 function renderAccounting(){
+  try{repairRefundAccountingJournals();}catch(e){console.warn('Refund accounting repair unavailable',e);}
   const bd=accountingBusinessDate(); const bf=document.getElementById("bankReconFrom"), bt=document.getElementById("bankReconTo"); if(bf&&!bf.value)bf.value=bd; if(bt&&!bt.value)bt.value=bd;
   ensureAccountingBootstrap();
   const rev=accountingRevenueTotal(), exp=totalManualExpenses(), ap=apBySupplier().reduce((s,x)=>s+x.balance,0);
@@ -15720,7 +15748,7 @@ function renderGeneralLedger(){
 }
 
 
-function renderJournalReview(){const tb=document.getElementById('journalReviewTable');if(!tb)return;const rb=document.getElementById('journalReviewRefreshBtn');if(rb)rb.onclick=renderJournalReview;const pb=document.getElementById('journalReviewPrintBtn');if(pb)pb.onclick=printJournalReview;const journals=journalEntries().filter(j=>inRange(j.date)).slice().sort((a,b)=>datePart(a.date).localeCompare(datePart(b.date))||String(a.reference||'').localeCompare(String(b.reference||'')));let balanced=0,unbalanced=0,totalDiff=0;const rows=journals.map(j=>{const debit=(j.lines||[]).reduce((s,l)=>s+Number(l.debit||0),0),credit=(j.lines||[]).reduce((s,l)=>s+Number(l.credit||0),0),diff=debit-credit;totalDiff+=Math.abs(diff);const ok=Math.abs(diff)<=0.01;if(ok)balanced++;else unbalanced++;return `<tr><td>${datePart(j.date)}</td><td>${escapeHtml(j.reference||'')}</td><td>${escapeHtml(j.description||'')}</td><td>${escapeHtml(j.source||'')}</td><td class="right">${accMoney(debit)}</td><td class="right">${accMoney(credit)}</td><td class="right">${accMoney(diff)}</td><td>${ok?'✓ Balanced':'⚠ Unbalanced'}</td></tr>`}).join('');tb.innerHTML=rows||'<tr><td colspan="8" class="empty">No journals for the selected period.</td></tr>';const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};set('jrJournalCount',journals.length);set('jrBalancedCount',balanced);set('jrUnbalancedCount',unbalanced);set('jrDifference',accMoney(totalDiff));}
+function renderJournalReview(){try{repairRefundAccountingJournals();}catch(e){console.warn('Refund accounting repair unavailable',e);}const tb=document.getElementById('journalReviewTable');if(!tb)return;const rb=document.getElementById('journalReviewRefreshBtn');if(rb)rb.onclick=renderJournalReview;const pb=document.getElementById('journalReviewPrintBtn');if(pb)pb.onclick=printJournalReview;const journals=journalEntries().filter(j=>inRange(j.date)).slice().sort((a,b)=>datePart(a.date).localeCompare(datePart(b.date))||String(a.reference||'').localeCompare(String(b.reference||'')));let balanced=0,unbalanced=0,totalDiff=0;const rows=journals.map(j=>{const debit=(j.lines||[]).reduce((s,l)=>s+Number(l.debit||0),0),credit=(j.lines||[]).reduce((s,l)=>s+Number(l.credit||0),0),diff=debit-credit;totalDiff+=Math.abs(diff);const ok=Math.abs(diff)<=0.01;if(ok)balanced++;else unbalanced++;return `<tr><td>${datePart(j.date)}</td><td>${escapeHtml(j.reference||'')}</td><td>${escapeHtml(j.description||'')}</td><td>${escapeHtml(j.source||'')}</td><td class="right">${accMoney(debit)}</td><td class="right">${accMoney(credit)}</td><td class="right">${accMoney(diff)}</td><td>${ok?'✓ Balanced':'⚠ Unbalanced'}</td></tr>`}).join('');tb.innerHTML=rows||'<tr><td colspan="8" class="empty">No journals for the selected period.</td></tr>';const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};set('jrJournalCount',journals.length);set('jrBalancedCount',balanced);set('jrUnbalancedCount',unbalanced);set('jrDifference',accMoney(totalDiff));}
 function printJournalReview(){const journals=journalEntries().filter(j=>inRange(j.date));let debit=0,credit=0;const rows=journals.map(j=>{const d=(j.lines||[]).reduce((s,l)=>s+Number(l.debit||0),0),c=(j.lines||[]).reduce((s,l)=>s+Number(l.credit||0),0);debit+=d;credit+=c;return `<tr><td>${datePart(j.date)}</td><td>${escapeHtml(j.reference||'')}</td><td>${escapeHtml(j.description||'')}</td><td>${escapeHtml(j.source||'')}</td><td class="right">${accMoney(d)}</td><td class="right">${accMoney(c)}</td><td>${Math.abs(d-c)<=0.01?'Balanced':'Unbalanced'}</td></tr>`}).join('');reportShell('Journal Review',`<div><strong>Period:</strong> ${escapeHtml((document.getElementById('acctFromDate')?.value||'')+' to '+(document.getElementById('acctToDate')?.value||''))}</div><table><thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>Source</th><th>Debit</th><th>Credit</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td colspan="7">No journals for the selected period.</td></tr>'}</tbody><tfoot><tr class="total"><td colspan="4">TOTAL</td><td class="right">${accMoney(debit)}</td><td class="right">${accMoney(credit)}</td><td>${Math.abs(debit-credit)<=0.01?'Balanced':'Review Required'}</td></tr></tfoot></table>`)}
 
 function accountingDateToday(){
