@@ -16310,6 +16310,46 @@ window.printGuestFolio=function(reservationId){
   reportShell("Guest Folio",`<h2>${escapeHtml(guest)}</h2><p>Booking: ${escapeHtml(r.bookingId||r.id||"")} &nbsp; Room: ${escapeHtml(r.roomNumber||r.room||"")} &nbsp; Check-in: ${escapeHtml(r.checkIn||"")} &nbsp; Check-out: ${escapeHtml(r.checkOut||"")}</p><table><thead><tr><th>Charge</th><th>Amount</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x[0])}</td><td class="right">${accMoney(x[1])}</td></tr>`).join("")}</tbody><tfoot><tr class="total"><td>Total</td><td class="right">${accMoney(total)}</td></tr><tr><td>Paid</td><td class="right">${accMoney(paid)}</td></tr><tr class="total"><td>Balance</td><td class="right">${accMoney(bal)}</td></tr></tfoot></table><h2>Payments</h2><table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows||"<tr><td colspan='4'>No payments</td></tr>"}</tbody></table>`);
 };
 
+/* Guest invoice sharing: keep PDF generation in the existing print layout and use a
+   prepared WhatsApp message. Direct email requires a server-side Edge Function and
+   provider secret; never put email API keys in this browser file. */
+window.shareGuestInvoiceWhatsApp=function(reservationId){
+  const r=(reservations||[]).find(x=>String(x.id)===String(reservationId));
+  if(!r){alert('Guest reservation not found.');return;}
+  const raw=String(r.phone||r.mobile||r.whatsapp||'').trim();
+  if(!raw){alert('This reservation has no guest phone / WhatsApp number saved. Please update the guest contact first.');return;}
+  const digits=raw.replace(/[^0-9]/g,'');
+  if(!digits){alert('Guest WhatsApp number is invalid. Please include the country code.');return;}
+  const fp=typeof getFinancialPosition==='function'?getFinancialPosition(r.id):{};
+  const total=Number((fp.folioTotal??(typeof getFolioTotal==='function'?getFolioTotal(r.id):r.total))||0);
+  const paid=Number((fp.settled??(typeof getPaymentsTotal==='function'?getPaymentsTotal(r.id):0))||0);
+  const balance=Number((fp.balance??Math.max(0,total-paid))||0);
+  const invoiceNo='INV-'+String(r.confirmationNumber||r.bookingNo||r.id).replace(/\s+/g,'-');
+  const property=(settings?.property||settings?.propertyName||properties.find(x=>String(x.id)===String(currentPropertyId))?.name||'Hotel');
+  const currency=String(r.currency||settings?.guestCurrency||settings?.currency||'LKR').toUpperCase();
+  const msg='Dear '+(r.guestName||r.guest||'Guest')+',\n\nPlease find your guest invoice summary from '+property+'.\nInvoice: '+invoiceNo+'\nBooking: '+(r.bookingNo||r.confirmationNumber||r.id)+'\nStay: '+String(r.checkIn||'').slice(0,10)+' to '+String(r.checkOut||'').slice(0,10)+'\nTotal: '+currency+' '+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'\nPayments received: '+currency+' '+paid.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'\nBalance due: '+currency+' '+balance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'\n\nKind regards,\n'+property;
+  alert('WhatsApp will open with the invoice message. For the PDF attachment, first use “Print / Save Folio PDF” and save the invoice as a PDF, then attach it in WhatsApp before sending.');
+  window.open('https://wa.me/'+digits+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer');
+};
+window.emailGuestInvoiceDirect=function(reservationId){
+  const r=(reservations||[]).find(x=>String(x.id)===String(reservationId));
+  if(!r){alert('Guest reservation not found.');return;}
+  const email=String(r.email||r.guestEmail||'').trim();
+  if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){alert('A valid guest email address is not saved on this reservation. Please update the guest contact first.');return;}
+  const fp=typeof getFinancialPosition==='function'?getFinancialPosition(r.id):{};
+  const total=Number((fp.folioTotal??(typeof getFolioTotal==='function'?getFolioTotal(r.id):r.total))||0);
+  const paid=Number((fp.settled??(typeof getPaymentsTotal==='function'?getPaymentsTotal(r.id):0))||0);
+  const balance=Number((fp.balance??Math.max(0,total-paid))||0);
+  const invoiceNo='INV-'+String(r.confirmationNumber||r.bookingNo||r.id).replace(/\s+/g,'-');
+  const property=(settings?.property||settings?.propertyName||properties.find(x=>String(x.id)===String(currentPropertyId))?.name||'Hotel');
+  const currency=String(r.currency||settings?.guestCurrency||settings?.currency||'LKR').toUpperCase();
+  const fmt=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const subject='Guest Invoice '+invoiceNo+' - '+property;
+  const body='Dear '+(r.guestName||r.guest||'Guest')+',\n\nPlease find your guest invoice summary from '+property+'.\nInvoice: '+invoiceNo+'\nBooking: '+(r.bookingNo||r.confirmationNumber||r.id)+'\nRoom: '+(r.roomNumber||r.room||'')+'\nCheck-in: '+String(r.checkIn||'').slice(0,10)+'\nCheck-out: '+String(r.checkOut||'').slice(0,10)+'\nTotal: '+currency+' '+fmt(total)+'\nPayments received: '+currency+' '+fmt(paid)+'\nBalance due: '+currency+' '+fmt(balance)+'\n\nPlease attach the saved folio PDF before sending.\n\nKind regards,\n'+property;
+  alert('Your email app or webmail compose window will open. The invoice details will be filled in. For the PDF, click “Print / Save Folio PDF”, save it, then attach it to the email before sending.');
+  window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+};
+
 /* Add a print button to the folio modal dynamically, without changing existing folio rendering. */
 document.addEventListener("click",function(ev){
   const btn=ev.target.closest?.('[onclick*="viewFolio("]');
@@ -16320,7 +16360,7 @@ document.addEventListener("click",function(ev){
       const onclick=btn.getAttribute("onclick")||"";
       const m=onclick.match(/viewFolio\(['"]([^'"]+)['"]\)/);
       if(!m) return;
-      content.insertAdjacentHTML("afterbegin",`<div class="folio-print-extension no-print" style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-primary btn-small" onclick="printGuestFolio('${m[1]}')">Print Guest Folio</button></div>`);
+      content.insertAdjacentHTML("afterbegin",`<div class="folio-print-extension no-print" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn btn-primary btn-small" onclick="printGuestFolio('${m[1]}')">Print / Save Folio PDF</button><button class="btn btn-secondary btn-small" onclick="shareGuestInvoiceWhatsApp('${m[1]}')">Send Invoice on WhatsApp</button><button class="btn btn-secondary btn-small" onclick="emailGuestInvoiceDirect('${m[1]}')">Email Invoice (PDF)</button></div>`);
     },50);
   }
 });
