@@ -514,7 +514,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="gm-kpi"><div class="gm-label">RevPAR</div><div class="gm-value" id="dashRevPAR">$0.00</div><div class="gm-sub">Actual room revenue per available room</div></div>
 <div class="gm-kpi"><div class="gm-label">Actual Rooms Revenue</div><div class="gm-value" id="dashRevenue">LKR 0.00</div><div class="gm-sub" id="gmRoomRevenueSub">Checked-in / completed stays; meal allocation excluded</div></div>
 <div class="gm-kpi"><div class="gm-label">Actual Total Revenue</div><div class="gm-value" id="dashTotalRevenue">LKR 0.00</div><div class="gm-sub">Actual room + allocated meals + Restaurant / POS; OTA gross-up allocation applied</div></div>
-<div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub">Available when finance data is posted</div></div>
+<div class="gm-kpi"><div class="gm-label">GOP / Operating Profit</div><div class="gm-value" id="gmGop">—</div><div class="gm-sub" id="gmGopSub">Actual total revenue less posted operating expenses (selected property / period)</div></div>
 </div>
 <div class="gm-section"><h3>Commercial Outlook — Next 7 Days</h3>
 <div class="gm-strip" style="margin-bottom:10px">
@@ -12717,7 +12717,27 @@ function renderDashboard(){
     const days=[];for(let d=new Date(ps+"T00:00:00");d<=new Date(pe+"T00:00:00");d.setDate(d.getDate()+1))days.push(localDateString(new Date(d)));
     const periodRooms=days.reduce((s,d)=>s+actualRoomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0),periodPackageFnb=days.reduce((s,d)=>s+packageFnbRevenueForDate(d)+packageExperienceRevenueForDate(d),0);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-    set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",accMoney(periodAdr));set("dashRevPAR",accMoney(periodRevpar));set("dashRevenue",accMoney(periodRooms));set("dashTotalRevenue",accMoney(periodRooms+periodPackageFnb+periodFnb));set("gmGop","—");set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",accMoney(apOutstanding));set("dashOutstanding",accMoney(outstanding));set("dashRestaurant",accMoney(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
+    // Dashboard GOP uses only this property's posted Expense-account journal debits
+    // for the active dashboard period. Legacy expense-register rows are included
+    // only if no matching posted Expense journal exists, preventing double-counting.
+    const dashboardDatePart=v=>String(v||'').slice(0,10);
+    const dashboardExpensesInPeriod=()=>{
+      const js=journalEntries().filter(j=>{const d=dashboardDatePart(j.date);return d>=ps&&d<=pe;});
+      // Use posted journal lines only here. The expense-register helper lives in a
+      // separate accounting scope and is not available to renderDashboard().
+      // This also avoids counting an expense twice when its journal is posted.
+      let total=0;
+      const accounts=getAccounts();
+      js.forEach(j=>(j.lines||[]).forEach(l=>{
+        const a=accounts.find(x=>String(x.name||'')===String(l.account||'')||String(x.code||'')===String(l.account||'')||String(x.code||'')===String(l.accountCode||''));
+        if(a&&String(a.type||'').toLowerCase()==='expense')total+=Math.max(0,Number(l.debit||0))-Math.max(0,Number(l.credit||0));
+      }));
+      return Math.max(0,total);
+    };
+    const periodTotalRevenue=periodRooms+periodPackageFnb+periodFnb;
+    const periodOperatingExpenses=dashboardExpensesInPeriod();
+    const periodGop=periodTotalRevenue-periodOperatingExpenses;
+    set("dashOccupancy",periodOccPct+"%");set("gmOccSub",(kind==="today"?occupied:periodOccNights)+" / "+(kind==="today"?roomCount:periodAvailable)+(kind==="today"?" rooms":" room nights"));set("dashADR",accMoney(periodAdr));set("dashRevPAR",accMoney(periodRevpar));set("dashRevenue",accMoney(periodRooms));set("dashTotalRevenue",accMoney(periodTotalRevenue));set("gmGop",accMoney(periodGop));set("dashArrivals",arrivals.length);set("dashDepartures",departures.length);set("gmOccupied",occupied+" / "+roomCount);set("gmStayovers",stayovers.length);set("dashOOS",oos);set("dashAPOutstanding",accMoney(apOutstanding));set("dashOutstanding",accMoney(outstanding));set("dashRestaurant",accMoney(restaurantRevenue));set("dashOccupiedRooms",occupied+" / "+roomCount);set("dashAvailableRooms",available);set("dashReservedRooms",reserved);set("dashCancellations",reservations.filter(r=>r.status==="Cancelled"&&(r.checkIn===today||String(r.cancelledAt||"").startsWith(today))).length);
     set("gmRoomRevenueSub",kind==="today"?"Checked-in / completed stays; meal allocation excluded":"Actual recognized room-night revenue; meal allocation excluded");
     ["today","mtd","ytd"].forEach(k=>{const e=document.getElementById("gm"+({today:"Today",mtd:"Mtd",ytd:"Ytd"}[k])+"Btn");if(e)e.classList.toggle("active",k===kind);});
 
@@ -15588,14 +15608,35 @@ function arGuestLedgerRows(asOf){
     const fp=getFinancialPosition(r.id);
     /* AR folio totals are already normalized to the PMS base currency (LKR).
        Do not apply the reservation FX rate a second time. */
-    const charges=Number(fp.folioTotal||0);
-    const paymentsFor=payments.filter(p=>p.reservationId===r.id && paymentIsReceived(p));
-    const paid=paymentsFor.reduce((sum,p)=>sum+Number(paymentAmountLKR(p,r)||0),0);
+    const grossCharges=Number(fp.folioTotal||0);
+    // Refund-aware AR: a refund linked to a received payment reverses the refunded
+    // portion of that charge for receivables purposes. Do not count the refund as
+    // a new guest payment, and do not count the refunded portion of its original
+    // payment as still collected. This keeps a refunded accommodation invoice from
+    // remaining open while preserving unrelated charges/payments (e.g. restaurant POS).
+    const reservationPayments=(payments||[]).filter(p=>String(p.reservationId||'')===String(r.id) && paymentIsReceived(p));
+    const receivedOriginals=reservationPayments.filter(p=>!paymentIsRefund(p));
+    const reservationRefunds=reservationPayments.filter(paymentIsRefund);
+    const refundedByOriginal=new Map();
+    reservationRefunds.forEach(ref=>{
+      const originalId=String(ref.refundOf||'');
+      if(!originalId) return;
+      refundedByOriginal.set(originalId,(refundedByOriginal.get(originalId)||0)+Math.abs(Number(paymentAmountLKR(ref,r)||0)));
+    });
+    let refundedTotal=0;
+    const paid=receivedOriginals.reduce((sum,p)=>{
+      const originalAmount=Math.abs(Number(paymentAmountLKR(p,r)||0));
+      const refunded=Math.min(originalAmount,Math.max(0,refundedByOriginal.get(String(p.id||''))||0));
+      refundedTotal+=refunded;
+      return sum+Math.max(0,originalAmount-refunded);
+    },0);
+    // A recorded refund offsets the corresponding refunded charge, capped at folio total.
+    const charges=Math.max(0,grossCharges-Math.min(grossCharges,refundedTotal));
     const balance=charges-paid;
     if(Math.abs(balance)<0.01) return;
     const age=arAgeDays(co,asOf);
     const party=String(r.companyName||r.company||r.corporateName||r.guestName||r.guest||'Guest');
-    out.push({reservationId:r.id,guest:party,reservation:r.confirmationNumber||r.reference||r.bookingRef||r.id||'',room:r.roomNumber||r.room||'Unassigned',checkOut:co||'—',charges,paid,balance,age,bucket:arAgeBucket(age),status:r.status||'',currency:r.currency||settings?.guestCurrency||settings?.currency||'USD'});
+    out.push({reservationId:r.id,guest:party,reservation:r.confirmationNumber||r.reference||r.bookingRef||r.id||'',room:r.roomNumber||r.room||'Unassigned',checkOut:co||'—',charges,paid,balance,age,bucket:arAgeBucket(age),status:r.status||'',currency:r.currency||settings?.guestCurrency||settings?.currency||'USD',grossCharges,refundedTotal});
   });
   return out.sort((a,b)=>b.balance-a.balance);
 }
@@ -15630,14 +15671,14 @@ function renderARGuestLedger(){
   all.forEach(x=>{if(x.balance>0){totals.total+=x.balance;totals[x.bucket]+=x.balance;}});
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('arTotal',totals.total);set('arCurrent',totals.current);set('ar30',totals['30–59 Days']);set('ar60',totals['60–89 Days']);set('ar90',totals['90+ Days']);
-  const st=document.getElementById('arLedgerStatus'); if(st) st.innerHTML=`<strong>As of ${escapeHtml(d)}</strong> — ${all.length} open guest ledger balance(s), ${rows.length} shown. Balances are calculated from folio charges less received payments.`;
+  const st=document.getElementById('arLedgerStatus'); if(st) st.innerHTML=`<strong>As of ${escapeHtml(d)}</strong> — ${all.length} open guest ledger balance(s), ${rows.length} shown. Balances are calculated from folio charges adjusted for linked refunds, less net received payments.`;
   const tb=document.getElementById('arGuestLedgerTable');
   if(tb)tb.innerHTML=rows.length?rows.map(x=>`<tr><td>${escapeHtml(x.guest)}</td><td>${escapeHtml(x.reservation)}</td><td>${escapeHtml(x.room)}</td><td>${escapeHtml(x.checkOut)}</td><td style="text-align:right">${accMoney(x.charges)}</td><td style="text-align:right">${accMoney(x.paid)}</td><td style="text-align:right"><strong>${accMoney(Math.max(0,x.balance))}</strong></td><td>${escapeHtml(x.bucket)}</td><td><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn btn-secondary btn-small" onclick="showARDetail('${String(x.reservationId).replace(/'/g,"\\'")}')">Statement</button><button class="btn btn-secondary btn-small" onclick="printARInvoice('${String(x.reservationId).replace(/'/g,"\\'")}')">Invoice</button><button class="btn btn-success btn-small" onclick="openPaymentModal('${String(x.reservationId).replace(/'/g,"\\'")}')">Payment</button><button class="btn btn-primary btn-small" onclick="window.transferARToCityLedger('${String(x.reservationId).replace(/'/g,"\\'")}');return false;">City Ledger</button></div></td></tr></tr>`).join(''):`<tr><td colspan="9" class="empty">No outstanding guest balances found.</td></tr>`;
-  const detail=document.getElementById('arLedgerDetail'); if(detail && !detail.dataset.keep) detail.innerHTML='';
+  const detail=document.getElementById('arLedgerDetail'); if(detail){ const detailId=String(detail.dataset.reservationId||''); const visibleReservation=detailId && accProp(reservations||[]).some(r=>String(r.id)===detailId); if(!detail.dataset.keep || !visibleReservation){detail.innerHTML='';delete detail.dataset.keep;delete detail.dataset.reservationId;} }
 }
 function showARDetail(id){
   const d=arAsOfDate(), el=document.getElementById('arLedgerDetail'); if(!el)return;
-  el.dataset.keep='1'; el.innerHTML=arDetailHTML(id,d); el.scrollIntoView({behavior:'smooth',block:'start'});
+  el.dataset.keep='1'; el.dataset.reservationId=String(id); el.innerHTML=arDetailHTML(id,d); el.scrollIntoView({behavior:'smooth',block:'start'});
 }
 window.printARStatement=function(id){
   const r=reservations.find(x=>x.id===id); if(!r)return;
@@ -24898,12 +24939,26 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const oldSave=window.saveReservation;
   window.saveReservation=function(){
     const guestType=document.getElementById('guestType')?.value||'foreign';
+    const editId=(typeof editingReservationId!=='undefined'&&editingReservationId)?String(editingReservationId):null;
+    const selectedStatus=String(document.getElementById('reservationStatus')?.value||'');
     const before=new Set(reservations.map(r=>r.id));
     const result=oldSave.apply(this,arguments);
     const changed=reservations.filter(r=>!before.has(r.id));
-    const edited=(typeof editingReservationId!=='undefined'&&editingReservationId)?reservations.find(r=>r.id===editingReservationId):null;
+    /* The base save closes the modal and clears editingReservationId. Keep the
+       original ID so the final, normalized status is saved and synced for edits. */
+    const edited=editId?reservations.find(r=>String(r.id)===editId):null;
     const r=changed[0]||edited;
     if(r){
+      if(editId && selectedStatus){
+        const statusMap={reserved:'Reserved',confirmed:'Confirmed',checked_in:'Checked-In',checked_out:'Checked-Out',cancelled:'Cancelled',no_show:'No-Show'};
+        const requested=statusMap[selectedStatus]||selectedStatus;
+        /* Only allow this status update from the reservation edit form when the
+           reservation was Reserved before editing; operational transitions for
+           checked-in/out reservations remain protected by the existing UI. */
+        if(String(r.status||'').toLowerCase()==='reserved' || requested==='No-Show' || requested==='Cancelled' || requested==='Confirmed') r.status=requested;
+        if(r.status==='No-Show'){r.noShowAt=r.noShowAt||localDateTime();r.noShowBy=r.noShowBy||currentUser?.username||'SYSTEM';}
+        reservation2SaveNormalize(r);
+      }
       const type=String(guestType||r.guestType||'foreign').toLowerCase();
       const rate=type==='local'?1:fxRate();
       const cur=guestCurrencyForType(type);
@@ -24935,9 +24990,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         p.settlementAmountLKR=Number(p.amount||0)*rate;
       });
       saveData();
-      /* Sync only after the complete save chain has finalized the reservation.
-         This prevents the background cloud refresh from restoring a stale USD snapshot. */
-      Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(e=>console.warn('Final reservation cloud sync failed:',e));
+      /* Sync only after all fields, including canonical status, have been saved.
+         This prevents cloud hydration from restoring a stale Reserved status. */
+      Promise.resolve().then(()=>syncReservationToSupabase(r)).then(ok=>{
+        if(ok===false) console.warn('Final reservation cloud sync returned false:',r.id,r.status);
+      }).catch(e=>console.warn('Final reservation cloud sync failed:',e));
     }
     return result;
   };
