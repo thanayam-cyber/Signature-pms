@@ -15715,8 +15715,23 @@ function repairRefundAccountingJournals(){
   // Property-safe, idempotent repair. Reservation ownership is authoritative when available.
   // Never assign a refund journal to whichever property happens to be selected in the UI.
   if(!Array.isArray(payments) || typeof postJournal!=='function') return 0;
-  let created=0, corrected=0;
-  const all=accRead(ACC_STORE.journals);
+  let created=0, corrected=0, duplicatesRemoved=0;
+  let all=accRead(ACC_STORE.journals);
+  // A refund reference identifies one refund transaction. Older versions could
+  // post the same refund journal twice; keep one row per property/reference/source.
+  // Only collapse duplicate Payment Refund journals; leave every other accounting
+  // journal untouched. This is safe for the observed duplicate REF-* posting.
+  const seenRefundJournalKeys=new Set();
+  all=all.filter(j=>{
+    if(!j || String(j.source||'').trim().toLowerCase()!=='payment refund') return true;
+    const ref=String(j.reference||'').trim();
+    const prop=String(j.propertyId??j.property_id??'');
+    if(!ref || !prop) return true;
+    const key=prop+'|'+ref.toUpperCase()+'|payment refund';
+    if(seenRefundJournalKeys.has(key)){ duplicatesRemoved++; return false; }
+    seenRefundJournalKeys.add(key);
+    return true;
+  });
   const refunds=payments.filter(p=>paymentIsRefund(p) && Number(p.amount||0)!==0);
   for(const refund of refunds){
     const ref=String(refund.reference||'').trim();
@@ -15759,12 +15774,12 @@ function repairRefundAccountingJournals(){
       created++;
     }catch(e){ console.warn('Refund accounting repair skipped for '+ref,e); }
   }
-  if(corrected){
-    // Persist corrected journal ownership and the refund payment's property tag.
+  if(corrected || duplicatesRemoved){
+    // Persist corrected ownership and remove only duplicate Payment Refund journal rows.
     accWrite(ACC_STORE.journals,all);
-    if(typeof saveData==='function') saveData();
+    if(corrected && typeof saveData==='function') saveData();
   }
-  return created+corrected;
+  return created+corrected+duplicatesRemoved;
 }
 window.repairRefundAccountingJournals=repairRefundAccountingJournals;
 function renderAccounting(){
