@@ -12133,7 +12133,7 @@ function updateStandalonePaymentBalance(){updateStandalonePaymentAmountRule();}
 function updateStandalonePaymentAmountRule(){const id=document.getElementById('standalonePaymentReservation')?.value,a=document.getElementById('standalonePaymentAmount'),type=document.getElementById('standalonePaymentType')?.value;if(!a)return;if(type==='Deposit')a.value='';else if(id)a.value=getBalance(id).toFixed(2);a.removeAttribute('max');}
 function toggleStandaloneCardFields(){const e=document.getElementById('standaloneCardFields');if(e)e.style.display=document.getElementById('standalonePaymentMethod')?.value==='Card'?'block':'none';}
 function closeStandalonePaymentModal(){document.getElementById('standalonePaymentModal')?.classList.remove('show');}
-function saveStandalonePayment(){
+async function saveStandalonePayment(){
  if(!requireActionPermission('payments.deposit'))return;
  const id=document.getElementById('standalonePaymentReservation')?.value;
  const amountLKR=Number(document.getElementById('standalonePaymentAmount')?.value||0);
@@ -12156,7 +12156,21 @@ function saveStandalonePayment(){
  const rate=reservationSettlementRate(reservation);
  const guestCurrencyAmount=rate>0?amountLKR/rate:amountLKR;
  payments.push({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),reservationId:id,date:localDateTime(),reference:ref,type,method,amount:guestCurrencyAmount,settlementAmountLKR:amountLKR,settlementCurrency:'LKR',currency:String(reservation.currency||reservation.guestCurrency||settings?.guestCurrency||settings?.currency||'LKR').toUpperCase(),postingRateAtPayment:rate,status,receivedBy:document.getElementById('standalonePaymentReceivedBy').value.trim()||currentUser?.username||'Front Office',cardType,last4,notes:document.getElementById('standalonePaymentNotes').value.trim(),propertyId:currentPropertyId,businessDate:cashierBusinessDate(),transactionDate:localDateString(),guestName:reservation.guestName||'',roomId:reservation.roomId||null,cashier:document.getElementById('standalonePaymentReceivedBy').value.trim()||currentUser?.username||'Front Office',shiftId:currentCashierShift()?.id||null});
- saveData();closeStandalonePaymentModal();renderAll();logAudit('PAYMENT_CREATED',ref,(status==='Pending'?'Pending ':'')+type+' recorded: LKR '+amountLKR.toFixed(2),currentPropertyId);alert((status==='Pending'?'Pending payment':'Payment')+' recorded successfully in LKR '+amountLKR.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'.');
+ saveData();
+ // Payments are embedded in the reservation's cloud payload. Persist the updated
+ // reservation after adding the payment; saveData() alone only writes browser storage.
+ let cloudSaved=false;
+ if(typeof syncReservationToSupabase==='function'&&navigator.onLine){
+   try{cloudSaved=await syncReservationToSupabase(reservation);}catch(syncErr){console.warn('New Payment cloud sync failed:',syncErr);}
+ }
+ closeStandalonePaymentModal();
+ renderAll();
+ logAudit('PAYMENT_CREATED',ref,(status==='Pending'?'Pending ':'')+type+' recorded: LKR '+amountLKR.toFixed(2),currentPropertyId);
+ if(cloudSaved){
+   alert((status==='Pending'?'Pending payment':'Payment')+' recorded in LKR '+amountLKR.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' and synced to cloud.');
+ }else{
+   alert((status==='Pending'?'Payment':'Payment')+' recorded locally in LKR '+amountLKR.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+', BUT cloud sync was not confirmed. Do not record it again. Check the PMS cloud error message and verify this payment before refreshing or using another device.');
+ }
 }
 function openRefundModal(reservationId,paymentId){if(!requireActionPermission('payments.refund'))return;const p=payments.find(x=>x.id===paymentId),r=reservations.find(x=>x.id===reservationId);if(!p||!r)return;if(!paymentIsReceived(p)||paymentIsRefund(p)){alert('Only settled received payments can be refunded.');return;}const already=payments.filter(x=>x.refundOf===paymentId).reduce((s,x)=>s+Math.abs(Number(x.amount||0)),0),refundable=Math.max(0,Math.abs(Number(p.amount||0))-already);document.getElementById('refundInfo').innerHTML=`<strong>${escapeHtml(r.guestName)}</strong><div style="font-size:12px;color:#6b7280">${escapeHtml(r.bookingNo)} · Original ${money(Math.abs(p.amount))} · Refundable ${money(refundable)}</div>`;document.getElementById('refundAmount').value=refundable.toFixed(2);document.getElementById('refundAmount').max=refundable;document.getElementById('refundReference').value='REF-'+Date.now();document.getElementById('refundReason').value='';document.getElementById('refundModal').dataset.reservationId=reservationId;document.getElementById('refundModal').dataset.paymentId=paymentId;document.getElementById('refundModal').classList.add('show');}
 function closeRefundModal(){document.getElementById('refundModal')?.classList.remove('show');}
