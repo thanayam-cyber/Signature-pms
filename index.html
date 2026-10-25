@@ -1032,7 +1032,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </div>
 </div>
-<div class="section no-print" style="margin-bottom:18px"><div class="section-header"><div><h3>Printable Hotel Reports</h3><div style="font-size:12px;color:#6b7280">Select a report and print a clean operational or financial report for the selected date.</div></div><div class="toolbar"><select id="printReportType" onchange="renderPrintableReport()" style="min-width:240px"><option value="arrivals">Arrival List</option><option value="inhouse">Guest In-House List</option><option value="activity">Activity List</option><option value="departures">Departure List</option><option value="oos">Out of Order Rooms</option><option value="reservations">Reservations List</option><option value="nightaudit">Night Audit</option><option value="dailycash">Daily Cash</option><option value="dailychange">Daily Cash Change</option><option value="cashexpenses">Cash Expenses</option><option value="cashtransactions">Cash Transactions</option><option value="creditcard">Credit Card Payments</option><option value="banktransfer">Bank Transfers</option><option value="advance">Advance Payments</option><option value="booking_source">Booking Source-wise Report</option><option value="commission_pay">Commission Pay Report</option></select><button class="btn btn-primary" onclick="printSelectedReport()">Print Selected Report</button></div></div></div><div class="report-section" id="printableReport"><div id="printableReportContent"></div></div>
+<div class="section no-print" style="margin-bottom:18px"><div class="section-header"><div><h3>Printable Hotel Reports</h3><div style="font-size:12px;color:#6b7280">Select a report and print a clean operational or financial report for the selected date.</div></div><div class="toolbar"><select id="printReportType" onchange="renderPrintableReport()" style="min-width:240px"><option value="arrivals">Arrival List</option><option value="inhouse">Guest In-House List</option><option value="activity">Activity List</option><option value="departures">Departure List</option><option value="oos">Out of Order Rooms</option><option value="reservations">Reservations List</option><option value="nightaudit">Night Audit</option><option value="dailycash">Daily Cash</option><option value="dailychange">Daily Cash Change</option><option value="cashexpenses">Cash Expenses</option><option value="cashtransactions">Cash Transactions</option><option value="creditcard">Credit Card Payments</option><option value="banktransfer">Bank Transfers</option><option value="advance">Advance Payments</option><option value="monthly">Monthly Report</option><option value="onthebook">On-the-Book Report</option><option value="booking_source">Booking Source-wise Report</option><option value="commission_pay">Commission Pay Report</option></select><button class="btn btn-primary" onclick="printSelectedReport()">Print Selected Report</button></div></div></div><div class="report-section" id="printableReport"><div id="printableReportContent"></div></div>
 <div class="report-grid">
 <div class="card">
 <div class="card-title">Accommodation Revenue</div>
@@ -3153,38 +3153,17 @@ function loadCurrentPropertyData(){
     // Keep the legacy property-level menu synchronized for older screens/data migrations.
     settings.posMenu=JSON.parse(JSON.stringify(POS_MENU));
     settings.selectedPOSOutletId=String(POS_OUTLET_ID||"");
-    // Data-preservation compatibility: older records may contain numeric property IDs
-    // while the current property selector uses string IDs. Never discard those records.
+    // Strict property isolation: only reservations explicitly assigned to the
+    // selected property belong in its operational screens. Do not pull a booking
+    // into this property merely because a linked folio/payment/POS record matches;
+    // that can leak another property's reservations into this list and retag them.
     const sameProperty=(item)=>String(item?.propertyId??"")===String(currentPropertyId??"");
     const allReservations=readArray(STORAGE.reservations);
     const allFolios=readArray(STORAGE.folios);
     const allPayments=readArray(STORAGE.payments);
     const allSales=readArray(STORAGE.sales);
 
-    // Reservation-scope recovery: a reservation created/checked-in before a
-    // property-scope migration can occasionally retain a stale/missing
-    // propertyId while its folio/payment/POS records are correctly tagged for
-    // the current property. Recover only those reservations that are explicitly
-    // linked to current-property transactional records. This prevents a booking
-    // from disappearing from Reservations / In-House while remaining visible in AR.
-    const currentLinkedReservationIds=new Set(
-        allFolios.filter(sameProperty).map(x=>String(x?.reservationId||"")).filter(Boolean)
-    );
-    allPayments.filter(sameProperty).forEach(x=>{
-        const id=String(x?.reservationId||"");
-        if(id) currentLinkedReservationIds.add(id);
-    });
-    allSales.filter(sameProperty).forEach(x=>{
-        const id=String(x?.reservationId||"");
-        if(id) currentLinkedReservationIds.add(id);
-    });
-
-    reservations=allReservations.filter(r=>
-        sameProperty(r) || currentLinkedReservationIds.has(String(r?.id||""))
-    ).map(r=>({
-        ...r,
-        propertyId:currentPropertyId
-    }));
+    reservations=allReservations.filter(sameProperty);
     folios=allFolios.filter(sameProperty);
     payments=allPayments.filter(sameProperty);
     sales=allSales.filter(sameProperty);
@@ -12780,7 +12759,25 @@ function reportRowsTable(headers,rows){return `<div class="table-wrap"><table><t
 function reportDatePayments(selected){return payments.filter(p=>{const raw=String(p.date||"").trim();if(/^\d{4}-\d{2}-\d{2}/.test(raw))return raw.slice(0,10)===selected;const m=raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);return m?`${m[3]}-${m[2]}-${m[1]}`===selected:false;});}
 function reportHeader(title,selected){const prop=getProperty();return `<div style="text-align:center;margin-bottom:18px"><h2 style="margin:0">${escapeHtml(prop?.property||"Signature PMS")}</h2><h3 style="margin:6px 0">${escapeHtml(title)}</h3><div>Date: ${formatDate(selected)} · Generated: ${escapeHtml(localDateTime())}</div></div>`;}
 function renderPrintableReport(){const type=document.getElementById("printReportType")?.value||"arrivals";const selected=document.getElementById("reportDate")?.value||localDateString();const box=document.getElementById("printableReportContent");if(!box)return;const pay=reportDatePayments(selected);let title="",body="";const room=r=>r.bookingType==="villa"?"Entire Villa":getRoomLabel(r.roomId);
-if(type==="arrivals"){const rows=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),escapeHtml(r.mealPlan||""),r.adults||0,r.children||0,statusBadge(r.status)]);title="Arrival List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Meal Plan","Adults","Children","Status"],rows);}
+if(type==="monthly"){
+const month=selected.slice(0,7), start=month+"-01", end=month+"-"+String(new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate()).padStart(2,"0");
+const monthReservations=reservations.filter(r=>String(r.checkIn||"").slice(0,7)===month&&r.status!=="Cancelled"&&r.status!=="No-Show");
+const monthSales=sales.filter(x=>String(x.date||x.businessDate||"").slice(0,7)===month&&!(typeof fnbSaleIsVoided==="function"&&fnbSaleIsVoided(x)));
+const roomRevenue=monthReservations.filter(r=>["Checked-In","Checked-Out"].includes(String(r.status||""))).reduce((a,r)=>a+reservationAmountLKR(r,Number(r.total||0)),0);
+const posRevenue=monthSales.reduce((a,x)=>a+fnbSaleAmountLKR(x,Number(x.total||0)),0);
+const monthPayments=payments.filter(p=>String(p.date||"").slice(0,7)===month).reduce((a,p)=>a+paymentAmountLKR(p,reservations.find(r=>String(r.id||"")===String(p.reservationId||""))),0);
+const roomNights=monthReservations.reduce((a,r)=>a+(r.bookingType==="villa"?getRoomCount():Math.max(0,Number(r.nights)||Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)||0)),0);
+const rows=[["Month",month],["Reservations arriving",monthReservations.length],["Room nights (based on booked stays)",roomNights],["Accommodation revenue (checked-in/out arrivals)",reportMoney(roomRevenue)],["Restaurant / POS revenue",reportMoney(posRevenue)],["Total tracked revenue",reportMoney(roomRevenue+posRevenue)],["Payments recorded in month",reportMoney(monthPayments)]];
+title="Monthly Report";body=reportRowsTable(["Metric","Value"],rows);
+}
+else if(type==="onthebook"){
+const list=reservations.filter(r=>r.status==="Reserved"&&String(r.checkOut||"")>selected&&String(r.checkIn||"")>=selected).sort((a,b)=>String(a.checkIn||"").localeCompare(String(b.checkIn||"")));
+const rows=list.map(r=>[escapeHtml(r.bookingNo||""),escapeHtml(r.guestName||""),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),Number(r.nights)||Math.max(0,Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000)),escapeHtml(r.mealPlan||""),reportMoney(reservationAmountLKR(r,Number(r.total||0))),statusBadge(r.status)]);
+const nights=list.reduce((a,r)=>a+(Number(r.nights)||Math.max(0,Math.round((new Date(r.checkOut)-new Date(r.checkIn))/86400000))),0);
+const value=list.reduce((a,r)=>a+reservationAmountLKR(r,Number(r.total||0)),0);
+title="On-the-Book Report";body=`<div class="report-section"><div class="report-line"><span>As of</span><strong>${formatDate(selected)}</strong></div><div class="report-line"><span>Future confirmed reservations</span><strong>${list.length}</strong></div><div class="report-line"><span>Booked room nights</span><strong>${nights}</strong></div><div class="report-line"><span>Booked reservation value (not recognized revenue)</span><strong>${reportMoney(value)}</strong></div></div>`+reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Nights","Meal Plan","Booked Value","Status"],rows);
+}
+else if(type==="arrivals"){const rows=reservations.filter(r=>r.checkIn===selected&&r.status!=="Cancelled").map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),escapeHtml(r.mealPlan||""),r.adults||0,r.children||0,statusBadge(r.status)]);title="Arrival List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Meal Plan","Adults","Children","Status"],rows);}
 else if(type==="inhouse"){const rows=reservations.filter(r=>r.status==="Checked-In"&&r.checkIn<=selected&&r.checkOut>selected).map(r=>[escapeHtml(r.guestName),escapeHtml(r.bookingNo),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),r.adults||0,r.children||0,escapeHtml(r.guestPhone||"")]);title="Guest In-House List";body=reportRowsTable(["Guest","Booking","Room","Check-In","Check-Out","Adults","Children","Contact"],rows);}
 else if(type==="activity"){const rows=reservations.filter(r=>r.checkIn===selected||r.checkOut===selected||(r.status==="Checked-In"&&r.checkIn<selected&&r.checkOut>selected)).map(r=>[escapeHtml(r.checkIn===selected?"Arrival":r.checkOut===selected?"Departure":"In-House"),escapeHtml(r.guestName),escapeHtml(r.bookingNo),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),statusBadge(r.status)]);title="Activity List";body=reportRowsTable(["Activity","Guest","Booking","Room","Check-In","Check-Out","Status"],rows);}
 else if(type==="departures"){const rows=reservations.filter(r=>r.checkOut===selected&&["Checked-In","Checked-Out"].includes(r.status)).map(r=>[escapeHtml(r.bookingNo),escapeHtml(r.guestName),escapeHtml(room(r)),formatDate(r.checkIn),formatDate(r.checkOut),money(getPaymentsTotal(r.id)),money(getBalance(r.id)),statusBadge(r.status)]);title="Departure List";body=reportRowsTable(["Booking","Guest","Room","Check-In","Check-Out","Paid","Balance","Status"],rows);}
