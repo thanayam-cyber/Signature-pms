@@ -12112,7 +12112,7 @@ set('cashierCashReceived',cashierSum.cash);set('cashierCashRefunds',cashierSum.c
 /* Cashier summary on Payments page: calculate directly from today's settled cashier payments and the open shift. */
 try{
  const todayList=typeof getTodayCashierPayments==='function'?getTodayCashierPayments():[];
- const todaySum=typeof paymentSummary==='function'?paymentSummary(todayList):{cash:0,cashRefunds:0};
+ const todaySum=typeof cashierPaymentSummaryLKR==='function'?cashierPaymentSummaryLKR(todayList):{cash:0,cashRefunds:0};
  const shift=typeof currentCashierShift==='function'?currentCashierShift():null;
  const closing=typeof cashierClosingForBusinessDate==='function'?cashierClosingForBusinessDate():null;
  const hasCashierControl=!!(shift||closing);
