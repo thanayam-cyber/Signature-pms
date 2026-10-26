@@ -16446,11 +16446,9 @@ function hrTeamEmployees(){
 }
 function requireManager(){return canHRAdmin();}
 function ensureDefaults(){
- let a=rows(K.art); if(!a.length){a=[
-  {id:id('art'),propertyId:currentPropertyId,code:'FOOD-001',name:'Rice',category:'Food',unit:'kg',defaultCost:0,reorderLevel:10,active:true},
-  {id:id('art'),propertyId:currentPropertyId,code:'HK-001',name:'Laundry Detergent',category:'Housekeeping',unit:'ltr',defaultCost:0,reorderLevel:5,active:true},
-  {id:id('art'),propertyId:currentPropertyId,code:'AMN-001',name:'Guest Amenities',category:'Guest Supplies',unit:'set',defaultCost:0,reorderLevel:10,active:true}
- ];saveProp(K.art,a);}
+ // Do not auto-seed Purchasing articles. A newly created property must start empty;
+ // auto-seeding here caused deleted/default articles to reappear on refresh.
+ // Articles are created explicitly by an authorized user in Purchasing → Articles.
 }
 function applyPurchasingGranularVisibility(){
  const page=document.getElementById('purchasing'); if(!page)return;
@@ -27027,7 +27025,15 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   const scoped=a=>(Array.isArray(a)?a:[]).filter(x=>String(x?.propertyId||'')===pid()).map(x=>({...x,propertyId:pid()}));
   const scopedTombs=a=>(Array.isArray(a)?a:[]).filter(x=>String(x?.propertyId||'')===pid()&&String(x?.id||'')).map(x=>({...x,propertyId:pid()}));
   const dedupeTombs=list=>{const m=new Map();scopedTombs(list).forEach(t=>{const k=String(t.id);const prev=m.get(k);if(!prev||String(t.deletedAt||'')>String(prev.deletedAt||''))m.set(k,t)});return [...m.values()]};
-  const isDeleted=(article,tombs)=>tombs.some(t=>String(t.id)===String(article?.id)&&String(t.propertyId)===pid());
+  const isDeleted=(article,tombs)=>tombs.some(t=>{
+    if(String(t.propertyId)!==pid())return false;
+    if(String(t.id||'')&&String(t.id)===String(article?.id))return true;
+    const tc=norm(t.code),ac=norm(article?.code),tn=norm(t.name),an=norm(article?.name);
+    // IDs can differ between local/cloud copies; match the same property by stable article code,
+    // falling back to name only when a code is unavailable.
+    if(tc&&ac&&tc===ac)return true;
+    return (!tc||!ac)&&tn&&an&&tn===an;
+  });
   const dedupe=list=>{
     const out=[],codeMap=new Map(),nameMap=new Map();
     scoped(list).forEach(x=>{
