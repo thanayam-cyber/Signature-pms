@@ -9602,7 +9602,10 @@ function viewFolio(reservationId){
 
     const f=
         getFolio(reservationId);
-    if(f && typeof window.recalculateFolioTaxesAndService==='function') window.recalculateFolioTaxesAndService(reservationId);
+    if(f && typeof window.recalculateFolioTaxesAndService==='function') {
+        window.recalculateFolioTaxesAndService(reservationId);
+        if(typeof saveData==='function') saveData();
+    }
 
 
     const paid=
@@ -19766,7 +19769,7 @@ function cloudPropertyToLocal(row,existing){
        load as well as manual Cloud Refresh. */
     const CONFIG_KEYS=[
       'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
-      'serviceChargeRate','taxRate',
+      'serviceChargeRate','taxRate','vatEnabled','vatRate','vatInclusive','serviceChargeEnabled','tdlEnabled','tdlRate','tdlSmallRate','ssclEnabled','ssclRate',
     'vatEnabled','vatRate','vatInclusive','serviceChargeEnabled',
     'tdlEnabled','tdlRate','tdlSmallRate','ssclEnabled','ssclRate',
     'roomRate','roomBaseLocal','roomBaseForeign',
@@ -22653,16 +22656,16 @@ function cfg(){return (typeof settings!=='undefined'&&settings)?settings:current
 function save(){if(typeof saveData==='function')saveData();}
 function refresh(id){if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);}
 
-function taxCfg(p){p=p||cfg();return {
-  vatEnabled:p.vatEnabled===true,
+function taxCfg(p){p=p||cfg();const on=v=>v===true||v===1||String(v??'').trim().toLowerCase()==='true'||String(v??'').trim()==='1'||String(v??'').trim().toLowerCase()==='yes';return {
+  vatEnabled:on(p.vatEnabled),
   vatRate:Math.max(0,num(p.vatRate,18)),
-  vatInclusive:p.vatInclusive===true,
-  serviceChargeEnabled:p.serviceChargeEnabled===true,
+  vatInclusive:on(p.vatInclusive),
+  serviceChargeEnabled:on(p.serviceChargeEnabled),
   serviceChargeRate:Math.max(0,num(p.serviceChargeRate,10)),
-  tdlEnabled:p.tdlEnabled===true,
+  tdlEnabled:on(p.tdlEnabled),
   tdlRate:Math.max(0,num(p.tdlRate,1)),
   tdlSmallRate:Math.max(0,num(p.tdlSmallRate,0.5)),
-  ssclEnabled:p.ssclEnabled===true,
+  ssclEnabled:on(p.ssclEnabled),
   ssclRate:Math.max(0,num(p.ssclRate,2.5))
 };}
 
@@ -22792,8 +22795,12 @@ function extendFolioUI(){
   const f=typeof getFolio==='function'?getFolio(rid):null;if(!f)return;
   if(!box){box=document.createElement('div');box.id='folioDiscountAndTaxExtension';box.style.cssText='padding:12px;margin-top:14px;border:1px solid #d1d5db;border-radius:10px;background:#f8fafc';host.appendChild(box);}
   const items=Array.isArray(f.discountItems)?f.discountItems:[];
-  box.innerHTML='<div style="font-weight:700;margin-bottom:8px">Discount History</div>'+
-    '<div style="font-size:12px;color:#64748b;margin-bottom:8px">Tax and service charge rates are controlled centrally in Settings → Tax &amp; Billing. This folio only records the discount applied to this stay.</div>'+
+  const folioTaxLines='<div style="font-weight:700;margin:12px 0 6px">Tax &amp; Service Charge Summary</div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:13px;margin:4px 0"><span>Service Charge ('+num(f.serviceChargeRate,0)+'%)</span><strong>LKR '+num(f.serviceCharges,0).toFixed(2)+'</strong></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:13px;margin:4px 0"><span>VAT ('+num(f.taxRate,0)+'%)</span><strong>LKR '+num(f.taxes,0).toFixed(2)+'</strong></div>';
+  box.innerHTML=folioTaxLines+
+    '<div style="font-weight:700;margin:14px 0 8px">Discount History</div>'+
+    '<div style="font-size:12px;color:#64748b;margin-bottom:8px">Tax and service charge rates are controlled centrally in Settings → Tax &amp; Billing.</div>'+
     (items.length?'<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Type</th><th>Reason</th><th>Amount</th><th>By</th><th></th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(x.type||'')+'</td><td>'+escapeHtml(x.reason||'')+'</td><td>LKR '+num(x.amount).toFixed(2)+'</td><td>'+escapeHtml(x.addedBy||'')+'</td><td><button class="btn btn-danger btn-small" onclick="removeFolioDiscount(\''+rid+'\',\''+x.id+'\')">Remove</button></td></tr>').join('')+'</tbody></table></div>':'<div style="font-size:12px;color:#64748b">No folio discounts applied.</div>');
 }
 
@@ -25548,7 +25555,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   const CONFIG_KEYS=[
     'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
-    'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+    'serviceChargeRate','taxRate',
+    'vatEnabled','vatRate','vatInclusive','serviceChargeEnabled','tdlEnabled','tdlRate','tdlSmallRate','ssclEnabled','ssclRate',
+    'roomRate','roomBaseLocal','roomBaseForeign',
     'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
     'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
     'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
