@@ -21742,7 +21742,10 @@ document.addEventListener('click',function(e){const b=e.target?.closest?.('butto
   window.__signatureV244ConfigSourceOfTruth=true;
   const KEYS=[
     'currency','baseCurrency','guestCurrency','postingRate','settlementRate','cashRate',
-    'serviceChargeRate','taxRate','roomRate','roomBaseLocal','roomBaseForeign',
+    'serviceChargeRate','taxRate',
+    'vatEnabled','vatRate','vatInclusive','serviceChargeEnabled',
+    'tdlEnabled','tdlRate','tdlSmallRate','ssclEnabled','ssclRate',
+    'roomRate','roomBaseLocal','roomBaseForeign',
     'villaLocal','villaForeign','maxGuests','foodCostMarkup','teaCoffeeIncluded',
     'bookingTypes','rateMatrix','roomRateMatrix','roomRateMatrixLocal','roomRateMatrixForeign',
     'rateAllocationMatrix','rateAllocationMatrixLocal','rateAllocationMatrixForeign',
@@ -22678,10 +22681,24 @@ window.saveSriLankaTaxSettings=async function(){
   Object.assign(property,tax);
   property.taxRate=tax.vatEnabled?tax.vatRate:0;
   property.serviceChargeRate=tax.serviceChargeEnabled?tax.serviceChargeRate:0;
-  if(typeof settings!=='undefined'&&settings&&String(settings.id||currentPropertyId)===String(currentPropertyId)){
+  // `settings` is a working copy of the selected property. The cloud saver
+  // serializes `settings`, so keep it in sync even when its `id` field is absent
+  // or has a different legacy representation. The selected property is already
+  // resolved above by exact currentPropertyId; never update another property.
+  if(typeof settings!=='undefined'&&settings){
     Object.assign(settings,tax);
     settings.taxRate=property.taxRate;
     settings.serviceChargeRate=property.serviceChargeRate;
+    settings.vatEnabled=tax.vatEnabled;
+    settings.vatRate=tax.vatRate;
+    settings.vatInclusive=tax.vatInclusive;
+    settings.serviceChargeEnabled=tax.serviceChargeEnabled;
+    settings.serviceChargeRate=tax.serviceChargeRate;
+    settings.tdlEnabled=tax.tdlEnabled;
+    settings.tdlRate=tax.tdlRate;
+    settings.tdlSmallRate=tax.tdlSmallRate;
+    settings.ssclEnabled=tax.ssclEnabled;
+    settings.ssclRate=tax.ssclRate;
   }
   if(typeof saveProperties==='function')saveProperties();
   if(typeof saveData==='function')saveData();
@@ -22690,6 +22707,7 @@ window.saveSriLankaTaxSettings=async function(){
       const ok=await window.__signatureSavePropertyConfigToCloud();
       if(!ok)throw new Error('Cloud configuration save did not complete.');
     }
+    try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){console.warn('Daily Revenue tax preview refresh skipped:',e);}
     alert('Tax & billing settings saved for '+(property.property||property.name||'the selected property')+'.');
   }catch(err){
     console.error('Property-scoped tax settings cloud save failed:',err);
