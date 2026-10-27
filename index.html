@@ -4,7 +4,8 @@
 <!-- SIGNATURE PMS PATCH VERSION: 2.1.467 OTA COMMISSION JOURNAL REPAIR -->
 
 
-<html lang="en"><head>
+<html lang="en"><head>\n<!-- Daily Revenue tax preview v7: merges current property and active config to avoid stale disabled flags masking enabled tax settings. Preview only; does not post accounting. -->\n<!-- Daily Revenue tax preview v6: uses global getProperty(currentPropertyId), normalizes boolean settings, and falls back to loaded tax controls only when saved fields are absent. -->\n<!-- Daily Revenue tax preview v5: selected property config with active settings fallback. Preview only. -->\n<!-- Daily Revenue tax preview v4: reads saved tax settings from selected property record. Preview only. -->\n<!-- Daily Revenue tax preview v3: reads loaded tax controls. Preview only; not full POS/Folio/GL integration. -->
+<!-- Daily Revenue tax preview v2: use central tax configuration for selected property. Preview only; does not mutate source transactions. -->
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1.0" name="viewport"/>
 <meta content="#17251d" name="theme-color"/>
@@ -8368,8 +8369,6 @@ function saveReservation(){
             folios.push(folio);
         }
         folio.accommodation=total;
-        folio.propertyId=reservation.propertyId||currentPropertyId;
-        if(typeof window.recalculateFolioTaxesAndService==='function') window.recalculateFolioTaxesAndService(reservation.id);
         folio.total=getFolioTotal(reservation.id);
 
         let depositPayment=payments.find(p=>p.reservationId===reservation.id && p.type==="Deposit");
@@ -8421,7 +8420,6 @@ function saveReservation(){
 
     const reservation={
         id,
-        propertyId:currentPropertyId,
         bookingNo,
         guestId:guestProfile.id,
         guestName,
@@ -8460,7 +8458,6 @@ function saveReservation(){
     folios.push({
         id:"f_"+Date.now()+"_"+Math.random().toString(36).slice(2,7),
         reservationId:id,
-        propertyId:currentPropertyId,
         accommodation:total,
         restaurant:0,
         extras:0,
@@ -8475,28 +8472,6 @@ function saveReservation(){
         foreignAmount:0,
         createdAt:localDateTime()
     });
-
-    // Apply the selected property's saved VAT and service-charge configuration
-    // immediately to the newly created folio, before the first persistence/render.
-    try {
-        const selectedTaxProperty = Array.isArray(properties)
-            ? properties.find(p => String(p.id) === String(currentPropertyId))
-            : null;
-        const taxSource = selectedTaxProperty || (typeof getProperty === "function" ? getProperty() : null) || settings || {};
-        if (taxSource && typeof taxSource === "object") {
-            // Keep the calculation helper's legacy settings fields aligned with the
-            // dedicated Sri Lanka Tax & Billing Configuration for this property.
-            taxSource.taxRate = taxSource.vatEnabled === true ? Math.max(0, Number(taxSource.vatRate ?? 18) || 0) : 0;
-            taxSource.serviceChargeRate = taxSource.serviceChargeEnabled === true ? Math.max(0, Number(taxSource.serviceChargeRate ?? 10) || 0) : 0;
-        }
-        if (typeof window.recalculateFolioTaxesAndService === "function") {
-            window.recalculateFolioTaxesAndService(id);
-        }
-    } catch (taxApplyError) {
-        console.error("New reservation folio tax calculation failed:", taxApplyError);
-    }
-
-    if(typeof window.recalculateFolioTaxesAndService==='function') { try { window.recalculateFolioTaxesAndService(id); } catch(e) { console.warn('Folio tax recalculation failed',e); } }
 
     if(deposit>0){
         payments.push({
@@ -9460,7 +9435,6 @@ function addManualFolioCharge(reservationId){
         addedAt:localDateTime(),
         addedBy:currentUser?.username||"Staff"
     });
-    if(typeof window.recalculateFolioTaxesAndService==='function') window.recalculateFolioTaxesAndService(reservationId);
     folio.total=getFolioTotal(reservationId);
 
     saveData();
@@ -9619,22 +9593,11 @@ function viewFolio(reservationId){
 
     const r=
         reservations.find(
-            x=>String(x.id)===String(reservationId)
+            x=>x.id===reservationId
         );
 
     if(!r)
         return;
-
-    // v2.1.475 tax-link repair: ensure the selected property's tax settings
-    // are applied when the folio is opened, before totals are rendered.
-    // Recalculation is idempotent and only updates this reservation's folio.
-    try {
-        if (typeof window.recalculateFolioTaxesAndService === 'function') {
-            window.recalculateFolioTaxesAndService(reservationId);
-        }
-    } catch (taxErr) {
-        console.error('Guest Folio tax recalculation failed:', taxErr);
-    }
 
 
     const f=
@@ -11826,24 +11789,6 @@ function nextPOSInvoiceNo(){
     while(seen.has(next))next++;
     return prefix+String(next).padStart(6,"0");
 }
-
-/* v2.1.475 — property-scoped restaurant tax calculation for NEW POS sales.
-   Does not rewrite historical sales. */
-function signatureRestaurantTaxBreakdown(subtotal, propertyId){
-  const round=v=>Math.round((Number(v||0)+Number.EPSILON)*100)/100;
-  const prop=(Array.isArray(properties)?properties.find(x=>String(x.id)===String(propertyId||currentPropertyId)):null)||settings||{};
-  const enabled=v=>v===true || String(v).toLowerCase()==='yes';
-  const vatEnabled=enabled(prop.vatEnabled), scEnabled=enabled(prop.serviceChargeEnabled);
-  const vatRate=Math.max(0,Number(prop.vatRate ?? prop.taxRate ?? 0)||0);
-  const scRate=Math.max(0,Number(prop.serviceChargeRate||0)||0);
-  const base=round(subtotal), serviceCharge=scEnabled?round(base*scRate/100):0;
-  const inclusive=enabled(prop.vatInclusive);
-  let vat=0;
-  if(vatEnabled&&vatRate>0) vat=inclusive?round(base*vatRate/(100+vatRate)):round((base+serviceCharge)*vatRate/100);
-  const total=round(base+serviceCharge+(inclusive?0:vat));
-  return {subtotal:base,serviceCharge,vat,total,vatRate:vatEnabled?vatRate:0,serviceChargeRate:scEnabled?scRate:0,vatEnabled,serviceChargeEnabled:scEnabled,vatInclusive:inclusive};
-}
-
 function printPOSInvoice(saleId){
     if(!hasActionPermission("pos.request_bill")){alert("Access denied. Request / Print Final Bill has not been assigned to your user account.");return;}
     const sale=(sales||[]).find(x=>x.id===saleId);
@@ -11851,7 +11796,6 @@ function printPOSInvoice(saleId){
     if(!sale.invoiceNo){sale.invoiceNo=nextPOSInvoiceNo();saveData();try{renderPOSInvoices();}catch(e){}}
     const p=settings||{};
     const r=reservations.find(x=>x.id===sale.reservationId);
-    const taxBreakdown=sale.taxBreakdown||null;
     const rows=(sale.items||[]).map(i=>{
         const q=Number(i.qty||0),pr=Number(i.price||0);
         return "<tr><td>"+escapeHtml(i.name||"Item")+"</td><td class='r'>"+q+"</td><td class='r'>"+posSaleMoney(sale,pr)+"</td><td class='r'>"+posSaleMoney(sale,pr*q)+"</td></tr>";
@@ -11871,10 +11815,6 @@ function printPOSInvoice(saleId){
       +"<div><span>Customer</span><span>"+escapeHtml(customer)+"</span></div>"
       +"<div><span>Cashier</span><span>"+escapeHtml(sale.cashier||"")+"</span></div></div>"
       +"<table><thead><tr><th>Item</th><th class='r'>Qty</th><th class='r'>Price</th><th class='r'>Amount</th></tr></thead><tbody>"+rows+"</tbody></table>"
-      +(taxBreakdown?("<div class='meta' style='margin-top:10px'>"+
-        "<div><span>Subtotal</span><span>"+posSaleMoney(sale,Number(taxBreakdown.subtotal||0))+"</span></div>"+
-        (Number(taxBreakdown.serviceCharge||0)>0?"<div><span>Service Charge ("+Number(taxBreakdown.serviceChargeRate||0)+"%)</span><span>"+posSaleMoney(sale,Number(taxBreakdown.serviceCharge||0))+"</span></div>":"")+
-        (Number(taxBreakdown.vat||0)>0?"<div><span>VAT ("+Number(taxBreakdown.vatRate||0)+"%)</span><span>"+posSaleMoney(sale,Number(taxBreakdown.vat||0))+"</span></div>":"")+"</div>"):"")
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
@@ -12088,8 +12028,8 @@ async function settleFNBTable(){
  if(method==="Room Charge"&&!t.guestId){alert("Select the guest / folio first.");return;}
  const outlet=getCurrentPOSOutlet();if(!outlet)return;
  const guest=t.guestId?reservations.find(r=>String(r.id)===String(t.guestId)):null;
- const subtotal=fnbTableTotal(t),taxBreakdown=signatureRestaurantTaxBreakdown(subtotal,currentPropertyId),total=taxBreakdown.total,saleId="sale_"+Date.now(),invoiceNo=nextPOSInvoiceNo(),bizDate=cashierBusinessDate();
- const sale={id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:t.items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,outletId:outlet.id,outletName:outlet.name})),subtotal:taxBreakdown.subtotal,taxBreakdown,total,paymentMethod:method,customerType:t.customerType||"Walk-In",customerName:guest?.guestName||t.guestName||"",outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),tableNo:t.tableNo,tableName:t.name,kotCount:Number(t.kotNo||0),botCount:Number(t.botNo||0)};
+ const total=fnbTableTotal(t),saleId="sale_"+Date.now(),invoiceNo=nextPOSInvoiceNo(),bizDate=cashierBusinessDate();
+ const sale={id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:t.items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty,outletId:outlet.id,outletName:outlet.name})),total,paymentMethod:method,customerType:t.customerType||"Walk-In",customerName:guest?.guestName||t.guestName||"",outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),tableNo:t.tableNo,tableName:t.name,kotCount:Number(t.kotNo||0),botCount:Number(t.botNo||0)};
  sales.push(sale);
  if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const lkr=fnbSaleAmountLKR({currency:sale.currency,baseCurrency:sale.baseCurrency,postingRateAtBooking:sale.postingRateAtBooking},total);folio.restaurant=Number(folio.restaurant||0)+lkr;folio.total=getFolioTotal(guest.id);}
  if(method!=="Room Charge")payments.push({id:"p_"+Date.now(),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,status:"Received",receivedBy:currentUser?.username||"Restaurant",notes:"Table settlement — "+t.name});
@@ -12136,7 +12076,7 @@ async function settleFNBTable(){
 }
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
-function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const rateType=document.getElementById("posRateType")?.value||"Local";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const subtotal=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const taxBreakdown=signatureRestaurantTaxBreakdown(subtotal,currentPropertyId);const total=taxBreakdown.total;const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),subtotal:taxBreakdown.subtotal,taxBreakdown,total,paymentMethod:method,customerType,rateType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;if(typeof window.recalculateFolioTaxesAndService==='function')window.recalculateFolioTaxesAndService(guest.id);folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
+function savePOSOrder(){if(!currentUser){showLoginScreen();return;}if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}const customerType=document.getElementById("posCustomerType")?.value||"In-House";const rateType=document.getElementById("posRateType")?.value||"Local";const guestId=document.getElementById("posGuest")?.value||"";const outlet=getCurrentPOSOutlet();if(!outlet){alert("Please configure at least one active restaurant / outlet.");return;}let guest=null;if(customerType==="In-House"){if(!guestId){alert("Please select an in-house guest / folio.");return;}guest=reservations.find(r=>r.id===guestId);if(!guest||guest.status!=="Checked-In"){alert("Restaurant POS is available only for currently checked-in guests.");return;}}if(!posOrder.length){alert("Please add items.");return;}const method=document.getElementById("posPaymentMethod")?.value||"Cash";if(customerType!=="In-House"&&method==="Room Charge"){alert("Walk-in / outside guests cannot be charged to a room folio.");return;}const total=posOrder.reduce((sum,item)=>sum+item.price*item.qty,0);const saleId="sale_"+Date.now();const invoiceNo=nextPOSInvoiceNo();const bizDate=cashierBusinessDate();sales.push({id:saleId,invoiceNo,businessDate:bizDate,cashier:currentUser?.username||"",reservationId:guest?.id||null,date:localDateString(),dateTime:localDateTime(),items:JSON.parse(JSON.stringify(posOrder)),total,paymentMethod:method,customerType,rateType,customerName:guest?.guestName||String(document.getElementById("posWalkInName")?.value||"").trim(),outletId:outlet.id,outletName:outlet.name,outletType:outlet.outletType||"Restaurant",propertyId:currentPropertyId,currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320),fnbShiftId:(typeof fnbCurrentShift==='function'?(fnbCurrentShift(outlet.id,bizDate,currentUser?.username)?.id||null):null)});if(guest){let folio=getFolio(guest.id);if(!folio){folio={id:"f_"+Date.now(),reservationId:guest.id,propertyId:currentPropertyId,accommodation:Number(guest.total||0),restaurant:0,extras:0,discounts:0,taxes:0,serviceCharges:0,total:Number(guest.total||0)};folios.push(folio);}const settlementTotalLKR=fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total);folio.restaurant=Number(folio.restaurant||0)+settlementTotalLKR;folio.total=getFolioTotal(guest.id);}if(method!=="Room Charge"){payments.push({id:"p_"+Date.now()+"_"+Math.random().toString(36).slice(2,5),reservationId:guest?.id||null,propertyId:currentPropertyId,date:localDateTime(),reference:invoiceNo,invoiceNo,saleId,businessDate:bizDate,type:"Restaurant",method,amount:total,settlementAmountLKR:fnbSaleAmountLKR({currency:String(settings?.guestCurrency||settings?.currency||"USD").toUpperCase(),baseCurrency:String(settings?.baseCurrency||"LKR").toUpperCase(),postingRateAtBooking:Number(settings?.postingRate||320)},total),status:"Received",receivedBy:currentUser?.username||"Restaurant",cardType:"",last4:"",notes:"Restaurant POS payment — "+outlet.name+" — "+customerType+" — Invoice "+invoiceNo});}saveData();
 if(guest && typeof syncReservationToSupabase==='function'){
   // v2.1.133 — explicitly sync the updated guest reservation snapshot after
   // the POS sale/folio/payment arrays have been committed locally.
@@ -15290,7 +15230,25 @@ function renderDailyRevenuePosting(){
   if(dateEl){dateEl.max=current;if(!dateEl.value || dateEl.value>current)dateEl.value=current;}
   const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
-  set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);set('dailyPostTax',0);
+  set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);
+  // Resolve current-property tax config from both the selected property and active config.
+  // Some builds keep the current property's settings in `settings`; merge rather than letting
+  // stale false/zero fields in one object mask enabled values in the other.
+  let taxProp={};
+  try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
+  let activeCfg={};
+  try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
+  const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
+  const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
+  const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
+  const vatEnabled=taxBool(taxProp.vatEnabled)||taxBool(settings?.vatEnabled)||taxBool(activeCfg.vatEnabled)||(vatControl?.value==='yes');
+  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled)||taxBool(settings?.serviceChargeEnabled)||taxBool(activeCfg.serviceChargeEnabled)||(scControl?.value==='yes');
+  const vatRate=Math.max(0,Number(taxProp.vatRate||settings?.vatRate||activeCfg.vatRate||(vatRateControl?vatRateControl.value:0)||taxProp.taxRate||settings?.taxRate)||0);
+  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate||settings?.serviceChargeRate||activeCfg.serviceChargeRate||(scRateControl?scRateControl.value:0))||0);
+  const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
+  const previewSC=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
+  const previewVAT=vatEnabled?Number(((taxableBase+previewSC)*vatRate/100).toFixed(2)):0;
+  set('dailyPostTax',previewSC+previewVAT);
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
   if(st){
@@ -16447,34 +16405,12 @@ function shape(p){if(!p)return;p.baseCurrency=p.baseCurrency||'LKR';p.guestCurre
 try{if(typeof settings!=='undefined')shape(settings);if(typeof properties!=='undefined'&&Array.isArray(properties))properties.forEach(shape);}catch(e){}
 
 window.recalculateFolioTaxesAndService=function(id){
- const r=(typeof reservations!=='undefined'?reservations:[]).find(x=>String(x.id)===String(id));
- const f=typeof getFolio==='function'?getFolio(id):null;
- if(!r||!f)return null;
- const pid=r.propertyId||f.propertyId||currentPropertyId;
- const p=(typeof properties!=='undefined'&&Array.isArray(properties))
-   ?properties.find(x=>String(x.id)===String(pid))
-   :null;
- const cfg=p||((typeof currentProp==='function'&&currentProp())||((typeof settings!=='undefined'&&settings)||{}));
- const enabled=v=>v===true||v===1||String(v??'').trim().toLowerCase()==='true'||String(v??'').trim().toLowerCase()==='yes'||String(v??'').trim()==='1';
- const scEnabled=enabled(cfg.serviceChargeEnabled), vatEnabled=enabled(cfg.vatEnabled);
- const sr=scEnabled?Math.max(0,Number(cfg.serviceChargeRate??10)||0):0;
- const tr=vatEnabled?Math.max(0,Number(cfg.vatRate??18)||0):0;
- const accommodation=typeof reservationAmountLKR==='function'?Number(reservationAmountLKR(r,Number(r.total||0))||0):Number(f.accommodation??r.total??0)||0;
- const restaurant=typeof folioRestaurantLKR==='function'?Number(folioRestaurantLKR(id)||0):Number(f.restaurant||0)||0;
- const extras=Number(f.extras||0)||0, discounts=Number(f.discounts||0)||0;
- const subtotal=Math.max(0,accommodation+restaurant+extras-discounts);
- const serviceCharges=Number((subtotal*sr/100).toFixed(2));
- // VAT-exclusive: VAT is charged on subtotal plus service charge, if enabled.
- // VAT-inclusive: extract VAT from the tax-inclusive subtotal/service amount.
- const taxableBase=subtotal+serviceCharges;
- const taxes=vatEnabled?(enabled(cfg.vatInclusive)?Number((taxableBase*tr/(100+tr)).toFixed(2)):Number((taxableBase*tr/100).toFixed(2))):0;
- f.propertyId=pid; f.accommodation=accommodation; f.restaurant=restaurant;
- f.serviceChargeRate=sr; f.taxRate=tr; f.serviceCharges=serviceCharges; f.taxes=taxes;
- f.currency='LKR'; f.baseCurrency='LKR';
- f.total=Number((accommodation+restaurant+extras+serviceCharges+taxes-discounts).toFixed(2));
- f.taxCalculationSource='property-settings';
- f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();
- return f;
+ const r=(typeof reservations!=='undefined'?reservations:[]).find(x=>x.id===id),f=typeof getFolio==='function'?getFolio(id):null;if(!r||!f)return null;
+ const p=prop(),scEnabled=p.serviceChargeEnabled===true || cfg().serviceChargeEnabled===true,vatEnabled=p.vatEnabled===true || cfg().vatEnabled===true;
+ const sr=scEnabled?Math.max(0,n(p.serviceChargeRate!=null?p.serviceChargeRate:cfg().serviceChargeRate,0)):0;
+ const tr=vatEnabled?Math.max(0,n(p.vatRate!=null?p.vatRate:cfg().vatRate,18)):0;
+ const subtotal=Math.max(0,n(r.total)+n(f.restaurant)+n(f.extras)-n(f.discounts));
+ f.serviceChargeRate=sr;f.taxRate=tr;f.serviceCharges=Number((subtotal*sr/100).toFixed(2));f.taxes=Number(((subtotal+f.serviceCharges)*tr/100).toFixed(2));f.currency=f.currency||guest();f.baseCurrency=f.baseCurrency||'LKR';f.postingRateAtCalculation=postRate();f.total=n(r.total)+n(f.restaurant)+n(f.extras)+n(f.serviceCharges)+n(f.taxes)-n(f.discounts);f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();return f;
 };
 window.setFolioServiceCharge=function(id){recalculateFolioTaxesAndService(id);if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
 window.setFolioTax=function(id){recalculateFolioTaxesAndService(id);if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
@@ -22742,7 +22678,7 @@ window.saveSriLankaTaxSettings=async function(){
   Object.assign(property,tax);
   property.taxRate=tax.vatEnabled?tax.vatRate:0;
   property.serviceChargeRate=tax.serviceChargeEnabled?tax.serviceChargeRate:0;
-  if(typeof settings!=='undefined'&&settings){
+  if(typeof settings!=='undefined'&&settings&&String(settings.id||currentPropertyId)===String(currentPropertyId)){
     Object.assign(settings,tax);
     settings.taxRate=property.taxRate;
     settings.serviceChargeRate=property.serviceChargeRate;
@@ -28629,5 +28565,3 @@ body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
 /* Preserve semantic status colours and the original layouts. */
 
 </style>
-
-<!-- SIGNATURE PMS FIX V3: robust boolean handling and reservation-property scoped folio tax calculation; 2026-10-27 -->
