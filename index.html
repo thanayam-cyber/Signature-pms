@@ -25895,20 +25895,35 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(el) el.value=getFX().toFixed(2);
   }
 
-  function saveFX(){
+  async function saveFX(){
     if(typeof hasActionPermission==='function' && !hasActionPermission("settings.currency")) return;
     if(typeof settings==='undefined' || !settings){ alert('Please select a property first.'); return; }
     const rate=Number(document.getElementById('dynamicFxRate')?.value||0);
     if(!Number.isFinite(rate) || rate<=0){ alert('Please enter a valid USD → LKR exchange rate.'); return; }
+    const s=document.getElementById('dynamicFxStatus');
+    if(s) s.textContent='Saving exchange rate…';
     settings.baseCurrency='LKR';
     settings.guestCurrency='USD';
     settings.currency='USD';
     settings.postingRate=rate;
     settings.settlementRate=rate;
-    if(typeof saveData==='function') saveData();
-    refreshFXPanel();
-    const s=document.getElementById('dynamicFxStatus');
-    if(s) s.textContent='Saved. New reservations will use LKR '+rate.toFixed(2)+' per USD.';
+    try{
+      if(typeof saveData==='function') saveData();
+      if(typeof window.__signatureRefreshRatePlansForFX==='function'){
+        window.__signatureRefreshRatePlansForFX();
+      }
+      if(typeof window.__signatureSavePropertyConfigToCloud!=='function'){
+        throw new Error('Cloud settings saver is unavailable.');
+      }
+      const saved=await window.__signatureSavePropertyConfigToCloud();
+      if(saved===false) throw new Error('Cloud did not confirm the settings save.');
+      refreshFXPanel();
+      if(s) s.textContent='Saved to this property. New reservations will use LKR '+rate.toFixed(2)+' per USD.';
+    }catch(err){
+      console.error('Exchange rate save failed:',err);
+      if(s) s.textContent='Saved locally, but cloud save failed. Please retry.';
+      alert('Exchange rate was saved locally, but cloud save failed. Please check your connection and try again.\n\n'+(err?.message||err));
+    }
   }
 
   /* Keep the existing global function name used by the reservation engine. */
