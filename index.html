@@ -16600,7 +16600,7 @@ function renderPR(){
    const total=Number(r.total||0), existingPO=findExistingPOForPR(r), poRef=r.poNumber||r.purchaseOrderNumber||existingPO?.number||'';
    let action='';
    if(poRef && hasModuleAction('purchasing.po')){
-     action=`<button class="btn btn-success btn-small" onclick="openPurchaseOrderFromPR('${esc(r.id)}')">Open ${esc(poRef)}</button>`;
+     action=`<button class="btn btn-success btn-small" onclick="openPurchaseOrderFromPR('${esc(r.id)}')">Open ${esc(poRef)}</button> <button class="btn btn-secondary btn-small" onclick="printPurchaseOrderFromPR('${esc(r.id)}')">Print PO</button>`;
    }else{
      action=`<button class="btn btn-secondary btn-small" onclick="openPurchaseRequestDetails('${esc(r.id)}')">Open</button>`;
      if(r.status==='Submitted' && hasModuleAction('purchasing.request')) action+=` <button class="btn btn-primary btn-small" onclick="approvePurchaseRequest('${esc(r.id)}')">Approve</button>`;
@@ -16655,6 +16655,23 @@ window.openPurchaseOrderFromPR=async function(prId){
   <button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button>
  </div>`;
  document.getElementById(idm).classList.add('show');
+};
+window.printPurchaseOrderFromPR=async function(prId){
+ if(!requireModuleAction('purchasing.po'))return;
+ const pr=rows(K.pr).find(x=>String(x.id)===String(prId));
+ if(!pr){alert('Purchase Request not found.');return;}
+ let po=findExistingPOForPR(pr);
+ const poRef=pr.poNumber||pr.purchaseOrderNumber||po?.number||'';
+ if(!po && poRef){
+   try{const all=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');po=(Array.isArray(all)?all:[]).find(x=>String(x.propertyId||'')===String(currentPropertyId||'')&&String(x.number||'')===String(poRef))||null;}catch(e){}
+ }
+ if(!po && typeof window.hydrateSupabasePurchaseOrders==='function'){
+   try{await window.hydrateSupabasePurchaseOrders();}catch(e){console.warn('PO cloud refresh before print failed:',e);}
+   po=findExistingPOForPR(pr);
+   if(!po && poRef){try{const all=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');po=(Array.isArray(all)?all:[]).find(x=>String(x.propertyId||'')===String(currentPropertyId||'')&&String(x.number||'')===String(poRef))||null;}catch(e){}}
+ }
+ if(!po){alert('Purchase Order not found. Please use Purchasing → Cloud Refresh and try again.');return;}
+ window.printPurchaseOrder(po.id);
 };
 window.printPurchaseOrder=function(poId){
  let all=[];try{all=JSON.parse(localStorage.getItem('signature_pms_purchase_orders')||'[]');}catch(e){all=[];}
