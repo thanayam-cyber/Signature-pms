@@ -22647,12 +22647,13 @@ window.__signatureV290H999CloudSyncFix=true;
 })();
 </script>
 <!-- SIGNATURE PMS v2.1.311 — CENTRAL TAX SETTINGS + FOLIO DISCOUNT -->
+<!-- TAX PROPERTY ISOLATION PATCH V2: selected-property reads; no shared-settings tax mutation/saveData -->
 <script>
 (function(){
 "use strict";
 function num(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d;}
 function currentProp(){return (typeof getProperty==='function'?getProperty():null)||{};}
-function cfg(){return (typeof settings!=='undefined'&&settings)?settings:currentProp();}
+function cfg(){/* Tax calculations must read the selected property's own record, never the shared working settings object. */const p=currentProp();return p&&Object.keys(p).length?p:((typeof settings!=='undefined'&&settings)?settings:{});}
 function save(){if(typeof saveData==='function')saveData();}
 function refresh(id){if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);}
 
@@ -22691,31 +22692,35 @@ window.saveSriLankaTaxSettings=async function(){
   Object.assign(property,tax);
   property.taxRate=tax.vatEnabled?tax.vatRate:0;
   property.serviceChargeRate=tax.serviceChargeEnabled?tax.serviceChargeRate:0;
-  // `settings` is a working copy of the selected property. The cloud saver
-  // serializes `settings`, so keep it in sync even when its `id` field is absent
-  // or has a different legacy representation. The selected property is already
-  // resolved above by exact currentPropertyId; never update another property.
-  if(typeof settings!=='undefined'&&settings){
-    Object.assign(settings,tax);
-    settings.taxRate=property.taxRate;
-    settings.serviceChargeRate=property.serviceChargeRate;
-    settings.vatEnabled=tax.vatEnabled;
-    settings.vatRate=tax.vatRate;
-    settings.vatInclusive=tax.vatInclusive;
-    settings.serviceChargeEnabled=tax.serviceChargeEnabled;
-    settings.serviceChargeRate=tax.serviceChargeRate;
-    settings.tdlEnabled=tax.tdlEnabled;
-    settings.tdlRate=tax.tdlRate;
-    settings.tdlSmallRate=tax.tdlSmallRate;
-    settings.ssclEnabled=tax.ssclEnabled;
-    settings.ssclRate=tax.ssclRate;
-  }
+  // Save only the selected property's record locally. Do not mutate the shared
+  // `settings` working object or call saveData(), which can serialize stale
+  // settings from another property back to cloud. Cloud update below is explicit.
   if(typeof saveProperties==='function')saveProperties();
-  if(typeof saveData==='function')saveData();
   try{
-    if(typeof window.__signatureSavePropertyConfigToCloud==='function'&&!window.__signatureCloudHydrating){
-      const ok=await window.__signatureSavePropertyConfigToCloud();
-      if(!ok)throw new Error('Cloud configuration save did not complete.');
+    /* TAX-ISOLATION FIX V2: write only the selected property's tax keys directly
+       into that property's settings_data. Never serialize or mutate the shared
+       working settings object during this operation. */
+    if(!window.__signatureCloudHydrating && typeof initSupabaseClient==='function'){
+      const client=initSupabaseClient();
+      if(client && typeof getSupabaseSessionUser==='function'){
+        const authUser=await getSupabaseSessionUser();
+        if(!authUser)throw new Error('Please sign in with Supabase before saving tax settings.');
+        const cloudId=typeof resolveSupabasePropertyId==='function' ? await resolveSupabasePropertyId(String(currentPropertyId)) : String(currentPropertyId);
+        if(!cloudId)throw new Error('Cloud property could not be resolved for the selected hotel.');
+        const {data:row,error:readError}=await client.from('properties').select('id,settings_data').eq('id',String(cloudId)).maybeSingle();
+        if(readError)throw readError;
+        if(!row)throw new Error('Selected hotel was not found in cloud properties.');
+        const oldCloud=(row.settings_data&&typeof row.settings_data==='object')?row.settings_data:{};
+        const taxKeys=['vatEnabled','vatRate','vatInclusive','serviceChargeEnabled','serviceChargeRate','tdlEnabled','tdlRate','tdlSmallRate','ssclEnabled','ssclRate','taxRate'];
+        const taxOnly={};taxKeys.forEach(k=>{if(Object.prototype.hasOwnProperty.call(property,k))taxOnly[k]=property[k];});
+        const {data:verified,error:updateError}=await client.from('properties').update({settings_data:{...oldCloud,...taxOnly}}).eq('id',String(cloudId)).select('id,settings_data').maybeSingle();
+        if(updateError)throw updateError;
+        if(!verified)throw new Error('Cloud did not confirm the selected hotel tax settings update.');
+        const saved=(verified.settings_data&&typeof verified.settings_data==='object')?verified.settings_data:{};
+        for(const k of taxKeys){if(Object.prototype.hasOwnProperty.call(taxOnly,k)&&saved[k]!==taxOnly[k])throw new Error('Cloud verification failed for '+k+'.');}
+      } else if(client) {
+        throw new Error('Cloud session verification is unavailable.');
+      }
     }
     try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){console.warn('Daily Revenue tax preview refresh skipped:',e);}
     alert('Tax & billing settings saved for '+(property.property||property.name||'the selected property')+'.');
@@ -24505,6 +24510,29 @@ function hookHKRights(){applyHKRightsUI();const page=document.getElementById('ho
  const oldShow=window.showPage;if(typeof oldShow==='function'&&!oldShow.__hk430Show){window.showPage=function(){const r=oldShow.apply(this,arguments);setTimeout(applyHKRightsUI,30);return r};window.showPage.__hk430Show=true;}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hookHKRights);else hookHKRights();
+})();
+</script>
+
+<!-- SIGNATURE PMS TAX FIX V3: refresh tax form after property load/cloud hydration -->
+<script id="signature-tax-form-property-refresh-v3">
+(function(){
+  "use strict";
+  function refreshTaxForm(){
+    try { if(typeof window.loadSriLankaTaxSettings === "function") window.loadSriLankaTaxSettings(); }
+    catch(e){ console.warn("Tax form refresh for selected property skipped:",e); }
+  }
+  if(typeof window.loadCurrentPropertyData === "function" && !window.__signatureTaxLoadWrappedV3){
+    window.__signatureTaxLoadWrappedV3=true;
+    var originalLoad=window.loadCurrentPropertyData;
+    window.loadCurrentPropertyData=function(){var result=originalLoad.apply(this,arguments);refreshTaxForm();return result;};
+  }
+  if(typeof window.switchProperty === "function" && !window.__signatureTaxSwitchWrappedV3){
+    window.__signatureTaxSwitchWrappedV3=true;
+    var originalSwitch=window.switchProperty;
+    window.switchProperty=function(){var result=originalSwitch.apply(this,arguments);refreshTaxForm();return result;};
+  }
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded",refreshTaxForm);
+  else refreshTaxForm();
 })();
 </script>
 </body><script id="v2-1-360-po-open-button-final">
@@ -28383,7 +28411,9 @@ const reportPages=chunks.map((chunk,ci)=>`<article class="page"><header><h1>${es
 const photoPages=photoChunks.map((chunk,ci)=>`<article class="page photopage"><header><h1>${escHtml(run.templateName||'Checklist Report')} — Photo Evidence</h1><div class="brand">PHOTOS ATTACHED SEPARATELY · ${ci*10+1}–${ci*10+chunk.length} OF ${photos.length}</div></header><div class="photogrid">${chunk.map((it,j)=>`<div class="photocard"><img src="${it.photoData}" alt="Checklist evidence"><b>${ci*10+j+1}. ${escHtml(it.text)}</b><div>${escHtml(it.sectionName||'')} · ${escHtml(it.photoName||'Camera photo')}</div></div>`).join('')}</div><footer>Signature PMS · Photo evidence · Page ${chunks.length+ci+1} of ${chunks.length+photoChunks.length}</footer></article>`).join('');
 const w=window.open('','_blank');if(!w)return alert('Your browser blocked the PDF review window. Allow pop-ups for Signature PMS and try again.');
 w.document.open();w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(run.templateName||'Checklist')} - PDF Report</title><style>*{box-sizing:border-box}body{font:9px Arial,sans-serif;color:#111;margin:0;background:#eee}.toolbar{position:sticky;top:0;background:#fff;padding:10px;display:flex;gap:8px;z-index:5}.toolbar button{padding:9px 14px}.page{width:186mm;min-height:273mm;margin:8mm auto;background:#fff;padding:8mm 9mm;position:relative;page-break-after:always;break-after:page}header{border-bottom:1px solid #999;padding-bottom:5px;margin-bottom:6px}h1{font-size:15px;margin:0 0 3px}.brand{font-size:8px;color:#555;font-weight:bold}.meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;padding:6px;border:1px solid #ddd;margin:6px 0;font-size:8px}.summary{font-weight:bold;margin:5px 0}.range{font-weight:bold;background:#eef2f7;padding:4px;margin:4px 0}.item{border-bottom:1px solid #ddd;padding:3px 2px;break-inside:avoid}.itemtop{display:flex;justify-content:space-between;gap:8px;align-items:start;font-size:9px}.itemtop b{flex:1}.status{font-size:8px;font-weight:bold;white-space:nowrap}.fail,.missing,.req{color:#b91c1c}.sectionname{font-size:7px;color:#555;margin-top:1px}.detail{font-size:8px;margin-top:1px;overflow-wrap:anywhere}.photogrid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,1fr);gap:5mm;height:235mm}.photocard{border:1px solid #ddd;padding:4px;min-height:0;display:flex;flex-direction:column;overflow:hidden}.photocard img{width:100%;height:35mm;object-fit:contain;flex:0 0 auto}.photocard b{font-size:8px;margin-top:3px;overflow-wrap:anywhere}.photocard div{font-size:7px;color:#555;margin-top:2px;overflow-wrap:anywhere}footer{position:absolute;bottom:4mm;left:9mm;right:9mm;border-top:1px solid #ddd;padding-top:3px;font-size:7px;color:#666}@page{size:A4;margin:0}@media(max-width:700px){body{background:#fff}.page{width:100%;min-height:0;margin:0;padding:12px;box-shadow:none}.meta{grid-template-columns:1fr}.photogrid{height:auto;grid-template-rows:none}.photocard img{height:30vw}footer{position:static;margin-top:20px}.toolbar{position:static}}@media print{body{background:#fff}.toolbar{display:none!important}.page{width:auto;height:297mm;min-height:297mm;margin:0;padding:8mm 9mm;box-shadow:none;overflow:hidden}.photogrid{height:235mm}.photocard img{height:35mm}footer{position:absolute;bottom:4mm}}
-</style></head><body><div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button><button onclick="window.close()">Close</button><span>Compact report: up to 20 checklist items per page. All photos are on separate final pages, up to 10 per page.</span></div>${reportPages}${photoPages}<script>window.addEventListener('load',()=>Promise.all([...document.images].map(i=>i.decode?i.decode().catch(()=>{}):Promise.resolve())));<\/script></body></html>`);w.document.close();};
+</style></head><body><div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button><button onclick="window.close()">Close</button><span>Compact report: up to 20 checklist items per page. All photos are on separate final pages, up to 10 per page.</span></div>${reportPages}${photoPages}<script>window.addEventListener('load',()=>Promise.all([...document.images].map(i=>i.decode?i.decode().catch(()=>{}):Promise.resolve())));<\/script>
+
+</body></html>`);w.document.close();};
 window.gclSharePdf=async function(runArg){
 const run=runArg||currentRun;if(!run)return alert('Start or open a checklist report first.');if(run.status!=='Completed')return alert('Complete the checklist before sharing the PDF.');if(!allowed('share'))return alert('You do not have permission to share reports.');
 let JsPDF=window.jspdf?.jsPDF;if(!JsPDF){try{await new Promise((resolve,reject)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';sc.onload=resolve;sc.onerror=()=>reject(new Error('PDF library could not load'));document.head.appendChild(sc)});JsPDF=window.jspdf?.jsPDF}catch(e){return alert('Direct PDF creation is unavailable. Use Review / Print PDF and choose Save as PDF.')}}
