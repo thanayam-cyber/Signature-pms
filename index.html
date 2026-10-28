@@ -20253,34 +20253,32 @@ async function resolveSupabasePropertyId(localPropertyId){
     if(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)) return raw;
 
     const state=window.signaturePMSState;
-    const localProperties=state?.properties||[];
+    // Prefer the live property records; the mirrored state can be stale.
+    const localProperties=(Array.isArray(properties)&&properties.length)?properties:(Array.isArray(state?.properties)?state.properties:[]);
     const localProp=localProperties.find(p=>String(p.id)===raw) || null;
-    const code=String(localProp?.code||raw).trim();
+    const code=String(localProp?.code||"").trim();
     const name=String(localProp?.property||localProp?.name||"").trim();
+    if(!localProp) throw new Error('Local hotel ID "'+raw+'" is not in the current property list; refusing an unsafe cloud save.');
 
-    // Local PMS property IDs are customer/local identifiers. Supabase relations
-    // use properties.id (UUID), so resolve by property code first, then name.
-    let q=client.from("properties").select("id,code,name").eq("code",code).limit(1);
-    let {data,error}=await q;
-    if(error) throw error;
-    if(data?.[0]?.id) return String(data[0].id);
-
-    if(name){
-        const byName=await client.from("properties").select("id,code,name").eq("name",name).limit(1);
-        if(byName.error) throw byName.error;
-        if(byName.data?.[0]?.id) return String(byName.data[0].id);
+    // Resolve by a unique cloud code, then a unique name. Never silently
+    // fall back to the primary hotel when several hotels are assigned.
+    if(code){
+      const {data,error}=await client.from("properties").select("id,code,name").eq("code",code).limit(2);
+      if(error) throw error;
+      if(data?.length===1&&data[0]?.id) return String(data[0].id);
+      if(data?.length>1) throw new Error('Duplicate cloud property code "'+code+'"; refusing an ambiguous save.');
     }
-
-    // If the signed-in user has exactly one assigned cloud property, it is a
-    // safe fallback for a legacy local property identifier.
+    if(name){
+      const byName=await client.from("properties").select("id,code,name").eq("name",name).limit(2);
+      if(byName.error) throw byName.error;
+      if(byName.data?.length===1&&byName.data[0]?.id) return String(byName.data[0].id);
+      if(byName.data?.length>1) throw new Error('Duplicate cloud property name "'+name+'"; refusing an ambiguous save.');
+    }
     const {data:ups,error:upErr}=await client.from("user_properties").select("property_id,is_primary").eq("user_id",(await client.auth.getUser()).data.user?.id||"");
     if(upErr) throw upErr;
     const assigned=[...(ups||[])].filter(x=>x.property_id).map(x=>String(x.property_id));
     if(assigned.length===1) return assigned[0];
-    const primary=(ups||[]).find(x=>x.is_primary)?.property_id;
-    if(primary) return String(primary);
-
-    throw new Error("Cloud property not mapped for local property \""+raw+"\". Open Hotel Configuration / Supabase Cloud and refresh the assigned property first.");
+    throw new Error('Cloud hotel mapping is not unique for local hotel "'+raw+'" ('+(name||code||'missing code/name')+'). Refusing to save to a different hotel.');
 }
 
 async function syncReservationToSupabase(reservation){
