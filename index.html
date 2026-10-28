@@ -28674,3 +28674,43 @@ body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
 /* Preserve semantic status colours and the original layouts. */
 
 </style>
+
+<!-- Monthly attendance fix: loaded by the main PMS page -->
+<script id="signature-hr-monthly-attendance">
+(function(){
+ 'use strict';
+ const STATUSES=['Present','Absent','Half Day','Day Off','AL','ML','CL'];
+ function monthDays(month){const p=month.split('-').map(Number);return new Date(p[0],p[1],0).getDate();}
+ function dateFor(month,day){return month+'-'+String(day).padStart(2,'0');}
+ window.markAttendance=function(){
+  if(typeof canHRAttendance==='function'&&!canHRAttendance()){alert('Access denied. Attendance entry is not assigned to your user account.');return;}
+  const em=typeof hrTeamEmployees==='function'?hrTeamEmployees():[];
+  if(!em.length){alert('No active employees are available. Please check the employee list and department access.');return;}
+  const idm='sigAttendanceModal';
+  if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:900px;width:96%;max-height:90vh;overflow:auto"><div class="modal-header"><h3>Monthly Attendance — One Employee</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee *</label><select id="haEmp"></select></div><div class="form-group"><label>Month *</label><input id="haMonth" type="month"></div><div class="form-group full"><p style="margin:0;color:#475569">Select one employee and set attendance for each date. Existing entries will be loaded. Dates left as “No change” will be left untouched.</p></div></div><div id="haMonthRows" style="overflow:auto;margin-top:12px"></div><div style="display:flex;justify-content:space-between;gap:8px;margin-top:15px;flex-wrap:wrap"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveMonthlyAttendance()">Save Month Attendance</button></div></div></div>`);
+  const sel=document.getElementById('haEmp');sel.innerHTML=em.map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo||'')} — ${esc(x.name||'')}${x.department?' — '+esc(x.department):''}</option>`).join('');
+  document.getElementById('haMonth').value=today().slice(0,7);
+  sel.onchange=renderMonthRows;document.getElementById('haMonth').onchange=renderMonthRows;
+  renderMonthRows();document.getElementById(idm).classList.add('show');
+ };
+ function renderMonthRows(){
+  const month=document.getElementById('haMonth')?.value, eid=document.getElementById('haEmp')?.value, box=document.getElementById('haMonthRows');if(!box||!month||!eid)return;
+  const n=monthDays(month), all=rows(K.att), prop=String(currentPropertyId);
+  let html='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:8px">Date</th><th style="text-align:left;padding:8px">Day</th><th style="text-align:left;padding:8px">Status</th><th style="text-align:left;padding:8px">Remarks</th></tr></thead><tbody>';
+  for(let d=1;d<=n;d++){const date=dateFor(month,d),dt=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d),old=all.find(x=>String(x.employeeId)===String(eid)&&String(x.date)===date&&String(x.propertyId)===prop);html+=`<tr><td style="padding:6px;border-top:1px solid #e2e8f0">${date}</td><td style="padding:6px;border-top:1px solid #e2e8f0">${dt.toLocaleDateString(undefined,{weekday:'short'})}</td><td style="padding:6px;border-top:1px solid #e2e8f0"><select id="hamStatus_${d}" style="min-width:145px;padding:7px"><option value="">No change</option>${STATUSES.map(s=>`<option value="${s}" ${old?.status===s?'selected':''}>${s}</option>`).join('')}${old&&!STATUSES.includes(old.status)?`<option value="${esc(old.status)}" selected>${esc(old.status)}</option>`:''}</select></td><td style="padding:6px;border-top:1px solid #e2e8f0"><input id="hamRemarks_${d}" value="${esc(old?.remarks||'')}" placeholder="Optional" style="width:100%;min-width:120px;padding:7px"></td></tr>`;}
+  box.innerHTML=html+'</tbody></table>';
+ }
+ window.saveMonthlyAttendance=async function(){
+  if(!requireModuleAction('hr.attendance'))return;
+  const eid=document.getElementById('haEmp')?.value,month=document.getElementById('haMonth')?.value,em=hrEmployees().find(x=>String(x.id)===String(eid));if(!em||!month||!/^[0-9]{4}-[0-9]{2}$/.test(month)){alert('Select an employee and valid month.');return;}
+  if(typeof isDepartmentSupervisor==='function'&&isDepartmentSupervisor()&&String(em.department||'').trim().toLowerCase()!==String(currentUser.department||'').trim().toLowerCase()){alert('You can only enter attendance for employees in your assigned department.');return;}
+  const n=monthDays(month),a=rows(K.att),now=new Date().toISOString();let changed=0;
+  for(let d=1;d<=n;d++){const status=document.getElementById('hamStatus_'+d)?.value||'';if(!status)continue;const date=dateFor(month,d),remarks=document.getElementById('hamRemarks_'+d)?.value.trim()||'';let old=a.find(x=>String(x.employeeId)===String(eid)&&String(x.date)===date&&String(x.propertyId)===String(currentPropertyId));if(old){old.status=status;old.remarks=remarks;old.markedBy=user();old.markedAt=now;}else a.push({id:id('att'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,department:em.department||'',date,status,remarks,markedBy:user(),markedAt:now});changed++;}
+  if(!changed){alert('No attendance statuses selected. Choose statuses for the dates you want to save.');return;}
+  saveProp(K.att,a);if(typeof renderHR==='function')renderHR();
+  let cloudMsg='';try{if(typeof window.syncHRKeyToCloud==='function'){const ok=await window.syncHRKeyToCloud(K.att);cloudMsg=ok?'\nCloud sync confirmed.':'\nWarning: cloud sync was not confirmed; please use Refresh and verify.';}}catch(e){cloudMsg='\nWarning: cloud sync failed; please use Refresh and verify.';}
+  document.getElementById('sigAttendanceModal')?.classList.remove('show');alert(changed+' attendance date(s) saved for '+em.name+' ('+month+').'+cloudMsg);
+ };
+})();
+
+</script>
