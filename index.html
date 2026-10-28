@@ -23251,67 +23251,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.openPurchaseOrderFromPR=openDirect;
 })();
 </script>
-<script id="v2-1-370-purchasing-articles-final-fix">
-/* v2.1.370 — Purchasing Articles final shared source-of-truth.
-   Uses ONLY pms_cloud_records / signature_pms_articles.
-   Login/Auth untouched. Restaurant POS untouched. Other Purchasing modules untouched.
-*/
-(function(){
-'use strict';
-if(window.__signatureV370ArticlesFinal)return;
-window.__signatureV370ArticlesFinal=true;
-const KEY='signature_pms_articles', CLOUD='pms_cloud_records';
-const pid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
-const read=()=>{try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
-const write=a=>{try{localStorage.setItem(KEY,JSON.stringify(a||[]));}catch(e){}};
-const norm=v=>String(v??'').trim().toLowerCase();
-function clean(list){
- const p=pid(),out=[],byCode=new Map(),byName=new Map();
- (Array.isArray(list)?list:[]).filter(x=>String(x?.propertyId||'')===p).forEach(x=>{
-  const r={...x,propertyId:p};
-  const c=norm(r.code),n=norm(r.name),hit=(c&&byCode.get(c))||(n&&byName.get(n));
-  if(!hit){out.push(r);if(c)byCode.set(c,r);if(n)byName.set(n,r);return;}
-  const merged={...hit,...r,propertyId:p,id:hit.id||r.id,code:r.code||hit.code,name:r.name||hit.name,
-   category:r.category||hit.category||'General',unit:r.unit||hit.unit||'pcs',
-   defaultCost:Number(r.defaultCost??hit.defaultCost??0),reorderLevel:Number(r.reorderLevel??hit.reorderLevel??0),
-   active:r.active!==undefined?r.active:hit.active!==false};
-  const i=out.indexOf(hit);if(i>=0)out[i]=merged;
-  if(c)byCode.set(c,merged);if(n)byName.set(n,merged);
- });
- return out;
-}
-const replaceMine=a=>{const p=pid();write(read().filter(x=>String(x?.propertyId||'')!==p).concat(clean(a)));};
-async function clientReady(){
- const c=typeof initSupabaseClient==='function'?initSupabaseClient():null,p=pid();if(!c||!p)return null;
- try{const s=await c.auth.getSession();if(!s?.data?.session?.user)return null;return{c,p,u:s.data.session.user.id};}catch(e){return null}
-}
-async function cloud(){const z=await clientReady();if(!z)return null;try{const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',KEY).maybeSingle();if(q.error)throw q.error;return Array.isArray(q.data?.data)?clean(q.data.data.map(x=>({...x,propertyId:z.p}))):null;}catch(e){console.warn('v370 article cloud read:',e?.message||e);return null;}}
-async function push(list){const z=await clientReady();if(!z)return false;const data=clean(list);try{const q=await z.c.from(CLOUD).upsert({property_id:z.p,storage_key:KEY,data,updated_by:z.u,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});if(q.error)throw q.error;replaceMine(data);return true;}catch(e){console.warn('v370 article cloud publish:',e?.message||e);return false;}}
-let busy=false;
-async function reconcile(){
- /* v2.1.475 follow-up: all article hydration must go through the tombstone-aware
-    canonical sync. The old v370 union reconciler resurrected deleted cloud rows. */
- if(typeof window.hydrateSupabasePurchaseArticles==='function'){
-   return await window.hydrateSupabasePurchaseArticles();
- }
- return false;
-}
-window.signatureArticlesReconcile=reconcile;
-/* Save Article: original save remains responsible for local record creation; we publish after it. */
-function bindSave(){
- const fn=window.saveArticleMaster;if(typeof fn!=='function'||fn.__v370)return;
- const w=function(){const r=fn.apply(this,arguments);setTimeout(()=>reconcile(),500);return r;};w.__v370=true;window.saveArticleMaster=w;
-}
-function bindNav(){
- ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{const fn=window[name];if(typeof fn!=='function'||fn.__v370Nav)return;const w=function(){const r=fn.apply(this,arguments);setTimeout(()=>reconcile(),1500);return r;};w.__v370Nav=true;window[name]=w;});
-}
-/* Open Articles is a strong synchronization point and does not alter POS. */
-const oldOpen=window.openArticleManager;
-if(typeof oldOpen==='function'&&!oldOpen.__v370Open){window.openArticleManager=function(){reconcile();return oldOpen.apply(this,arguments)};window.openArticleManager.__v370Open=true;}
-const boot=()=>{bindSave();bindNav();setTimeout(()=>reconcile(),2500);setTimeout(()=>reconcile(),6000);setTimeout(()=>{bindSave();bindNav();},700);};
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-})();
-</script>
+<!-- Removed obsolete v2-1-370 Purchasing Articles wrapper: v2-1-369 canonical property-scoped sync is the single owner. -->
 <script id="v2-1-374-fnb-table-cloud-sync">
 /* v2.1.374 — RESTAURANT TABLE SERVICE CLOUD SYNC. F&B tables only. */
 (function(){
