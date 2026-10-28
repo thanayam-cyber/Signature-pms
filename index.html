@@ -27035,6 +27035,9 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   const KEY='signature_pms_articles';
   const TOMB_KEY='signature_pms_article_tombstones';
   const CLOUD='pms_cloud_records';
+  // Guard against startup/property-switch hydrations completing after a newer local save.
+  let articleMutationVersion=0;
+  let articlePublishQueue=Promise.resolve();
   const pid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
   const read=()=>{try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
   const write=a=>{try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(a)?a:[]));return true}catch(e){return false}};
@@ -27072,17 +27075,38 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   async function cloudReadTombs(){const data=await cloudReadKey(TOMB_KEY);return data===null?null:dedupeTombs(data.map(x=>({...x,propertyId:pid()})));}
   async function publishKey(key,data){const z=await auth();if(!z)return false;try{const q=await z.c.from(CLOUD).upsert({property_id:z.p,storage_key:key,data,updated_by:z.u,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});if(q.error)throw q.error;return true}catch(e){console.warn('Article cloud publish failed ('+key+'):',e?.message||e);return false}}
   async function publishTombs(list){const p=pid(),data=dedupeTombs(list);if(!writeTombs(readTombs().filter(x=>String(x?.propertyId||'')!==p).concat(data)))return false;return await publishKey(TOMB_KEY,data)}
-  async function publish(list){const p=pid();if(!p)return false;const tombs=dedupeTombs(readTombs());const data=dedupe(list).filter(x=>!isDeleted(x,tombs));const ok=await publishKey(KEY,data);if(ok){const all=read().filter(x=>String(x?.propertyId||'')!==p).concat(data);write(all)}return ok}
+  async function publish(list){
+    const p=pid();if(!p)return false;
+    const snapshot=dedupe(list),version=articleMutationVersion;
+    const run=async()=>{
+      // Rebuild from the latest local snapshot when queued, so an older request
+      // cannot be the final cloud write after a newer article save.
+      const tombs=dedupeTombs(readTombs());
+      const source=version===articleMutationVersion? snapshot:scoped(read());
+      const data=dedupe(source).filter(x=>!isDeleted(x,tombs));
+      const ok=await publishKey(KEY,data);
+      if(ok&&version===articleMutationVersion){const all=read().filter(x=>String(x?.propertyId||'')!==p).concat(data);write(all)}
+      return ok;
+    };
+    const task=articlePublishQueue.then(run,run);
+    articlePublishQueue=task.then(()=>undefined,()=>undefined);
+    return await task;
+  }
   function repaint(){try{if(typeof renderArticles==='function')renderArticles()}catch(e){}try{if(typeof renderArticleManagerList==='function')renderArticleManagerList()}catch(e){}}
   async function hydrate(){
     const p=pid();if(!p)return false;
+    const version=articleMutationVersion;
     const before=scoped(read());
     const localTombs=scopedTombs(readTombs());
     const cloudTombs=await cloudReadTombs();
+    // A save or property change happened while the request was in flight: never
+    // let this stale response replace the newer local article state.
+    if(version!==articleMutationVersion||p!==pid())return false;
     const tombs=dedupeTombs(localTombs.concat(cloudTombs||[]));
     writeTombs(readTombs().filter(x=>String(x?.propertyId||'')!==p).concat(tombs));
     if(cloudTombs===null||tombSig(cloudTombs)!==tombSig(tombs))await publishTombs(tombs);
     const cloud=await cloudRead();
+    if(version!==articleMutationVersion||p!==pid())return false;
     // Do not use the obsolete property_store_records table: the canonical source is pms_cloud_records.
     const merged=dedupe((cloud||[]).concat(before)).filter(x=>!isDeleted(x,tombs));
     const changed=sig(before)!==sig(merged);
@@ -27099,7 +27123,35 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     return await publishTombs(scopedTombs(all));
   };
   window.syncSupabasePurchaseArticles=async()=>publish(scoped(read()));
-  function wrapSave(){const fn=window.saveArticleMaster;if(typeof fn!=='function'||fn.__v369ArticlesWrapped)return;const w=async function(){const p=pid();try{const cloud=await cloudRead(),local=scoped(read()),tombs=dedupeTombs(readTombs());if(cloud){const merged=dedupe(cloud.concat(local)).filter(x=>!isDeleted(x,tombs));write(read().filter(x=>String(x?.propertyId||'')!==p).concat(merged))}}catch(e){}const result=fn.apply(this,arguments);setTimeout(async()=>{try{await publish(dedupe(read()));repaint()}catch(e){}},300);return result};w.__v369ArticlesWrapped=true;window.saveArticleMaster=w}
+  function wrapSave(){
+    const fn=window.saveArticleMaster;
+    if(typeof fn!=='function'||fn.__v369ArticlesWrapped)return;
+    const w=async function(){
+      const p=pid();
+      // Preserve the local snapshot before any network wait; merge it with cloud
+      // only if no other article save changed state while that read was pending.
+      const versionAtStart=articleMutationVersion;
+      const localAtStart=scoped(read());
+      try{
+        const cloud=await cloudRead();
+        if(cloud&&versionAtStart===articleMutationVersion&&p===pid()){
+          const tombs=dedupeTombs(readTombs());
+          const merged=dedupe(cloud.concat(localAtStart)).filter(x=>!isDeleted(x,tombs));
+          write(read().filter(x=>String(x?.propertyId||'')!==p).concat(merged));
+        }
+      }catch(e){console.warn('Article pre-save cloud read failed:',e?.message||e)}
+      if(p!==pid())return false;
+      articleMutationVersion++;
+      const result=fn.apply(this,arguments);
+      // Do not report a successful durable save until the cloud write has returned.
+      const ok=await publish(scoped(read()));
+      repaint();
+      if(!ok)console.warn('Purchasing Article saved locally, but cloud confirmation failed.');
+      return result;
+    };
+    w.__v369ArticlesWrapped=true;
+    window.saveArticleMaster=w;
+  }
   function tryNavHooks(){['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{const fn=window[name];if(typeof fn!=='function'||fn.__v369ArticleNav)return;const w=function(){const r=fn.apply(this,arguments);setTimeout(()=>hydrate(),800);return r};w.__v369ArticleNav=true;window[name]=w})}
   function boot(){wrapSave();tryNavHooks();[900,2200,4500].forEach(ms=>setTimeout(()=>{try{wrapSave();tryNavHooks();hydrate()}catch(e){}},ms))}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
