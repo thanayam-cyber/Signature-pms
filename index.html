@@ -4,7 +4,8 @@
 <!-- SIGNATURE PMS PATCH VERSION: 2.1.467 OTA COMMISSION JOURNAL REPAIR -->
 
 
-<html lang="en"><head>\n<!-- Daily Revenue tax preview v7: merges current property and active config to avoid stale disabled flags masking enabled tax settings. Preview only; does not post accounting. -->\n<!-- Daily Revenue tax preview v6: uses global getProperty(currentPropertyId), normalizes boolean settings, and falls back to loaded tax controls only when saved fields are absent. -->\n<!-- Daily Revenue tax preview v5: selected property config with active settings fallback. Preview only. -->\n<!-- Daily Revenue tax preview v4: reads saved tax settings from selected property record. Preview only. -->\n<!-- Daily Revenue tax preview v3: reads loaded tax controls. Preview only; not full POS/Folio/GL integration. -->
+<html lang="en"><head>
+<!-- Accounting folio tax ledger fix: preview saved folio service charges/VAT and reconcile liability accounts incrementally without duplicate POS tax lines. -->\n<!-- Daily Revenue tax preview v7: merges current property and active config to avoid stale disabled flags masking enabled tax settings. Preview only; does not post accounting. -->\n<!-- Daily Revenue tax preview v6: uses global getProperty(currentPropertyId), normalizes boolean settings, and falls back to loaded tax controls only when saved fields are absent. -->\n<!-- Daily Revenue tax preview v5: selected property config with active settings fallback. Preview only. -->\n<!-- Daily Revenue tax preview v4: reads saved tax settings from selected property record. Preview only. -->\n<!-- Daily Revenue tax preview v3: reads loaded tax controls. Preview only; not full POS/Folio/GL integration. -->
 <!-- Daily Revenue tax preview v2: use central tax configuration for selected property. Preview only; does not mutate source transactions. -->
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1.0" name="viewport"/>
@@ -15130,6 +15131,16 @@ function dailyRevenueRows(date){
     if(updated===d && other>0 && !items.some(item=>accIsoDate(item.addedAt||item.createdAt||'')===d && Number(item.amount||0)>0)){
       rows.push({date:d,source:'Folio',revenueSource:'Folio Extra',reference:r?.bookingNo||f.id,description:r?.guestName||'Folio Extra',amount:toAccountingAmount(other,r||f),account:'Other Operating Revenue'});
     }
+    // Folio taxes/service charges are calculated on the final guest folio for
+    // room-charged POS sales. Surface those saved amounts in the preview and
+    // send them to liability accounts; never treat them as operating revenue.
+    if(r && ['Checked-In','Checked-Out'].includes(String(r.status||'')) && String(r.checkIn||'').slice(0,10)<=d && d<String(r.checkOut||'').slice(0,10)){
+      const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
+      const sc=Math.max(0,Number(f.serviceCharges||0))/nights;
+      const tax=Math.max(0,Number(f.taxes||0))/nights;
+      if(sc>0.009)rows.push({date:d,source:'Guest Folio Tax',revenueSource:'Folio Service Charge',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — Service Charge',amount:toAccountingAmount(sc,r),account:'Service Charge Payable'});
+      if(tax>0.009)rows.push({date:d,source:'Guest Folio Tax',revenueSource:'Folio VAT',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — VAT / Tax',amount:toAccountingAmount(tax,r),account:'Tax Payable'});
+    }
   });
   return rows;
 }
@@ -15366,12 +15377,15 @@ window.postDailyRevenue=function(){
     Object.entries(accountDeltas).forEach(([account,amount])=>{
       // POS revenue is handled invoice-by-invoice below, so do not also apply
       // account-level deltas that can confuse gross historical sales with net sales.
-      if(['Restaurant Revenue','Bar Revenue','Service Charge Payable','Tax Payable'].includes(account))return;
+      if(['Restaurant Revenue','Bar Revenue'].includes(account))return;
       const a=Math.round(Number(amount||0)*100)/100;
       if(a>0.009)lines.push({account,debit:0,credit:a,revenueSource:'Incremental Operational Revenue'});
     });
     const posGrouped={};
     incrementalPosRows.forEach(r=>{
+      // POS tax/service-charge rows are reconciled through account-level deltas
+      // below, together with folio-calculated tax. Do not add them twice here.
+      if(!['Restaurant Revenue','Bar Revenue'].includes(String(r.account||'')))return;
       const amount=Number(r.amount||0);if(amount<=0.009)return;
       const key=String(r.account||'Other Operating Revenue')+'||'+String(r.revenueSource||r.source||'Operational Revenue');
       if(!posGrouped[key])posGrouped[key]={account:r.account||'Other Operating Revenue',debit:0,credit:0,revenueSource:r.revenueSource||r.source||'Operational Revenue'};
@@ -15407,26 +15421,8 @@ window.postDailyRevenue=function(){
     lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:hasOtaGrossup?'Daily Revenue Gross OTA Receivable':'Daily Revenue Receivable'});
   }
 
-  // Post folio service charge and VAT to their balance-sheet accounts as well.
-  // Amounts are allocated per occupied night and only the unposted difference is added.
-  const folioTaxExpected={ 'Service Charge Payable':0, 'Tax Payable':0 };
-  try{
-    const active=accProp(reservations||[]).filter(r=>['Checked-In','Checked-Out'].includes(String(r.status||'')) && String(r.checkIn||'').slice(0,10)<=d && d<String(r.checkOut||'').slice(0,10));
-    active.forEach(r=>{
-      const f=(folios||[]).find(x=>String(x.reservationId)===String(r.id)); if(!f)return;
-      const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
-      folioTaxExpected['Service Charge Payable']+=Math.max(0,Number(f.serviceCharges||0))/nights;
-      folioTaxExpected['Tax Payable']+=Math.max(0,Number(f.taxes||0))/nights;
-    });
-  }catch(e){console.warn('Folio tax allocation could not be calculated:',e);}
-  const postedFolioTax={ 'Service Charge Payable':0, 'Tax Payable':0 };
-  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===d).forEach(j=>(j.lines||[]).forEach(l=>{if(Object.prototype.hasOwnProperty.call(postedFolioTax,l.account))postedFolioTax[l.account]+=Number(l.credit||0);}));
-  Object.keys(folioTaxExpected).forEach(account=>{
-    const delta=Math.max(0,Math.round((folioTaxExpected[account]-postedFolioTax[account])*100)/100);
-    // On incremental dates, only the POS invoice-level tax rows selected above are
-    // eligible here. Folio tax is not added as a second unreferenced cumulative delta.
-    if(!alreadyPosted && delta>0.009)lines.push({account,debit:0,credit:delta,revenueSource:account==='Tax Payable'?'Folio VAT':'Folio Service Charge'});
-  });
+  // Folio and POS tax/service-charge amounts are already represented in dailyRevenueRows
+  // and reconciled through account deltas above, including incremental posting.
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
     {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
