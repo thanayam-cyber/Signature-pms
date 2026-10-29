@@ -331,6 +331,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 #hrLifecycleSection .toolbar{align-items:center}
 @media(max-width:700px){#hrLifecycleSection .toolbar{display:grid;grid-template-columns:1fr}#hrLifecycleSection .toolbar .btn,#hrLifecycleSection .toolbar input{width:100%!important}}
 </style>
+<!-- Accounting module targeted fix: stable POS invoice ordering for incremental tax/liability posting; non-OTA AR label corrected. -->
 </head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
@@ -15313,6 +15314,17 @@ window.postDailyRevenue=function(){
       if(!posGroups.has(key))posGroups.set(key,[]);
       posGroups.get(key).push(r);
     });
+    // Reconcile the already-posted POS gross baseline against invoices in sale-time
+    // order, not the array's incidental order (which can be newest-first after sync).
+    // Otherwise a new invoice can be mistaken for a partially posted old invoice.
+    const posSaleTime=ref=>{
+      const sale=(sales||[]).find(x=>String(x.invoiceNo||x.id||'')===String(ref||''));
+      const raw=String(sale?.createdAt||sale?.dateTime||sale?.date||sale?.businessDate||'');
+      const parsed=Date.parse(raw);
+      return Number.isFinite(parsed)?parsed:Number.MAX_SAFE_INTEGER;
+    };
+    const orderedPosGroups=[...posGroups.entries()].map(([ref,group],index)=>({ref,group,index,time:posSaleTime(ref)}))
+      .sort((a,b)=>a.time-b.time||a.index-b.index);
     const postedPos={'Restaurant Revenue':0,'Bar Revenue':0};
     journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===d).forEach(j=>(j.lines||[]).forEach(l=>{
       const src=String(l.revenueSource||'');
@@ -15320,7 +15332,8 @@ window.postDailyRevenue=function(){
       if(src==='Bar POS')postedPos['Bar Revenue']+=Number(l.credit||0);
     }));
     const seen={'Restaurant Revenue':0,'Bar Revenue':0};
-    for(const group of posGroups.values()){
+    for(const entry of orderedPosGroups){
+      const group=entry.group;
       const revenueRow=group.find(r=>r.source==='F&B POS');
       if(!revenueRow)continue;
       const account=String(revenueRow.account||'Restaurant Revenue');
@@ -15389,7 +15402,10 @@ window.postDailyRevenue=function(){
 
   // Debit AR for the newly recognized revenue only, including any new OTA gross-up.
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
-  if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
+  if(newRevenueCredits>0.009){
+    const hasOtaGrossup=Number(grossupDelta||0)>0.009 || Number(commissionDelta||0)>0.009;
+    lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:hasOtaGrossup?'Daily Revenue Gross OTA Receivable':'Daily Revenue Receivable'});
+  }
 
   // Post folio service charge and VAT to their balance-sheet accounts as well.
   // Amounts are allocated per occupied night and only the unposted difference is added.
