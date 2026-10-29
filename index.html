@@ -4,8 +4,7 @@
 <!-- SIGNATURE PMS PATCH VERSION: 2.1.467 OTA COMMISSION JOURNAL REPAIR -->
 
 
-<html lang="en"><head>
-<!-- Accounting folio tax ledger fix: preview saved folio service charges/VAT and reconcile liability accounts incrementally without duplicate POS tax lines. -->\n<!-- Daily Revenue tax preview v7: merges current property and active config to avoid stale disabled flags masking enabled tax settings. Preview only; does not post accounting. -->\n<!-- Daily Revenue tax preview v6: uses global getProperty(currentPropertyId), normalizes boolean settings, and falls back to loaded tax controls only when saved fields are absent. -->\n<!-- Daily Revenue tax preview v5: selected property config with active settings fallback. Preview only. -->\n<!-- Daily Revenue tax preview v4: reads saved tax settings from selected property record. Preview only. -->\n<!-- Daily Revenue tax preview v3: reads loaded tax controls. Preview only; not full POS/Folio/GL integration. -->
+<html lang="en"><head>\n<!-- Daily Revenue tax preview v7: merges current property and active config to avoid stale disabled flags masking enabled tax settings. Preview only; does not post accounting. -->\n<!-- Daily Revenue tax preview v6: uses global getProperty(currentPropertyId), normalizes boolean settings, and falls back to loaded tax controls only when saved fields are absent. -->\n<!-- Daily Revenue tax preview v5: selected property config with active settings fallback. Preview only. -->\n<!-- Daily Revenue tax preview v4: reads saved tax settings from selected property record. Preview only. -->\n<!-- Daily Revenue tax preview v3: reads loaded tax controls. Preview only; not full POS/Folio/GL integration. -->
 <!-- Daily Revenue tax preview v2: use central tax configuration for selected property. Preview only; does not mutate source transactions. -->
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1.0" name="viewport"/>
@@ -332,7 +331,6 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 #hrLifecycleSection .toolbar{align-items:center}
 @media(max-width:700px){#hrLifecycleSection .toolbar{display:grid;grid-template-columns:1fr}#hrLifecycleSection .toolbar .btn,#hrLifecycleSection .toolbar input{width:100%!important}}
 </style>
-<!-- Accounting module targeted fix: stable POS invoice ordering for incremental tax/liability posting; non-OTA AR label corrected. -->
 </head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
@@ -12084,14 +12082,13 @@ async function settleFNBTable(){
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
 function signatureGetTaxConfig(){
- // Tax is read ONLY from the selected property's saved record. Never inherit tax
- // flags/rates from the shared `settings` working object, which can belong to another hotel.
- const p=(typeof getProperty==='function'?getProperty(currentPropertyId):null)||
-         (typeof getSelectedProperty==='function'?getSelectedProperty():null)||{};
+ const p=(typeof getSelectedProperty==='function'?getSelectedProperty():null)||(typeof getProperty==='function'?getProperty():null)||{};
+ const s=(typeof settings!=='undefined'&&settings)?settings:{};
  const enabled=v=>v===true||v===1||String(v??'').trim().toLowerCase()==='true'||String(v??'').trim()==='1'||String(v??'').trim().toLowerCase()==='yes';
- const rate=(v,d)=>{if(v===undefined||v===null||v==='')return d;const n=Number(v);return Number.isFinite(n)&&n>=0?n:d;};
- const scOn=enabled(p.serviceChargeEnabled), vatOn=enabled(p.vatEnabled);
- return {serviceChargeEnabled:scOn,vatEnabled:vatOn,serviceChargeRate:scOn?rate(p.serviceChargeRate,10):0,vatRate:vatOn?rate(p.vatRate,18):0};
+ const pick=(a,b,d)=>{const av=Number(a);if(a!==undefined&&a!==null&&a!==''&&Number.isFinite(av)&&av>0)return av;const bv=Number(b);if(b!==undefined&&b!==null&&b!==''&&Number.isFinite(bv)&&bv>0)return bv;return d;};
+ const scOn=enabled(p.serviceChargeEnabled)||enabled(s.serviceChargeEnabled);
+ const vatOn=enabled(p.vatEnabled)||enabled(s.vatEnabled);
+ return {serviceChargeEnabled:scOn,vatEnabled:vatOn,serviceChargeRate:scOn?pick(p.serviceChargeRate,s.serviceChargeRate,10):0,vatRate:vatOn?pick(p.vatRate,s.vatRate,18):0};
 }
 function signaturePOSAmounts(subtotal,applyTax){const c=signatureGetTaxConfig(),sub=Math.max(0,Number(subtotal)||0),sc=applyTax&&c.serviceChargeEnabled?Number((sub*c.serviceChargeRate/100).toFixed(2)):0,vat=applyTax&&c.vatEnabled?Number(((sub+sc)*c.vatRate/100).toFixed(2)):0;return {subtotal:Number(sub.toFixed(2)),serviceCharge:sc,serviceChargeRate:c.serviceChargeRate,tax:vat,vatRate:c.vatRate,total:Number((sub+sc+vat).toFixed(2)),taxApplied:!!applyTax};}
 function savePOSOrder(){
@@ -15098,23 +15095,7 @@ function dailyRevenueRows(date){
     const outletName=String(x.outletName||outlet?.name||'').toLowerCase();
     const isBar=outletType==='bar' || outletName.includes('bar') || itemBar;
     const revenueAccount=isBar?'Bar Revenue':'Restaurant Revenue';
-    const reference=x.invoiceNo||x.id||'';
-    const description=(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale'));
-    const tb=x.taxBreakdown&&typeof x.taxBreakdown==='object'?x.taxBreakdown:null;
-    // Use the tax amounts saved on the actual POS invoice. Never recalculate tax
-    // from the gross invoice total or from the currently selected property's settings.
-    const sub=Number(tb?.subtotal), sc=Number(tb?.serviceCharge), vat=Number(tb?.tax);
-    const breakdownValid=!!tb && tb.taxApplied===true && Number.isFinite(sub) && sub>=0 &&
-      Number.isFinite(sc) && sc>=0 && Number.isFinite(vat) && vat>=0 &&
-      Math.abs((sub+sc+vat)-Number(x.total||x.amount||0))<0.03;
-    if(breakdownValid){
-      if(sub>0.009)rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference,description,amount:toAccountingAmount(sub,x),account:revenueAccount});
-      if(sc>0.009)rows.push({date:d,source:'F&B POS Tax',revenueSource:'Service Charge Liability',reference,description:description+' — Service Charge',amount:toAccountingAmount(sc,x),account:'Service Charge Payable'});
-      if(vat>0.009)rows.push({date:d,source:'F&B POS Tax',revenueSource:'Tax Liability',reference,description:description+' — VAT / Tax',amount:toAccountingAmount(vat,x),account:'Tax Payable'});
-    }else{
-      // Legacy or inconsistent invoices are preserved as recorded; do not invent tax splits.
-      rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference,description,amount:toAccountingAmount(amount,x),account:revenueAccount});
-    }
+    rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,x),account:revenueAccount});
   });
   accProp(folios||[]).forEach(f=>{
     const r=reservations.find(z=>z.id===f.reservationId);
@@ -15130,16 +15111,6 @@ function dailyRevenueRows(date){
     const other=Number(f.extras||0);
     if(updated===d && other>0 && !items.some(item=>accIsoDate(item.addedAt||item.createdAt||'')===d && Number(item.amount||0)>0)){
       rows.push({date:d,source:'Folio',revenueSource:'Folio Extra',reference:r?.bookingNo||f.id,description:r?.guestName||'Folio Extra',amount:toAccountingAmount(other,r||f),account:'Other Operating Revenue'});
-    }
-    // Folio taxes/service charges are calculated on the final guest folio for
-    // room-charged POS sales. Surface those saved amounts in the preview and
-    // send them to liability accounts; never treat them as operating revenue.
-    if(r && ['Checked-In','Checked-Out'].includes(String(r.status||'')) && String(r.checkIn||'').slice(0,10)<=d && d<String(r.checkOut||'').slice(0,10)){
-      const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
-      const sc=Math.max(0,Number(f.serviceCharges||0))/nights;
-      const tax=Math.max(0,Number(f.taxes||0))/nights;
-      if(sc>0.009)rows.push({date:d,source:'Guest Folio Tax',revenueSource:'Folio Service Charge',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — Service Charge',amount:toAccountingAmount(sc,r),account:'Service Charge Payable'});
-      if(tax>0.009)rows.push({date:d,source:'Guest Folio Tax',revenueSource:'Folio VAT',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — VAT / Tax',amount:toAccountingAmount(tax,r),account:'Tax Payable'});
     }
   });
   return rows;
@@ -15270,10 +15241,23 @@ function renderDailyRevenuePosting(){
   const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);
-  // This field shows actual tax/service-charge amounts already stored on POS invoices,
-  // not a second calculation applied to gross revenue. Tax is posted from invoice breakdowns.
-  const previewSC=Math.max(0,Number(totals['Service Charge Payable']||0));
-  const previewVAT=Math.max(0,Number(totals['Tax Payable']||0));
+  // Resolve current-property tax config from both the selected property and active config.
+  // Some builds keep the current property's settings in `settings`; merge rather than letting
+  // stale false/zero fields in one object mask enabled values in the other.
+  let taxProp={};
+  try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
+  let activeCfg={};
+  try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
+  const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
+  const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
+  const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
+  const vatEnabled=taxBool(taxProp.vatEnabled)||taxBool(settings?.vatEnabled)||taxBool(activeCfg.vatEnabled)||(vatControl?.value==='yes');
+  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled)||taxBool(settings?.serviceChargeEnabled)||taxBool(activeCfg.serviceChargeEnabled)||(scControl?.value==='yes');
+  const vatRate=Math.max(0,Number(taxProp.vatRate||settings?.vatRate||activeCfg.vatRate||(vatRateControl?vatRateControl.value:0)||taxProp.taxRate||settings?.taxRate)||0);
+  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate||settings?.serviceChargeRate||activeCfg.serviceChargeRate||(scRateControl?scRateControl.value:0))||0);
+  const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
+  const previewSC=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
+  const previewVAT=vatEnabled?Number(((taxableBase+previewSC)*vatRate/100).toFixed(2)):0;
   set('dailyPostTax',previewSC+previewVAT);
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
@@ -15306,67 +15290,11 @@ function renderDailyRevenuePosting(){
 }
 window.postDailyRevenue=function(){
   if(!requireRole('Admin','Manager'))return;
-  // New POS tax-liability rows are posted only from saved invoice taxBreakdown data.
-  // Existing journals are intentionally not rewritten or auto-reversed by this patch.
   const d=dailyRevenueSelectedDate();
   if(d>accountingBusinessDate()){alert('Revenue date cannot be after the current business date.');return;}
   const alreadyPosted=dailyRevenueJournalExists(d);
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const accountDeltas=dailyRevenueAccountDeltas(d);
-  // Incremental POS posting: when the date already has a journal, treat the
-  // previously posted Restaurant POS / Bar POS credits as the gross value of the
-  // oldest invoices already posted. Only invoices beyond that gross baseline are
-  // eligible for a new journal. This avoids re-posting historic tax as new AR.
-  const incrementalPosRows=[];
-  if(alreadyPosted){
-    const posGroups=new Map();
-    rows.filter(r=>r.source==='F&B POS'||r.source==='F&B POS Tax').forEach(r=>{
-      const key=String(r.reference||'');
-      if(!posGroups.has(key))posGroups.set(key,[]);
-      posGroups.get(key).push(r);
-    });
-    // Reconcile the already-posted POS gross baseline against invoices in sale-time
-    // order, not the array's incidental order (which can be newest-first after sync).
-    // Otherwise a new invoice can be mistaken for a partially posted old invoice.
-    const posSaleTime=ref=>{
-      const sale=(sales||[]).find(x=>String(x.invoiceNo||x.id||'')===String(ref||''));
-      const raw=String(sale?.createdAt||sale?.dateTime||sale?.date||sale?.businessDate||'');
-      const parsed=Date.parse(raw);
-      return Number.isFinite(parsed)?parsed:Number.MAX_SAFE_INTEGER;
-    };
-    const orderedPosGroups=[...posGroups.entries()].map(([ref,group],index)=>({ref,group,index,time:posSaleTime(ref)}))
-      .sort((a,b)=>a.time-b.time||a.index-b.index);
-    const postedPos={'Restaurant Revenue':0,'Bar Revenue':0};
-    journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===d).forEach(j=>(j.lines||[]).forEach(l=>{
-      const src=String(l.revenueSource||'');
-      if(src==='Restaurant POS')postedPos['Restaurant Revenue']+=Number(l.credit||0);
-      if(src==='Bar POS')postedPos['Bar Revenue']+=Number(l.credit||0);
-    }));
-    const seen={'Restaurant Revenue':0,'Bar Revenue':0};
-    for(const entry of orderedPosGroups){
-      const group=entry.group;
-      const revenueRow=group.find(r=>r.source==='F&B POS');
-      if(!revenueRow)continue;
-      const account=String(revenueRow.account||'Restaurant Revenue');
-      const gross=group.reduce((sum,r)=>sum+Number(r.amount||0),0);
-      const prior=Number(postedPos[account]||0), before=Number(seen[account]||0), after=before+gross;
-      seen[account]=after;
-      // Skip invoices wholly covered by the already-posted gross baseline.
-      if(after<=prior+0.009)continue;
-      // If a legacy journal ends part-way through an invoice, fail closed rather
-      // than guessing how much of that invoice's tax was previously posted.
-      if(before<prior-0.009){
-        if(after>prior+0.009 && before<prior-0.009){
-          if(Math.abs(before-prior)>0.009){
-            // A baseline between invoice boundaries is ambiguous; do not duplicate AR.
-            alert('An existing revenue journal covers only part of a POS invoice for '+d+'. Please review that invoice and journal before posting more revenue. No journal was changed.');
-            return;
-          }
-        }
-      }
-      incrementalPosRows.push(...group);
-    }
-  }
   const commissionDelta=dailyRevenueOtaCommissionDelta(d);
   const grossupDelta=alreadyPosted?dailyRevenueGrossupDelta(d):commissionDelta;
   let lines=[], revenueAmount=0;
@@ -15375,23 +15303,9 @@ window.postDailyRevenue=function(){
 
   if(alreadyPosted){
     Object.entries(accountDeltas).forEach(([account,amount])=>{
-      // POS revenue is handled invoice-by-invoice below, so do not also apply
-      // account-level deltas that can confuse gross historical sales with net sales.
-      if(['Restaurant Revenue','Bar Revenue'].includes(account))return;
       const a=Math.round(Number(amount||0)*100)/100;
       if(a>0.009)lines.push({account,debit:0,credit:a,revenueSource:'Incremental Operational Revenue'});
     });
-    const posGrouped={};
-    incrementalPosRows.forEach(r=>{
-      // POS tax/service-charge rows are reconciled through account-level deltas
-      // below, together with folio-calculated tax. Do not add them twice here.
-      if(!['Restaurant Revenue','Bar Revenue'].includes(String(r.account||'')))return;
-      const amount=Number(r.amount||0);if(amount<=0.009)return;
-      const key=String(r.account||'Other Operating Revenue')+'||'+String(r.revenueSource||r.source||'Operational Revenue');
-      if(!posGrouped[key])posGrouped[key]={account:r.account||'Other Operating Revenue',debit:0,credit:0,revenueSource:r.revenueSource||r.source||'Operational Revenue'};
-      posGrouped[key].credit+=amount;
-    });
-    lines.push(...Object.values(posGrouped));
     if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
     revenueAmount=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
     if(revenueAmount<=0.009 && commissionDelta<=0.009){
@@ -15416,13 +15330,8 @@ window.postDailyRevenue=function(){
 
   // Debit AR for the newly recognized revenue only, including any new OTA gross-up.
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
-  if(newRevenueCredits>0.009){
-    const hasOtaGrossup=Number(grossupDelta||0)>0.009 || Number(commissionDelta||0)>0.009;
-    lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:hasOtaGrossup?'Daily Revenue Gross OTA Receivable':'Daily Revenue Receivable'});
-  }
+  if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
 
-  // Folio and POS tax/service-charge amounts are already represented in dailyRevenueRows
-  // and reconciled through account deltas above, including incremental posting.
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
     {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
@@ -16557,13 +16466,17 @@ function isDepartmentSupervisor(){return currentUser?.role==="Department Supervi
 function canHRAdmin(){return typeof requireRole!=='function'||requireRole('Admin','Manager');}
 function canHRAttendance(){return !!currentUser && (currentUser.role==="Admin"||currentUser.role==="Manager"||currentUser.role==="Department Supervisor");}
 function hrTeamEmployees(){
- const all=hrEmployees().filter(x=>x.status==='Active');
+ // Use the same property-scoped employee list as the Employee Details table.
+ // Normalize status to avoid excluding valid Active records due to case/spacing.
+ const all=hrScopedEmployees().filter(x=>String(x.status||'').trim().toLowerCase()==='active');
  if(isDepartmentSupervisor()){
    const dept=String(currentUser.department||'').trim().toLowerCase();
    return all.filter(x=>String(x.department||'').trim().toLowerCase()===dept);
  }
  return all;
 }
+// Expose a safe read-only accessor for the separately loaded monthly attendance UI.
+window.signatureHRActiveEmployeesForAttendance=function(){return hrTeamEmployees().map(x=>({...x}));};
 function requireManager(){return canHRAdmin();}
 function ensureDefaults(){
  // Do not auto-seed Purchasing articles. A newly created property must start empty;
@@ -17044,55 +16957,33 @@ window.resignEmployee=function(empId){if(!hasModuleAction('hr.employee')){alert(
 window.markAttendance=function(){
  if(!canHRAttendance()){alert('Access denied. Attendance entry is not assigned to your user account.');return;}
  const em=hrTeamEmployees();
- if(!em.length){alert(isDepartmentSupervisor()?'No active employees are assigned to your department. Please check the employee department and your department access.':'No active employees are available. Please check the employee list and department access.');return;}
+ if(!em.length){alert(isDepartmentSupervisor()?'No active employees are assigned to your department.':'Add employees first.');return;}
  const idm='sigAttendanceModal';
- if(!document.getElementById(idm)) document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:980px;width:96%;max-height:90vh;overflow:auto"><div class="modal-header"><h3>Monthly Attendance — One Employee</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee *</label><select id="haEmp"></select></div><div class="form-group"><label>Month *</label><input id="haMonth" type="month"></div><div class="form-group full"><p style="margin:0;color:#475569">Choose one employee and update attendance for the selected month. Existing records are loaded; dates set to No change are not modified.</p></div></div><div id="haMonthRows" style="overflow:auto;margin-top:12px"></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveMonthlyAttendance()">Save Month Attendance</button></div></div></div>`);
- const sel=document.getElementById('haEmp');
- sel.innerHTML=em.map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo||'')} — ${esc(x.name||'')}${x.department?' — '+esc(x.department):''}</option>`).join('');
- document.getElementById('haMonth').value=today().slice(0,7);
- sel.onchange=renderMonthAttendanceRows;
- document.getElementById('haMonth').onchange=renderMonthAttendanceRows;
- renderMonthAttendanceRows();
+ if(!document.getElementById(idm)) document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Team Attendance</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee *</label><select id="haEmp"></select></div><div class="form-group"><label>Date *</label><input id="haDate" type="date"></div><div class="form-group"><label>Attendance Status *</label><select id="haStatus"><option>Present</option><option>Absent</option><option>Half Day</option><option>Day Off</option><option>AL</option><option>ML</option><option>CL</option></select></div><div class="form-group full"><label>Remarks</label><textarea id="haRemarks" placeholder="Optional attendance remarks"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveTeamAttendance()">Save Attendance</button></div></div></div>`);
+ const e=document.getElementById('haEmp');
+ e.innerHTML=em.map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo)} — ${esc(x.name)}${x.department?' — '+esc(x.department):''}</option>`).join('');
+ document.getElementById('haDate').value=today();
+ const eid=e.value; const old=rows(K.att).find(x=>x.employeeId===eid&&x.date===today());
+ document.getElementById('haStatus').value=old?.status||'Present';
+ document.getElementById('haRemarks').value=old?.remarks||'';
+ e.onchange=()=>{const o=rows(K.att).find(x=>x.employeeId===e.value&&x.date===document.getElementById('haDate').value);document.getElementById('haStatus').value=o?.status||'Present';document.getElementById('haRemarks').value=o?.remarks||'';};
+ document.getElementById('haDate').onchange=e.onchange;
  document.getElementById(idm).classList.add('show');
 };
-function hrMonthDays(month){const p=String(month||'').split('-').map(Number);return p.length===2&&p[0]>0&&p[1]>=1&&p[1]<=12?new Date(p[0],p[1],0).getDate():0;}
-function hrMonthDate(month,day){return month+'-'+String(day).padStart(2,'0');}
-function renderMonthAttendanceRows(){
- const month=document.getElementById('haMonth')?.value,eid=document.getElementById('haEmp')?.value,box=document.getElementById('haMonthRows');
- if(!box||!month||!eid)return;
- const days=hrMonthDays(month),all=rows(K.att),statuses=['Present','Absent','Half Day','Day Off','AL','ML','CL'];
- let html='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:8px">Date</th><th style="text-align:left;padding:8px">Day</th><th style="text-align:left;padding:8px">Status</th><th style="text-align:left;padding:8px">Remarks</th></tr></thead><tbody>';
- for(let d=1;d<=days;d++){
-  const date=hrMonthDate(month,d),dt=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d);
-  const old=all.find(x=>String(x.employeeId)===String(eid)&&String(x.date).slice(0,10)===date);
-  const options=statuses.map(st=>`<option value="${st}" ${old&&String(old.status)===st?'selected':''}>${st}</option>`).join('');
-  html+=`<tr><td style="padding:6px;border-top:1px solid #e2e8f0;white-space:nowrap">${date}</td><td style="padding:6px;border-top:1px solid #e2e8f0">${dt.toLocaleDateString(undefined,{weekday:'short'})}</td><td style="padding:6px;border-top:1px solid #e2e8f0"><select id="hamStatus_${d}" style="min-width:145px;padding:7px"><option value="">No change</option>${options}${old&&!statuses.includes(String(old.status))?`<option value="${esc(old.status)}" selected>${esc(old.status)}</option>`:''}</select></td><td style="padding:6px;border-top:1px solid #e2e8f0"><input id="hamRemarks_${d}" value="${esc(old?.remarks||'')}" placeholder="Optional" style="width:100%;min-width:120px;padding:7px"></td></tr>`;
- }
- box.innerHTML=html+'</tbody></table>';
-}
-window.saveMonthlyAttendance=function(){
- if(!requireModuleAction('hr.attendance'))return;
- const eid=document.getElementById('haEmp')?.value,month=document.getElementById('haMonth')?.value,em=hrEmployees().find(x=>String(x.id)===String(eid));
- if(!em||!month||!/^\d{4}-\d{2}$/.test(month)){alert('Select an employee and valid month.');return;}
- if(isDepartmentSupervisor()&&String(em.department||'').trim().toLowerCase()!==String(currentUser.department||'').trim().toLowerCase()){alert('You can only enter attendance for employees in your assigned department.');return;}
- const days=hrMonthDays(month),a=rows(K.att),now=new Date().toISOString();let changed=0;
- for(let d=1;d<=days;d++){
-  const status=document.getElementById('hamStatus_'+d)?.value||'';if(!status)continue;
-  const date=hrMonthDate(month,d),remarks=document.getElementById('hamRemarks_'+d)?.value.trim()||'';
-  let old=a.find(x=>String(x.employeeId)===String(eid)&&String(x.date).slice(0,10)===date);
-  if(old){old.status=status;old.remarks=remarks;old.markedBy=user();old.markedAt=now;}
-  else a.push({id:id('att'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,department:em.department||'',date,status,remarks,markedBy:user(),markedAt:now});
-  changed++;
- }
- if(!changed){alert('No attendance statuses selected. Choose statuses for the dates you want to save.');return;}
- saveProp(K.att,a);
- if(typeof renderHR==='function')renderHR();
- document.getElementById('sigAttendanceModal')?.classList.remove('show');
- alert(changed+' attendance date(s) saved for '+em.name+' ('+month+').');
+window.saveTeamAttendance=function(){
+ if(!requireModuleAction("hr.attendance"))return;
+ const eid=document.getElementById('haEmp').value,date=document.getElementById('haDate').value,status=document.getElementById('haStatus').value,remarks=document.getElementById('haRemarks').value.trim();
+ const em=hrEmployees().find(x=>x.id===eid);
+ if(!em||!date){alert('Select an employee and date.');return;}
+ if(isDepartmentSupervisor() && String(em.department||'').trim().toLowerCase()!==String(currentUser.department||'').trim().toLowerCase()){alert('You can only enter attendance for employees in your assigned department.');return;}
+ const a=rows(K.att); let old=a.find(x=>x.employeeId===eid&&x.date===date);
+ if(old){old.status=status;old.remarks=remarks;old.markedBy=user();old.markedAt=new Date().toISOString();}
+ else a.push({id:id('att'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,department:em.department||'',date,status,remarks,markedBy:user(),markedAt:new Date().toISOString()});
+ saveProp(K.att,a); document.getElementById('sigAttendanceModal').classList.remove('show'); renderHR(); alert('Attendance saved successfully.');
 };
-window.openLeaveModal=function(){if(!requireModuleAction("hr.leave"))return;const idm='sigLeaveModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Leave Request</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee</label><select id="hlEmp"></select></div><div class="form-group"><label>Leave Type</label><select id="hlType"><option>Annual</option><option>Medical</option><option>Casual</option><option>Unpaid</option><option>Other</option></select></div><div class="form-group"><label>From</label><input id="hlFrom" type="date"></div><div class="form-group"><label>To</label><input id="hlTo" type="date"></div><div class="form-group full"><label>Reason</label><textarea id="hlReason"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveLeaveRequest()">Submit Leave</button></div></div></div>`);const e=document.getElementById('hlEmp');e.innerHTML=hrScopedEmployees().filter(x=>x.status==='Active').map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo)} — ${esc(x.name)}</option>`).join('');document.getElementById('hlFrom').value=today();document.getElementById('hlTo').value=today();document.getElementById(idm).classList.add('show');};
+window.openLeaveModal=function(){if(!requireModuleAction("hr.leave"))return;const idm='sigLeaveModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Leave Request</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee</label><select id="hlEmp"></select></div><div class="form-group"><label>Leave Type</label><select id="hlType"><option>Annual</option><option>Medical</option><option>Casual</option><option>Unpaid</option><option>Other</option></select></div><div class="form-group"><label>From</label><input id="hlFrom" type="date"></div><div class="form-group"><label>To</label><input id="hlTo" type="date"></div><div class="form-group full"><label>Reason</label><textarea id="hlReason"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveLeaveRequest()">Submit Leave</button></div></div></div>`);const e=document.getElementById('hlEmp');e.innerHTML=hrScopedEmployees().filter(x=>String(x.status||'').trim().toLowerCase()==='active').map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo)} — ${esc(x.name)}</option>`).join('');document.getElementById('hlFrom').value=today();document.getElementById('hlTo').value=today();document.getElementById(idm).classList.add('show');};
 window.saveLeaveRequest=function(){if(!requireModuleAction("hr.leave"))return;const eid=document.getElementById('hlEmp').value,em=hrEmployees().find(x=>x.id===eid),from=document.getElementById('hlFrom').value,to=document.getElementById('hlTo').value;if(!em||!from||!to||to<from){alert('Select employee and valid leave dates.');return;}const a=hrLeaves();a.push({id:id('leave'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,type:document.getElementById('hlType').value,from,to,reason:document.getElementById('hlReason').value.trim(),status:'Approved',approvedBy:user(),createdAt:new Date().toISOString()});saveProp(K.leave,a);const at=rows(K.att);for(let d=new Date(from+'T00:00:00');d<=new Date(to+'T00:00:00');d.setDate(d.getDate()+1)){const ds=d.toISOString().slice(0,10),old=at.find(x=>x.employeeId===eid&&x.date===ds);if(old)old.status='Leave';else at.push({id:id('att'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,date:ds,status:'Leave',markedBy:user()});}saveProp(K.att,at);document.getElementById('sigLeaveModal').classList.remove('show');renderHR();};
-window.openOTModal=function(){if(!requireModuleAction("hr.overtime"))return;const idm='sigOTModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Overtime Entry</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee</label><select id="hoEmp"></select></div><div class="form-group"><label>Date</label><input id="hoDate" type="date"></div><div class="form-group"><label>Hours</label><input id="hoHours" type="number" min="0.01" step="0.25"></div><div class="form-group"><label>Rate / Hour</label><input id="hoRate" type="number" min="0" step="0.01"></div><div class="form-group full"><label>Reason</label><textarea id="hoReason"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveOTEntry()">Save OT</button></div></div></div>`);const e=document.getElementById('hoEmp');e.innerHTML=hrScopedEmployees().filter(x=>x.status==='Active').map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo)} — ${esc(x.name)}</option>`).join('');e.onchange=()=>{const x=hrEmployees().find(z=>z.id===e.value);document.getElementById('hoRate').value=x?.otRate||0;};e.dispatchEvent(new Event('change'));document.getElementById('hoDate').value=today();document.getElementById(idm).classList.add('show');};
+window.openOTModal=function(){if(!requireModuleAction("hr.overtime"))return;const idm='sigOTModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Overtime Entry</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee</label><select id="hoEmp"></select></div><div class="form-group"><label>Date</label><input id="hoDate" type="date"></div><div class="form-group"><label>Hours</label><input id="hoHours" type="number" min="0.01" step="0.25"></div><div class="form-group"><label>Rate / Hour</label><input id="hoRate" type="number" min="0" step="0.01"></div><div class="form-group full"><label>Reason</label><textarea id="hoReason"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveOTEntry()">Save OT</button></div></div></div>`);const e=document.getElementById('hoEmp');e.innerHTML=hrScopedEmployees().filter(x=>String(x.status||'').trim().toLowerCase()==='active').map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo)} — ${esc(x.name)}</option>`).join('');e.onchange=()=>{const x=hrEmployees().find(z=>z.id===e.value);document.getElementById('hoRate').value=x?.otRate||0;};e.dispatchEvent(new Event('change'));document.getElementById('hoDate').value=today();document.getElementById(idm).classList.add('show');};
 window.saveOTEntry=function(){if(!requireModuleAction("hr.overtime"))return;const eid=document.getElementById('hoEmp').value,em=hrEmployees().find(x=>x.id===eid),hours=Number(document.getElementById('hoHours').value||0),rate=Number(document.getElementById('hoRate').value||0);if(!em||hours<=0||rate<0){alert('Enter employee, hours and valid rate.');return;}const a=hrOT();a.push({id:id('ot'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,date:document.getElementById('hoDate').value||today(),hours,rate,amount:hours*rate,reason:document.getElementById('hoReason').value.trim(),status:'Approved',createdBy:user()});saveProp(K.ot,a);document.getElementById('sigOTModal').classList.remove('show');renderHR();};
 function hrFilterValue(id){const e=document.getElementById(id);return e?String(e.value||'').trim():'';}
 window.hrEmployees=hrEmployees;
@@ -17169,21 +17060,7 @@ window.payPayroll=function(){if(isDepartmentSupervisor()){alert('Access denied. 
     rec.forEach(x=>x.status='Paid');saveProp(K.pay,a);if(typeof accountingDateToday==='function')accountingDateToday();renderHR();if(typeof renderAccounting==='function')renderAccounting();alert('Payroll payment posted. Salary Payable cleared.');
   }catch(e){console.error(e);alert('Payroll payment failed: '+e.message);}
 };
-window.printHRPayslip=function(payId){
- if(isDepartmentSupervisor()||!hrHasPayrollAccess()){alert('Access denied. Payroll is restricted to HR management.');return;}
- const rec=rows(K.pay).find(x=>String(x.id)===String(payId));
- if(!rec){alert('Payroll record not found for the selected property.');return;}
- const employee=read(K.emp).find(x=>String(x.id)===String(rec.employeeId)&&String(x.propertyId||currentPropertyId)===String(currentPropertyId))||{};
- const property=typeof getProperty==='function'?getProperty(currentPropertyId):null;
- const safe=(v)=>esc(v==null?'':v);
- const money=(v)=>typeof accMoney==='function'?accMoney(Number(v||0)):'LKR '+Number(v||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
- const w=window.open('','_blank','width=850,height=900');
- if(!w){alert('Please allow pop-ups for Signature PMS to print the payslip.');return;}
- w.document.open();
- w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pay Slip - ${safe(rec.name)} - ${safe(rec.period)}</title><style>body{font-family:Arial,sans-serif;color:#17251d;margin:28px}.slip{max-width:760px;margin:auto;border:1px solid #cbd5e1;padding:28px}.head{text-align:center;border-bottom:2px solid #17251d;padding-bottom:14px;margin-bottom:20px}.head h1{font-size:23px;margin:0 0 6px}.head p{margin:0;color:#64748b}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:22px}.meta div{padding:7px 0;border-bottom:1px solid #e5e7eb}.meta b{display:inline-block;min-width:135px}.section{font-weight:bold;margin:18px 0 8px}.line{display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid #e5e7eb}.net{font-size:18px;font-weight:bold;background:#f1f5f9;padding:14px;margin-top:14px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:65px}.sign div{border-top:1px solid #475569;padding-top:8px;text-align:center;font-size:12px}.foot{margin-top:22px;font-size:11px;color:#64748b;text-align:center}@media print{body{margin:0}.slip{border:0;padding:18mm;max-width:none}.no-print{display:none}}</style></head><body><div class="slip"><div class="head"><h1>${safe(property?.name||'Signature PMS')}</h1><p>EMPLOYEE PAY SLIP</p><p>Salary period: ${safe(rec.period)}</p></div><div class="meta"><div><b>Employee No.</b> ${safe(rec.employeeNo)}</div><div><b>Employee Name</b> ${safe(rec.name)}</div><div><b>Department</b> ${safe(employee.department||'—')}</div><div><b>Designation</b> ${safe(employee.position||employee.designation||'—')}</div><div><b>Present Days</b> ${safe(rec.presentDays||0)}</div><div><b>Absent Days</b> ${safe(rec.absentDays||0)}</div><div><b>Payroll Status</b> ${safe(rec.status)}</div><div><b>Payment Date</b> ${safe(rec.paidAt?String(rec.paidAt).slice(0,10):'—')}</div></div><div class="section">EARNINGS</div><div class="line"><span>Basic Salary</span><span>${money(rec.basic)}</span></div><div class="line"><span>Fixed Allowances</span><span>${money(rec.allowances)}</span></div><div class="line"><span>Overtime</span><span>${money(rec.ot)}</span></div><div class="section">DEDUCTIONS</div><div class="line"><span>Salary Deductions</span><span>${money(rec.deductions)}</span></div><div class="net"><span>NET SALARY PAYABLE</span><span style="float:right">${money(rec.netPay)}</span></div><div class="sign"><div>Employee Signature</div><div>Authorized Signature</div></div><div class="foot">This payslip was generated by Signature PMS.</div><div class="no-print" style="text-align:center;margin-top:22px"><button onclick="window.print()">Print Pay Slip</button></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
- w.document.close();
-};
-function renderPayroll(){const e=document.getElementById('hrPayrollTable');if(!e)return;const a=rows(K.pay).slice(-100).reverse();e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.period)}</td><td>${esc(x.employeeNo)}</td><td>${esc(x.name)}</td><td>${x.presentDays||0}</td><td>${x.absentDays||0}</td><td>${typeof accMoney==='function'?accMoney(x.basic):x.basic}</td><td>${typeof accMoney==='function'?accMoney(x.ot):x.ot}</td><td>${typeof accMoney==='function'?accMoney(x.deductions):x.deductions}</td><td>${typeof accMoney==='function'?accMoney(x.netPay):x.netPay}</td><td>${esc(x.status)}</td><td><button class="btn btn-secondary btn-small" type="button" onclick="window.printHRPayslip('${esc(x.id)}')">Print Pay Slip</button></td></tr>`).join(''):`<tr><td colspan="11" class="empty">No payroll records.</td></tr>`;}
+function renderPayroll(){const e=document.getElementById('hrPayrollTable');if(!e)return;const a=rows(K.pay).slice(-100).reverse();e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.period)}</td><td>${esc(x.employeeNo)}</td><td>${esc(x.name)}</td><td>${x.presentDays||0}</td><td>${x.absentDays||0}</td><td>${typeof accMoney==='function'?accMoney(x.basic):x.basic}</td><td>${typeof accMoney==='function'?accMoney(x.ot):x.ot}</td><td>${typeof accMoney==='function'?accMoney(x.deductions):x.deductions}</td><td>${typeof accMoney==='function'?accMoney(x.netPay):x.netPay}</td><td>${esc(x.status)}</td></tr>`).join(''):`<tr><td colspan="10" class="empty">No payroll records.</td></tr>`;}
 function hrShiftDefs(){return prop(read(K.shift)).filter(x=>x.active!==false).sort((a,b)=>String(a.code||'').localeCompare(String(b.code||'')));}
 function hrRosterRows(){return prop(read(K.roster));}
 window.hrSaveShift=function(){if(currentUser?.role!=='Admin'){alert('Only Admin can create or edit shifts.');return;}const code=String(document.getElementById('hrShiftCode')?.value||'').trim().toUpperCase();const name=String(document.getElementById('hrShiftName')?.value||'').trim();const start=String(document.getElementById('hrShiftStart')?.value||'');const end=String(document.getElementById('hrShiftEnd')?.value||'');const breakMin=Number(document.getElementById('hrShiftBreak')?.value||0);if(!code||!name||!start||!end){alert('Please enter Shift Code, Shift Name, Start Time and End Time.');return;}if(!/^[A-Z0-9_-]+$/.test(code)){alert('Shift Code may contain only letters, numbers, - or _.');return;}const all=read(K.shift), existing=all.find(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)&&String(x.code||'').toUpperCase()===code);if(existing){existing.name=name;existing.start=start;existing.end=end;existing.breakMin=breakMin;existing.active=true;existing.updatedAt=new Date().toISOString();existing.updatedBy=currentUser?.username||'Admin';}else all.push({id:id('shift'),propertyId:currentPropertyId,code,name,start,end,breakMin,active:true,createdAt:new Date().toISOString(),createdBy:currentUser?.username||'Admin'});write(K.shift,all);hrRenderShiftMaster();hrRenderRosterTable();['hrShiftCode','hrShiftName','hrShiftStart','hrShiftEnd','hrShiftBreak'].forEach(x=>{const e=document.getElementById(x);if(e)e.value='';});alert(existing?'Shift updated successfully.':'Shift saved successfully.');}
@@ -17254,7 +17131,7 @@ function hrRenderShiftMaster(){const e=document.getElementById('hrShiftMasterTab
 window.hrRefreshRoster=function(){if(!requireModuleAction('hr.roster_update'))return;try{if(typeof hrRenderRosterTable==='function')hrRenderRosterTable();else if(typeof openRosterUpdate==='function')openRosterUpdate();}catch(e){console.error('Roster refresh failed:',e);alert('Roster refresh failed: '+(e?.message||e));}};
 window.openShiftManagement=function(){if(currentUser?.role!=='Admin'){alert('Only Admin can manage shifts.');return;}const idm='sigShiftManagementModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:1000px"><div class="modal-header"><h3>Shift Management</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Shift Code</label><input id="hrShiftCode" placeholder="M1"></div><div class="form-group"><label>Shift Name</label><input id="hrShiftName" placeholder="Morning 1"></div><div class="form-group"><label>Start Time</label><input id="hrShiftStart" type="time"></div><div class="form-group"><label>End Time</label><input id="hrShiftEnd" type="time"></div><div class="form-group"><label>Break (minutes)</label><input id="hrShiftBreak" type="number" min="0" value="0"></div></div><div style="display:flex;justify-content:flex-end;margin:12px 0"><button class="btn btn-primary" onclick="hrSaveShift()">Save Shift</button></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Start</th><th>End</th><th>Break</th><th>Actions</th></tr></thead><tbody id="hrShiftMasterTable"></tbody></table></div></div></div>`);hrRenderShiftMaster();document.getElementById(idm).classList.add('show');}
 window.openRosterUpdate=function(){if(!requireModuleAction('hr.roster_update'))return;const idm='sigRosterUpdateModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:98vw;width:1500px"><div class="modal-header"><div><h3>Monthly Roster Update</h3><div style="font-size:12px;color:#6b7280">Allocate custom shifts, OFF, AL, ML and CL for the selected month.</div></div><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="toolbar" style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><select id="hrRosterDeptMonth" onchange="hrRenderRosterTable()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><input id="hrRosterMonth" type="month" value="${new Date().toISOString().slice(0,7)}" onchange="hrRenderRosterTable()">${currentUser?.role==='Admin'?'<button class="btn btn-primary" onclick="window.openShiftManagement()">Shift Management</button>':''}<button class="btn btn-secondary" onclick="window.hrRefreshRoster()">Refresh</button><button class="btn btn-primary" onclick="window.hrSaveRoster()">Save Roster</button></div><div id="hrRosterTableWrap"></div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button></div></div></div>`);const d=document.getElementById('hrRosterDeptMonth');if(isDepartmentSupervisor()){const own=String(currentUser?.department||'').toLowerCase();d.value=[...d.options].some(o=>String(o.value).toLowerCase()===own)?own:'';d.disabled=true;}hrRenderRosterTable();document.getElementById(idm).classList.add('show');};
-function addHRPage(){if(document.getElementById('hr'))return;const nav=document.querySelector('.main');if(!nav)return;const sec=document.createElement('section');sec.className='page';sec.id='hr';sec.innerHTML=`<div class="section"><div class="section-header"><div><h3>Human Resources & Payroll</h3><div style="font-size:12px;color:#6b7280">Complete employee, attendance, leave, overtime and payroll workflow linked to Accounting.</div><div id="payrollAccountingStatus" style="margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#6b7280;font-size:12px">Accounting posting status: waiting for payroll posting.</div></div><div class="toolbar"><button class="btn btn-primary" onclick="openEmployeeModal()">+ Employee</button><button class="btn btn-secondary" onclick="markAttendance()">Attendance</button><button class="btn btn-secondary" onclick="openLeaveModal()">Leave</button><button class="btn btn-secondary" onclick="openOTModal()">Overtime</button><button class="btn btn-secondary" onclick="runPayroll()">Calculate Payroll</button><button class="btn btn-secondary" onclick="approvePayroll()">Approve Payroll</button><button class="btn btn-success" onclick="window.postPayroll()">Post to Accounting</button><button class="btn btn-success" onclick="payPayroll()">Pay Payroll</button><button class="btn btn-secondary" data-hr-right="hr.roster_update" onclick="openRosterUpdate()">Roster Update</button><button class="btn btn-secondary" onclick="renderHR()">Refresh</button></div></div><div class="grid-4"><div class="card"><div class="card-title">Active Employees</div><div class="card-value" id="hrEmpCount">0</div></div><div class="card"><div class="card-title">Today Present</div><div class="card-value" id="hrTodayPresent">0</div></div><div class="card"><div class="card-title">Today Absent</div><div class="card-value" id="hrTodayAbsent">0</div></div><div class="card"><div class="card-title">Current Month Payroll</div><div class="card-value" id="hrPayrollTotal">0</div></div></div></div><div class="section" id="hrEmployeeSection"><div class="section-header"><div><h3>Employee Details</h3><div class="toolbar" style="margin-top:8px"><select id="hrEmpDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><select id="hrEmpStatusFilter" onchange="hrApplyFilters()"><option value="">All Status</option><option value="Active">Active</option><option value="Resigned">Resigned</option><option value="Inactive">Inactive</option></select><input id="hrEmpFromFilter" type="date" onchange="hrApplyFilters()" title="Join Date From"><input id="hrEmpToFilter" type="date" onchange="hrApplyFilters()" title="Join Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Employee No.</th><th>Name</th><th>Department</th><th>Position</th><th>Join Date</th><th>Basic Salary</th><th>Status</th><th>Actions</th></tr></thead><tbody id="hrEmployeeTable"></tbody></table></div></div><div class="section" id="hrAttendanceSection"><div class="section-header"><div><h3>Attendance</h3><div class="toolbar" style="margin-top:8px"><select id="hrAttDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><input id="hrAttFromFilter" type="date" onchange="hrApplyFilters()" title="Date From"><input id="hrAttToFilter" type="date" onchange="hrApplyFilters()" title="Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee No.</th><th>Name</th><th>Status</th><th>Marked By</th></tr></thead><tbody id="hrAttendanceTable"></tbody></table></div></div><div class="section" id="hrLeaveSection"><div class="section-header"><h3>Leave</h3></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Name</th><th>Type</th><th>From</th><th>To</th><th>Status</th></tr></thead><tbody id="hrLeaveTable"></tbody></table></div></div><div class="section" id="hrOvertimeSection"><div class="section-header"><h3>Overtime</h3></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Name</th><th>Hours</th><th>Rate</th><th>Amount</th><th>Status</th></tr></thead><tbody id="hrOTTable"></tbody></table></div></div><div class="section" id="hrPayrollSection"><div class="section-header"><h3>Payroll</h3></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Employee</th><th>Name</th><th>Present</th><th>Absent</th><th>Basic</th><th>OT</th><th>Deductions</th><th>Net Pay</th><th>Status</th><th>Action</th></tr></thead><tbody id="hrPayrollTable"></tbody></table></div></div>`;nav.appendChild(sec);applyHRRoleVisibility();}
+function addHRPage(){if(document.getElementById('hr'))return;const nav=document.querySelector('.main');if(!nav)return;const sec=document.createElement('section');sec.className='page';sec.id='hr';sec.innerHTML=`<div class="section"><div class="section-header"><div><h3>Human Resources & Payroll</h3><div style="font-size:12px;color:#6b7280">Complete employee, attendance, leave, overtime and payroll workflow linked to Accounting.</div><div id="payrollAccountingStatus" style="margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#6b7280;font-size:12px">Accounting posting status: waiting for payroll posting.</div></div><div class="toolbar"><button class="btn btn-primary" onclick="openEmployeeModal()">+ Employee</button><button class="btn btn-secondary" onclick="markAttendance()">Attendance</button><button class="btn btn-secondary" onclick="openLeaveModal()">Leave</button><button class="btn btn-secondary" onclick="openOTModal()">Overtime</button><button class="btn btn-secondary" onclick="runPayroll()">Calculate Payroll</button><button class="btn btn-secondary" onclick="approvePayroll()">Approve Payroll</button><button class="btn btn-success" onclick="window.postPayroll()">Post to Accounting</button><button class="btn btn-success" onclick="payPayroll()">Pay Payroll</button><button class="btn btn-secondary" data-hr-right="hr.roster_update" onclick="openRosterUpdate()">Roster Update</button><button class="btn btn-secondary" onclick="renderHR()">Refresh</button></div></div><div class="grid-4"><div class="card"><div class="card-title">Active Employees</div><div class="card-value" id="hrEmpCount">0</div></div><div class="card"><div class="card-title">Today Present</div><div class="card-value" id="hrTodayPresent">0</div></div><div class="card"><div class="card-title">Today Absent</div><div class="card-value" id="hrTodayAbsent">0</div></div><div class="card"><div class="card-title">Current Month Payroll</div><div class="card-value" id="hrPayrollTotal">0</div></div></div></div><div class="section" id="hrEmployeeSection"><div class="section-header"><div><h3>Employee Details</h3><div class="toolbar" style="margin-top:8px"><select id="hrEmpDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><select id="hrEmpStatusFilter" onchange="hrApplyFilters()"><option value="">All Status</option><option value="Active">Active</option><option value="Resigned">Resigned</option><option value="Inactive">Inactive</option></select><input id="hrEmpFromFilter" type="date" onchange="hrApplyFilters()" title="Join Date From"><input id="hrEmpToFilter" type="date" onchange="hrApplyFilters()" title="Join Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Employee No.</th><th>Name</th><th>Department</th><th>Position</th><th>Join Date</th><th>Basic Salary</th><th>Status</th><th>Actions</th></tr></thead><tbody id="hrEmployeeTable"></tbody></table></div></div><div class="section" id="hrAttendanceSection"><div class="section-header"><div><h3>Attendance</h3><div class="toolbar" style="margin-top:8px"><select id="hrAttDeptFilter" onchange="hrApplyFilters()"><option value="">All Departments</option>${hrDepartmentOptions()}</select><input id="hrAttFromFilter" type="date" onchange="hrApplyFilters()" title="Date From"><input id="hrAttToFilter" type="date" onchange="hrApplyFilters()" title="Date To"><button class="btn btn-secondary btn-small" onclick="hrClearFilters()">Clear</button></div></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee No.</th><th>Name</th><th>Status</th><th>Marked By</th></tr></thead><tbody id="hrAttendanceTable"></tbody></table></div></div><div class="section" id="hrLeaveSection"><div class="section-header"><h3>Leave</h3></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Name</th><th>Type</th><th>From</th><th>To</th><th>Status</th></tr></thead><tbody id="hrLeaveTable"></tbody></table></div></div><div class="section" id="hrOvertimeSection"><div class="section-header"><h3>Overtime</h3></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Name</th><th>Hours</th><th>Rate</th><th>Amount</th><th>Status</th></tr></thead><tbody id="hrOTTable"></tbody></table></div></div><div class="section" id="hrPayrollSection"><div class="section-header"><h3>Payroll</h3></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Employee</th><th>Name</th><th>Present</th><th>Absent</th><th>Basic</th><th>OT</th><th>Deductions</th><th>Net Pay</th><th>Status</th></tr></thead><tbody id="hrPayrollTable"></tbody></table></div></div>`;nav.appendChild(sec);applyHRRoleVisibility();}
 (function(){
 'use strict';
 /* Signature PMS Staff Lifecycle + Sri Lanka statutory HR extension */
@@ -22814,9 +22691,8 @@ function taxCfg(p){p=p||cfg();const on=v=>v===true||v===1||String(v??'').trim().
 
 window.saveSriLankaTaxSettings=async function(){
   if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;
-  const selectedPropertyId=String(currentPropertyId||'');
-  if(!selectedPropertyId){alert('Please select a property first.');return;}
-  const property=Array.isArray(properties)?properties.find(p=>String(p.id)===selectedPropertyId):null;
+  if(!currentPropertyId){alert('Please select a property first.');return;}
+  const property=Array.isArray(properties)?properties.find(p=>String(p.id)===String(currentPropertyId)):null;
   if(!property){alert('Selected property could not be found. No settings were changed.');return;}
   const v=id=>document.getElementById(id)?.value;
   const tax={
@@ -22848,7 +22724,7 @@ window.saveSriLankaTaxSettings=async function(){
       if(client && typeof getSupabaseSessionUser==='function'){
         const authUser=await getSupabaseSessionUser();
         if(!authUser)throw new Error('Please sign in with Supabase before saving tax settings.');
-        const cloudId=typeof resolveSupabasePropertyId==='function' ? await resolveSupabasePropertyId(selectedPropertyId) : selectedPropertyId;
+        const cloudId=typeof resolveSupabasePropertyId==='function' ? await resolveSupabasePropertyId(String(currentPropertyId)) : String(currentPropertyId);
         if(!cloudId)throw new Error('Cloud property could not be resolved for the selected hotel.');
         const {data:row,error:readError}=await client.from('properties').select('id,settings_data').eq('id',String(cloudId)).maybeSingle();
         if(readError)throw readError;
@@ -22865,24 +22741,21 @@ window.saveSriLankaTaxSettings=async function(){
         throw new Error('Cloud session verification is unavailable.');
       }
     }
-    if(String(currentPropertyId||'')===selectedPropertyId){
-      try{if(typeof loadSriLankaTaxSettings==='function')loadSriLankaTaxSettings();}catch(e){}
-      try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){console.warn('Daily Revenue tax preview refresh skipped:',e);}
-    }
+    try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){console.warn('Daily Revenue tax preview refresh skipped:',e);}
     alert('Tax & billing settings saved for '+(property.property||property.name||'the selected property')+'.');
   }catch(err){
     console.error('Property-scoped tax settings cloud save failed:',err);
     alert('Tax settings were saved locally for '+(property.property||property.name||'the selected property')+', but cloud sync failed: '+(err?.message||err)+'. Please check the cloud status before switching devices.');
   }
 };
-window.loadSriLankaTaxSettings=function(){
+function loadSriLankaTaxSettings(){
   const p=(Array.isArray(properties)?properties.find(x=>String(x.id)===String(currentPropertyId)):null)||currentProp(),t=taxCfg(p);
   const set=(id,val)=>{const e=document.getElementById(id);if(e)e.value=val;};
   set('slVatEnabled',t.vatEnabled?'yes':'no');set('slVatRate',t.vatRate);set('slVatInclusive',t.vatInclusive?'yes':'no');
   set('slServiceChargeEnabled',t.serviceChargeEnabled?'yes':'no');set('slServiceChargeRate',t.serviceChargeRate);
   set('slTdlEnabled',t.tdlEnabled?'yes':'no');set('slTdlRate',t.tdlRate);set('slTdlSmallRate',t.tdlSmallRate);
   set('slSsclEnabled',t.ssclEnabled?'yes':'no');set('slSsclRate',t.ssclRate);
-};
+}
 
 window.applyFolioDiscount=function(id){
   if(typeof requireActionPermission==='function'&&!requireActionPermission('folios.discount'))return;
@@ -23635,8 +23508,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const TABLE='pms_cloud_records';
   const KEYS=[
     'signature_pms_hr_employees',
-    'signature_pms_hr_attendance',
-    'signature_pms_hr_payroll',
+    // Attendance and Payroll have dedicated sync handlers below; keep them
+    // out of this broad hydrator to prevent competing refresh/save races.
     'signature_pms_hr_leave',
     'signature_pms_hr_overtime',
     'signature_pms_hr_shifts',
@@ -23782,7 +23655,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const safe=(fn,fb)=>{try{return fn()}catch(e){return fb}};
   let dirty=new Set(), syncing=false;
-  const mark=k=>dirty.add(k);
+  // Version each attendance/leave/roster key so an older in-flight cloud pull
+  // cannot overwrite a local edit that was saved while the request was pending.
+  const versions=new Map();
+  const mark=k=>{dirty.add(k);versions.set(k,(versions.get(k)||0)+1);};
   const clear=k=>dirty.delete(k);
   const cloud=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
   const pid=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
@@ -23796,11 +23672,18 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function pull(k){
     if(dirty.has(k))return false;
+    const versionAtStart=versions.get(k)||0;
     const z=await session(); if(!z)return false;
     const q=await z.c.from('pms_cloud_records').select('data,updated_at').eq('property_id',z.p).eq('storage_key',k).maybeSingle();
     if(q.error)throw q.error;
     if(!q.data)return false;
-    const localAll=local(k),other=localAll.filter(x=>String(x.propertyId||'')!==z.p),cloudRows=Array.isArray(q.data.data)?q.data.data:[];
+    // A save/sync happened while the network read was pending: discard this
+    // stale response instead of replacing the newly saved local records.
+    if(dirty.has(k)||(versions.get(k)||0)!==versionAtStart)return false;
+    const localAll=local(k),other=localAll.filter(x=>String(x.propertyId||'')!==z.p),localMine=localAll.filter(x=>String(x.propertyId||'')===z.p),cloudRows=Array.isArray(q.data.data)?q.data.data:[];
+    // An empty cloud row can mean the cloud key has not been initialized yet.
+    // Never erase existing property-local attendance/roster with that empty payload.
+    if(cloudRows.length===0&&localMine.length>0)return false;
     localStorage.setItem(k,JSON.stringify(other.concat(cloudRows.map(x=>({...x,propertyId:z.p})))));
     return true;
   }
@@ -23818,8 +23701,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   if(typeof oldAtt==='function')window.saveTeamAttendance=async function(){
     oldAtt();
     await sleep(150);
-    await sync(KEYS.att);
-    if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Attendance saved and synchronized to Supabase.','success');
+    const ok=await sync(KEYS.att);
+    if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage(ok?'Attendance saved and synchronized to Supabase.':'Attendance saved locally; cloud sync was not confirmed.',''+(ok?'success':'error'));
   };
 
   // Leave: the original function writes both Leave and the generated Leave attendance.
@@ -23849,10 +23732,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     try{
       oldSaveRoster();
       await sleep(150);
-      await sync(KEYS.roster);
+      const ok=await sync(KEYS.roster);
       window.__signatureRosterEditing=false;
       if(typeof hrRenderRosterTable==='function')hrRenderRosterTable();
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Roster saved and synchronized to Supabase.','success');
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage(ok?'Roster saved and synchronized to Supabase.':'Roster saved locally; cloud sync was not confirmed.',''+(ok?'success':'error'));
     }catch(e){window.__signatureRosterEditing=false;throw e;}
   };
 
@@ -28546,6 +28429,45 @@ const w=window.open('','_blank');if(!w)return alert('Your browser blocked the PD
 w.document.open();w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(run.templateName||'Checklist')} - PDF Report</title><style>*{box-sizing:border-box}body{font:9px Arial,sans-serif;color:#111;margin:0;background:#eee}.toolbar{position:sticky;top:0;background:#fff;padding:10px;display:flex;gap:8px;z-index:5}.toolbar button{padding:9px 14px}.page{width:186mm;min-height:273mm;margin:8mm auto;background:#fff;padding:8mm 9mm;position:relative;page-break-after:always;break-after:page}header{border-bottom:1px solid #999;padding-bottom:5px;margin-bottom:6px}h1{font-size:15px;margin:0 0 3px}.brand{font-size:8px;color:#555;font-weight:bold}.meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;padding:6px;border:1px solid #ddd;margin:6px 0;font-size:8px}.summary{font-weight:bold;margin:5px 0}.range{font-weight:bold;background:#eef2f7;padding:4px;margin:4px 0}.item{border-bottom:1px solid #ddd;padding:3px 2px;break-inside:avoid}.itemtop{display:flex;justify-content:space-between;gap:8px;align-items:start;font-size:9px}.itemtop b{flex:1}.status{font-size:8px;font-weight:bold;white-space:nowrap}.fail,.missing,.req{color:#b91c1c}.sectionname{font-size:7px;color:#555;margin-top:1px}.detail{font-size:8px;margin-top:1px;overflow-wrap:anywhere}.photogrid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,1fr);gap:5mm;height:235mm}.photocard{border:1px solid #ddd;padding:4px;min-height:0;display:flex;flex-direction:column;overflow:hidden}.photocard img{width:100%;height:35mm;object-fit:contain;flex:0 0 auto}.photocard b{font-size:8px;margin-top:3px;overflow-wrap:anywhere}.photocard div{font-size:7px;color:#555;margin-top:2px;overflow-wrap:anywhere}footer{position:absolute;bottom:4mm;left:9mm;right:9mm;border-top:1px solid #ddd;padding-top:3px;font-size:7px;color:#666}@page{size:A4;margin:0}@media(max-width:700px){body{background:#fff}.page{width:100%;min-height:0;margin:0;padding:12px;box-shadow:none}.meta{grid-template-columns:1fr}.photogrid{height:auto;grid-template-rows:none}.photocard img{height:30vw}footer{position:static;margin-top:20px}.toolbar{position:static}}@media print{body{background:#fff}.toolbar{display:none!important}.page{width:auto;height:297mm;min-height:297mm;margin:0;padding:8mm 9mm;box-shadow:none;overflow:hidden}.photogrid{height:235mm}.photocard img{height:35mm}footer{position:absolute;bottom:4mm}}
 </style></head><body><div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button><button onclick="window.close()">Close</button><span>Compact report: up to 20 checklist items per page. All photos are on separate final pages, up to 10 per page.</span></div>${reportPages}${photoPages}<script>window.addEventListener('load',()=>Promise.all([...document.images].map(i=>i.decode?i.decode().catch(()=>{}):Promise.resolve())));<\/script>
 
+<script id="signature-hr-monthly-attendance">
+(function(){
+ 'use strict';
+ const STATUSES=['Present','Absent','Half Day','Day Off','AL','ML','CL'];
+ function isDepartmentSupervisorFallback(){return typeof currentUser!=='undefined'&&currentUser?.role==='Department Supervisor';}
+ function monthDays(month){const p=month.split('-').map(Number);return new Date(p[0],p[1],0).getDate();}
+ function dateFor(month,day){return month+'-'+String(day).padStart(2,'0');}
+ window.markAttendance=function(){
+  if(typeof canHRAttendance==='function'&&!canHRAttendance()){alert('Access denied. Attendance entry is not assigned to your user account.');return;}
+  const em=typeof window.signatureHRActiveEmployeesForAttendance==='function'?window.signatureHRActiveEmployeesForAttendance():[];
+  if(!em.length){alert(isDepartmentSupervisorFallback()?'No active employees are assigned to your department. Please check the employee department and your department access.':'No active employees are available. Please check the employee list and department access.');return;}
+  const idm='sigAttendanceModal';
+  if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:900px;width:96%;max-height:90vh;overflow:auto"><div class="modal-header"><h3>Monthly Attendance — One Employee</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee *</label><select id="haEmp"></select></div><div class="form-group"><label>Month *</label><input id="haMonth" type="month"></div><div class="form-group full"><p style="margin:0;color:#475569">Select one employee and set attendance for each date. Existing entries will be loaded. Dates left as “No change” will be left untouched.</p></div></div><div id="haMonthRows" style="overflow:auto;margin-top:12px"></div><div style="display:flex;justify-content:space-between;gap:8px;margin-top:15px;flex-wrap:wrap"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveMonthlyAttendance()">Save Month Attendance</button></div></div></div>`);
+  const sel=document.getElementById('haEmp');sel.innerHTML=em.map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo||'')} — ${esc(x.name||'')}${x.department?' — '+esc(x.department):''}</option>`).join('');
+  document.getElementById('haMonth').value=today().slice(0,7);
+  sel.onchange=renderMonthRows;document.getElementById('haMonth').onchange=renderMonthRows;
+  renderMonthRows();document.getElementById(idm).classList.add('show');
+ };
+ function renderMonthRows(){
+  const month=document.getElementById('haMonth')?.value, eid=document.getElementById('haEmp')?.value, box=document.getElementById('haMonthRows');if(!box||!month||!eid)return;
+  const n=monthDays(month), all=rows(K.att), prop=String(currentPropertyId);
+  let html='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:8px">Date</th><th style="text-align:left;padding:8px">Day</th><th style="text-align:left;padding:8px">Status</th><th style="text-align:left;padding:8px">Remarks</th></tr></thead><tbody>';
+  for(let d=1;d<=n;d++){const date=dateFor(month,d),dt=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d),old=all.find(x=>String(x.employeeId)===String(eid)&&String(x.date)===date&&String(x.propertyId)===prop);html+=`<tr><td style="padding:6px;border-top:1px solid #e2e8f0">${date}</td><td style="padding:6px;border-top:1px solid #e2e8f0">${dt.toLocaleDateString(undefined,{weekday:'short'})}</td><td style="padding:6px;border-top:1px solid #e2e8f0"><select id="hamStatus_${d}" style="min-width:145px;padding:7px"><option value="">No change</option>${STATUSES.map(s=>`<option value="${s}" ${old?.status===s?'selected':''}>${s}</option>`).join('')}${old&&!STATUSES.includes(old.status)?`<option value="${esc(old.status)}" selected>${esc(old.status)}</option>`:''}</select></td><td style="padding:6px;border-top:1px solid #e2e8f0"><input id="hamRemarks_${d}" value="${esc(old?.remarks||'')}" placeholder="Optional" style="width:100%;min-width:120px;padding:7px"></td></tr>`;}
+  box.innerHTML=html+'</tbody></table>';
+ }
+ window.saveMonthlyAttendance=async function(){
+  if(!requireModuleAction('hr.attendance'))return;
+  const eid=document.getElementById('haEmp')?.value,month=document.getElementById('haMonth')?.value,em=hrEmployees().find(x=>String(x.id)===String(eid));if(!em||!month||!/^[0-9]{4}-[0-9]{2}$/.test(month)){alert('Select an employee and valid month.');return;}
+  if(typeof isDepartmentSupervisor==='function'&&isDepartmentSupervisor()&&String(em.department||'').trim().toLowerCase()!==String(currentUser.department||'').trim().toLowerCase()){alert('You can only enter attendance for employees in your assigned department.');return;}
+  const n=monthDays(month),a=rows(K.att),now=new Date().toISOString();let changed=0;
+  for(let d=1;d<=n;d++){const status=document.getElementById('hamStatus_'+d)?.value||'';if(!status)continue;const date=dateFor(month,d),remarks=document.getElementById('hamRemarks_'+d)?.value.trim()||'';let old=a.find(x=>String(x.employeeId)===String(eid)&&String(x.date)===date&&String(x.propertyId)===String(currentPropertyId));if(old){old.status=status;old.remarks=remarks;old.markedBy=user();old.markedAt=now;}else a.push({id:id('att'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,department:em.department||'',date,status,remarks,markedBy:user(),markedAt:now});changed++;}
+  if(!changed){alert('No attendance statuses selected. Choose statuses for the dates you want to save.');return;}
+  saveProp(K.att,a);if(typeof renderHR==='function')renderHR();
+  let cloudMsg='';try{if(typeof window.syncHRKeyToCloud==='function'){const ok=await window.syncHRKeyToCloud(K.att);cloudMsg=ok?'\nCloud sync confirmed.':'\nWarning: cloud sync was not confirmed; please use Refresh and verify.';}}catch(e){cloudMsg='\nWarning: cloud sync failed; please use Refresh and verify.';}
+  document.getElementById('sigAttendanceModal')?.classList.remove('show');alert(changed+' attendance date(s) saved for '+em.name+' ('+month+').'+cloudMsg);
+ };
+})();
+
+</script>
 </body></html>`);w.document.close();};
 window.gclSharePdf=async function(runArg){
 const run=runArg||currentRun;if(!run)return alert('Start or open a checklist report first.');if(run.status!=='Completed')return alert('Complete the checklist before sharing the PDF.');if(!allowed('share'))return alert('You do not have permission to share reports.');
@@ -28762,3 +28684,43 @@ body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
 /* Preserve semantic status colours and the original layouts. */
 
 </style>
+
+<!-- Monthly attendance fix: loaded by the main PMS page -->
+<script id="signature-hr-monthly-attendance">
+(function(){
+ 'use strict';
+ const STATUSES=['Present','Absent','Half Day','Day Off','AL','ML','CL'];
+ function monthDays(month){const p=month.split('-').map(Number);return new Date(p[0],p[1],0).getDate();}
+ function dateFor(month,day){return month+'-'+String(day).padStart(2,'0');}
+ window.markAttendance=function(){
+  if(typeof canHRAttendance==='function'&&!canHRAttendance()){alert('Access denied. Attendance entry is not assigned to your user account.');return;}
+  const em=typeof hrTeamEmployees==='function'?hrTeamEmployees():[];
+  if(!em.length){alert('No active employees are available. Please check the employee list and department access.');return;}
+  const idm='sigAttendanceModal';
+  if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:900px;width:96%;max-height:90vh;overflow:auto"><div class="modal-header"><h3>Monthly Attendance — One Employee</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee *</label><select id="haEmp"></select></div><div class="form-group"><label>Month *</label><input id="haMonth" type="month"></div><div class="form-group full"><p style="margin:0;color:#475569">Select one employee and set attendance for each date. Existing entries will be loaded. Dates left as “No change” will be left untouched.</p></div></div><div id="haMonthRows" style="overflow:auto;margin-top:12px"></div><div style="display:flex;justify-content:space-between;gap:8px;margin-top:15px;flex-wrap:wrap"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveMonthlyAttendance()">Save Month Attendance</button></div></div></div>`);
+  const sel=document.getElementById('haEmp');sel.innerHTML=em.map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo||'')} — ${esc(x.name||'')}${x.department?' — '+esc(x.department):''}</option>`).join('');
+  document.getElementById('haMonth').value=today().slice(0,7);
+  sel.onchange=renderMonthRows;document.getElementById('haMonth').onchange=renderMonthRows;
+  renderMonthRows();document.getElementById(idm).classList.add('show');
+ };
+ function renderMonthRows(){
+  const month=document.getElementById('haMonth')?.value, eid=document.getElementById('haEmp')?.value, box=document.getElementById('haMonthRows');if(!box||!month||!eid)return;
+  const n=monthDays(month), all=rows(K.att), prop=String(currentPropertyId);
+  let html='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:8px">Date</th><th style="text-align:left;padding:8px">Day</th><th style="text-align:left;padding:8px">Status</th><th style="text-align:left;padding:8px">Remarks</th></tr></thead><tbody>';
+  for(let d=1;d<=n;d++){const date=dateFor(month,d),dt=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d),old=all.find(x=>String(x.employeeId)===String(eid)&&String(x.date)===date&&String(x.propertyId)===prop);html+=`<tr><td style="padding:6px;border-top:1px solid #e2e8f0">${date}</td><td style="padding:6px;border-top:1px solid #e2e8f0">${dt.toLocaleDateString(undefined,{weekday:'short'})}</td><td style="padding:6px;border-top:1px solid #e2e8f0"><select id="hamStatus_${d}" style="min-width:145px;padding:7px"><option value="">No change</option>${STATUSES.map(s=>`<option value="${s}" ${old?.status===s?'selected':''}>${s}</option>`).join('')}${old&&!STATUSES.includes(old.status)?`<option value="${esc(old.status)}" selected>${esc(old.status)}</option>`:''}</select></td><td style="padding:6px;border-top:1px solid #e2e8f0"><input id="hamRemarks_${d}" value="${esc(old?.remarks||'')}" placeholder="Optional" style="width:100%;min-width:120px;padding:7px"></td></tr>`;}
+  box.innerHTML=html+'</tbody></table>';
+ }
+ window.saveMonthlyAttendance=async function(){
+  if(!requireModuleAction('hr.attendance'))return;
+  const eid=document.getElementById('haEmp')?.value,month=document.getElementById('haMonth')?.value,em=hrEmployees().find(x=>String(x.id)===String(eid));if(!em||!month||!/^[0-9]{4}-[0-9]{2}$/.test(month)){alert('Select an employee and valid month.');return;}
+  if(typeof isDepartmentSupervisor==='function'&&isDepartmentSupervisor()&&String(em.department||'').trim().toLowerCase()!==String(currentUser.department||'').trim().toLowerCase()){alert('You can only enter attendance for employees in your assigned department.');return;}
+  const n=monthDays(month),a=rows(K.att),now=new Date().toISOString();let changed=0;
+  for(let d=1;d<=n;d++){const status=document.getElementById('hamStatus_'+d)?.value||'';if(!status)continue;const date=dateFor(month,d),remarks=document.getElementById('hamRemarks_'+d)?.value.trim()||'';let old=a.find(x=>String(x.employeeId)===String(eid)&&String(x.date)===date&&String(x.propertyId)===String(currentPropertyId));if(old){old.status=status;old.remarks=remarks;old.markedBy=user();old.markedAt=now;}else a.push({id:id('att'),propertyId:currentPropertyId,employeeId:eid,employeeNo:em.employeeNo,name:em.name,department:em.department||'',date,status,remarks,markedBy:user(),markedAt:now});changed++;}
+  if(!changed){alert('No attendance statuses selected. Choose statuses for the dates you want to save.');return;}
+  saveProp(K.att,a);if(typeof renderHR==='function')renderHR();
+  let cloudMsg='';try{if(typeof window.syncHRKeyToCloud==='function'){const ok=await window.syncHRKeyToCloud(K.att);cloudMsg=ok?'\nCloud sync confirmed.':'\nWarning: cloud sync was not confirmed; please use Refresh and verify.';}}catch(e){cloudMsg='\nWarning: cloud sync failed; please use Refresh and verify.';}
+  document.getElementById('sigAttendanceModal')?.classList.remove('show');alert(changed+' attendance date(s) saved for '+em.name+' ('+month+').'+cloudMsg);
+ };
+})();
+
+</script>
