@@ -23544,12 +23544,32 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     if(q.error)throw q.error;
     if(!q.data)return false;
     const cloud=Array.isArray(q.data.data)?q.data.data:[];
-    const other=localRead(key).filter(x=>!mine(x));
+    const localAll=localRead(key);
+    const localMine=localAll.filter(mine);
+    // SAFETY: an empty employee payload must never erase employees already saved locally.
+    // This can happen if an empty/partially initialized cloud row is returned during refresh.
+    if(key==='signature_pms_hr_employees' && cloud.length===0 && localMine.length>0){
+      console.warn('HR employee cloud hydration skipped: cloud employee list is empty while local property records exist.');
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Employee cloud list is empty; local employee records were protected. Please verify cloud data before retrying.','error');
+      return false;
+    }
+    const other=localAll.filter(x=>!mine(x));
     localWrite(key,other.concat(cloud.map(x=>({...x,propertyId:z.p}))));
     return true;
   }
   async function pushKey(z,key){
     const arr=localRead(key).filter(mine).map(x=>({...x,propertyId:z.p}));
+    // SAFETY: do not replace a non-empty cloud employee list with an empty local list.
+    if(key==='signature_pms_hr_employees' && arr.length===0){
+      const existing=await z.c.from(TABLE).select('data').eq('property_id',z.p).eq('storage_key',key).maybeSingle();
+      if(existing.error)throw existing.error;
+      const cloudExisting=Array.isArray(existing.data?.data)?existing.data.data:[];
+      if(cloudExisting.length>0){
+        console.warn('HR employee cloud publish skipped: local list is empty while cloud employee records exist.');
+        if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Local employee list is empty; existing cloud employee records were protected from overwrite.','error');
+        return false;
+      }
+    }
     const q=await z.c.from(TABLE).upsert({
       property_id:z.p,
       storage_key:key,
