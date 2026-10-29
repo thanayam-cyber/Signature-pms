@@ -28467,7 +28467,7 @@ w.document.open();w.document.write(`<!doctype html><html><head><meta charset="ut
  };
 })();
 
-</script>
+<\/script>
 </body></html>`);w.document.close();};
 window.gclSharePdf=async function(runArg){
 const run=runArg||currentRun;if(!run)return alert('Start or open a checklist report first.');if(run.status!=='Completed')return alert('Complete the checklist before sharing the PDF.');if(!allowed('share'))return alert('You do not have permission to share reports.');
@@ -28694,8 +28694,14 @@ body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
  function dateFor(month,day){return month+'-'+String(day).padStart(2,'0');}
  window.markAttendance=function(){
   if(typeof canHRAttendance==='function'&&!canHRAttendance()){alert('Access denied. Attendance entry is not assigned to your user account.');return;}
-  const em=typeof hrTeamEmployees==='function'?hrTeamEmployees():[];
-  if(!em.length){alert('No active employees are available. Please check the employee list and department access.');return;}
+  // Use the same property-scoped employee source as Employee Details. The older hrTeamEmployees helper can return an empty list when employee records were saved by the newer HR workflow.
+  let em=typeof window.signatureHRActiveEmployeesForAttendance==='function'?window.signatureHRActiveEmployeesForAttendance():[];
+  if(!Array.isArray(em)||!em.length){
+   const all=typeof hrEmployees==='function'?hrEmployees():[];
+   em=(Array.isArray(all)?all:[]).filter(x=>{const st=String(x.status||'').trim().toLowerCase();return !st||st==='active';});
+   if(typeof isDepartmentSupervisor==='function'&&isDepartmentSupervisor()){const dept=String(currentUser?.department||'').trim().toLowerCase();em=em.filter(x=>String(x.department||'').trim().toLowerCase()===dept);}
+  }
+  if(!em.length){alert('No active employees are available for this property and department. Please check Employee Details and department access.');return;}
   const idm='sigAttendanceModal';
   if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="${idm}"><div class="modal-box" style="max-width:900px;width:96%;max-height:90vh;overflow:auto"><div class="modal-header"><h3>Monthly Attendance — One Employee</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Employee *</label><select id="haEmp"></select></div><div class="form-group"><label>Month *</label><input id="haMonth" type="month"></div><div class="form-group full"><p style="margin:0;color:#475569">Select one employee and set attendance for each date. Existing entries will be loaded. Dates left as “No change” will be left untouched.</p></div></div><div id="haMonthRows" style="overflow:auto;margin-top:12px"></div><div style="display:flex;justify-content:space-between;gap:8px;margin-top:15px;flex-wrap:wrap"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="saveMonthlyAttendance()">Save Month Attendance</button></div></div></div>`);
   const sel=document.getElementById('haEmp');sel.innerHTML=em.map(x=>`<option value="${esc(x.id)}">${esc(x.employeeNo||'')} — ${esc(x.name||'')}${x.department?' — '+esc(x.department):''}</option>`).join('');
