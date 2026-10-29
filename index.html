@@ -15301,12 +15301,47 @@ window.postDailyRevenue=function(){
   const alreadyPosted=dailyRevenueJournalExists(d);
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const accountDeltas=dailyRevenueAccountDeltas(d);
-  // A legacy journal may already have posted the POS gross total entirely to revenue.
-  // Do not append liability credits and debit AR again for that same already-posted date.
-  // It needs a separately reviewed reclassification journal instead.
-  if(alreadyPosted && (Number(accountDeltas['Service Charge Payable']||0)>0.009 || Number(accountDeltas['Tax Payable']||0)>0.009)){
-    alert('Tax/service-charge amounts exist for '+d+', but this date already has a revenue journal that may have posted gross POS totals to revenue. Automatic incremental posting is blocked to avoid duplicating Accounts Receivable. Review and post a reclassification journal for this date first. No journal was changed.');
-    return;
+  // Incremental POS posting: when the date already has a journal, treat the
+  // previously posted Restaurant POS / Bar POS credits as the gross value of the
+  // oldest invoices already posted. Only invoices beyond that gross baseline are
+  // eligible for a new journal. This avoids re-posting historic tax as new AR.
+  const incrementalPosRows=[];
+  if(alreadyPosted){
+    const posGroups=new Map();
+    rows.filter(r=>r.source==='F&B POS'||r.source==='F&B POS Tax').forEach(r=>{
+      const key=String(r.reference||'');
+      if(!posGroups.has(key))posGroups.set(key,[]);
+      posGroups.get(key).push(r);
+    });
+    const postedPos={'Restaurant Revenue':0,'Bar Revenue':0};
+    journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===d).forEach(j=>(j.lines||[]).forEach(l=>{
+      const src=String(l.revenueSource||'');
+      if(src==='Restaurant POS')postedPos['Restaurant Revenue']+=Number(l.credit||0);
+      if(src==='Bar POS')postedPos['Bar Revenue']+=Number(l.credit||0);
+    }));
+    const seen={'Restaurant Revenue':0,'Bar Revenue':0};
+    for(const group of posGroups.values()){
+      const revenueRow=group.find(r=>r.source==='F&B POS');
+      if(!revenueRow)continue;
+      const account=String(revenueRow.account||'Restaurant Revenue');
+      const gross=group.reduce((sum,r)=>sum+Number(r.amount||0),0);
+      const prior=Number(postedPos[account]||0), before=Number(seen[account]||0), after=before+gross;
+      seen[account]=after;
+      // Skip invoices wholly covered by the already-posted gross baseline.
+      if(after<=prior+0.009)continue;
+      // If a legacy journal ends part-way through an invoice, fail closed rather
+      // than guessing how much of that invoice's tax was previously posted.
+      if(before<prior-0.009){
+        if(after>prior+0.009 && before<prior-0.009){
+          if(Math.abs(before-prior)>0.009){
+            // A baseline between invoice boundaries is ambiguous; do not duplicate AR.
+            alert('An existing revenue journal covers only part of a POS invoice for '+d+'. Please review that invoice and journal before posting more revenue. No journal was changed.');
+            return;
+          }
+        }
+      }
+      incrementalPosRows.push(...group);
+    }
   }
   const commissionDelta=dailyRevenueOtaCommissionDelta(d);
   const grossupDelta=alreadyPosted?dailyRevenueGrossupDelta(d):commissionDelta;
@@ -15316,9 +15351,20 @@ window.postDailyRevenue=function(){
 
   if(alreadyPosted){
     Object.entries(accountDeltas).forEach(([account,amount])=>{
+      // POS revenue is handled invoice-by-invoice below, so do not also apply
+      // account-level deltas that can confuse gross historical sales with net sales.
+      if(['Restaurant Revenue','Bar Revenue','Service Charge Payable','Tax Payable'].includes(account))return;
       const a=Math.round(Number(amount||0)*100)/100;
       if(a>0.009)lines.push({account,debit:0,credit:a,revenueSource:'Incremental Operational Revenue'});
     });
+    const posGrouped={};
+    incrementalPosRows.forEach(r=>{
+      const amount=Number(r.amount||0);if(amount<=0.009)return;
+      const key=String(r.account||'Other Operating Revenue')+'||'+String(r.revenueSource||r.source||'Operational Revenue');
+      if(!posGrouped[key])posGrouped[key]={account:r.account||'Other Operating Revenue',debit:0,credit:0,revenueSource:r.revenueSource||r.source||'Operational Revenue'};
+      posGrouped[key].credit+=amount;
+    });
+    lines.push(...Object.values(posGrouped));
     if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
     revenueAmount=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
     if(revenueAmount<=0.009 && commissionDelta<=0.009){
@@ -15361,7 +15407,9 @@ window.postDailyRevenue=function(){
   journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===d).forEach(j=>(j.lines||[]).forEach(l=>{if(Object.prototype.hasOwnProperty.call(postedFolioTax,l.account))postedFolioTax[l.account]+=Number(l.credit||0);}));
   Object.keys(folioTaxExpected).forEach(account=>{
     const delta=Math.max(0,Math.round((folioTaxExpected[account]-postedFolioTax[account])*100)/100);
-    if(delta>0.009)lines.push({account,debit:0,credit:delta,revenueSource:account==='Tax Payable'?'Folio VAT':'Folio Service Charge'});
+    // On incremental dates, only the POS invoice-level tax rows selected above are
+    // eligible here. Folio tax is not added as a second unreferenced cumulative delta.
+    if(!alreadyPosted && delta>0.009)lines.push({account,debit:0,credit:delta,revenueSource:account==='Tax Payable'?'Folio VAT':'Folio Service Charge'});
   });
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
