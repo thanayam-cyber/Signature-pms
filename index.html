@@ -12082,13 +12082,14 @@ async function settleFNBTable(){
 function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
 function signatureGetTaxConfig(){
- const p=(typeof getSelectedProperty==='function'?getSelectedProperty():null)||(typeof getProperty==='function'?getProperty():null)||{};
- const s=(typeof settings!=='undefined'&&settings)?settings:{};
+ // Tax is read ONLY from the selected property's saved record. Never inherit tax
+ // flags/rates from the shared `settings` working object, which can belong to another hotel.
+ const p=(typeof getProperty==='function'?getProperty(currentPropertyId):null)||
+         (typeof getSelectedProperty==='function'?getSelectedProperty():null)||{};
  const enabled=v=>v===true||v===1||String(v??'').trim().toLowerCase()==='true'||String(v??'').trim()==='1'||String(v??'').trim().toLowerCase()==='yes';
- const pick=(a,b,d)=>{const av=Number(a);if(a!==undefined&&a!==null&&a!==''&&Number.isFinite(av)&&av>0)return av;const bv=Number(b);if(b!==undefined&&b!==null&&b!==''&&Number.isFinite(bv)&&bv>0)return bv;return d;};
- const scOn=enabled(p.serviceChargeEnabled)||enabled(s.serviceChargeEnabled);
- const vatOn=enabled(p.vatEnabled)||enabled(s.vatEnabled);
- return {serviceChargeEnabled:scOn,vatEnabled:vatOn,serviceChargeRate:scOn?pick(p.serviceChargeRate,s.serviceChargeRate,10):0,vatRate:vatOn?pick(p.vatRate,s.vatRate,18):0};
+ const rate=(v,d)=>{if(v===undefined||v===null||v==='')return d;const n=Number(v);return Number.isFinite(n)&&n>=0?n:d;};
+ const scOn=enabled(p.serviceChargeEnabled), vatOn=enabled(p.vatEnabled);
+ return {serviceChargeEnabled:scOn,vatEnabled:vatOn,serviceChargeRate:scOn?rate(p.serviceChargeRate,10):0,vatRate:vatOn?rate(p.vatRate,18):0};
 }
 function signaturePOSAmounts(subtotal,applyTax){const c=signatureGetTaxConfig(),sub=Math.max(0,Number(subtotal)||0),sc=applyTax&&c.serviceChargeEnabled?Number((sub*c.serviceChargeRate/100).toFixed(2)):0,vat=applyTax&&c.vatEnabled?Number(((sub+sc)*c.vatRate/100).toFixed(2)):0;return {subtotal:Number(sub.toFixed(2)),serviceCharge:sc,serviceChargeRate:c.serviceChargeRate,tax:vat,vatRate:c.vatRate,total:Number((sub+sc+vat).toFixed(2)),taxApplied:!!applyTax};}
 function savePOSOrder(){
@@ -15251,10 +15252,11 @@ function renderDailyRevenuePosting(){
   const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
   const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
   const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
-  const vatEnabled=taxBool(taxProp.vatEnabled)||taxBool(settings?.vatEnabled)||taxBool(activeCfg.vatEnabled)||(vatControl?.value==='yes');
-  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled)||taxBool(settings?.serviceChargeEnabled)||taxBool(activeCfg.serviceChargeEnabled)||(scControl?.value==='yes');
-  const vatRate=Math.max(0,Number(taxProp.vatRate||settings?.vatRate||activeCfg.vatRate||(vatRateControl?vatRateControl.value:0)||taxProp.taxRate||settings?.taxRate)||0);
-  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate||settings?.serviceChargeRate||activeCfg.serviceChargeRate||(scRateControl?scRateControl.value:0))||0);
+  // Preview must never inherit tax configuration from shared settings or stale form controls.
+  const vatEnabled=taxBool(taxProp.vatEnabled);
+  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled);
+  const vatRate=Math.max(0,Number(taxProp.vatRate ?? taxProp.taxRate ?? 0)||0);
+  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate ?? 0)||0);
   const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
   const previewSC=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
   const previewVAT=vatEnabled?Number(((taxableBase+previewSC)*vatRate/100).toFixed(2)):0;
@@ -15332,6 +15334,24 @@ window.postDailyRevenue=function(){
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
   if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
 
+  // Post folio service charge and VAT to their balance-sheet accounts as well.
+  // Amounts are allocated per occupied night and only the unposted difference is added.
+  const folioTaxExpected={ 'Service Charge Payable':0, 'Tax Payable':0 };
+  try{
+    const active=accProp(reservations||[]).filter(r=>['Checked-In','Checked-Out'].includes(String(r.status||'')) && String(r.checkIn||'').slice(0,10)<=d && d<String(r.checkOut||'').slice(0,10));
+    active.forEach(r=>{
+      const f=(folios||[]).find(x=>String(x.reservationId)===String(r.id)); if(!f)return;
+      const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
+      folioTaxExpected['Service Charge Payable']+=Math.max(0,Number(f.serviceCharges||0))/nights;
+      folioTaxExpected['Tax Payable']+=Math.max(0,Number(f.taxes||0))/nights;
+    });
+  }catch(e){console.warn('Folio tax allocation could not be calculated:',e);}
+  const postedFolioTax={ 'Service Charge Payable':0, 'Tax Payable':0 };
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===d).forEach(j=>(j.lines||[]).forEach(l=>{if(Object.prototype.hasOwnProperty.call(postedFolioTax,l.account))postedFolioTax[l.account]+=Number(l.credit||0);}));
+  Object.keys(folioTaxExpected).forEach(account=>{
+    const delta=Math.max(0,Math.round((folioTaxExpected[account]-postedFolioTax[account])*100)/100);
+    if(delta>0.009)lines.push({account,debit:0,credit:delta,revenueSource:account==='Tax Payable'?'Folio VAT':'Folio Service Charge'});
+  });
   const commissionLines=commissionDelta>0.009?[
     {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
     {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
@@ -22723,8 +22743,9 @@ function taxCfg(p){p=p||cfg();const on=v=>v===true||v===1||String(v??'').trim().
 
 window.saveSriLankaTaxSettings=async function(){
   if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;
-  if(!currentPropertyId){alert('Please select a property first.');return;}
-  const property=Array.isArray(properties)?properties.find(p=>String(p.id)===String(currentPropertyId)):null;
+  const selectedPropertyId=String(currentPropertyId||'');
+  if(!selectedPropertyId){alert('Please select a property first.');return;}
+  const property=Array.isArray(properties)?properties.find(p=>String(p.id)===selectedPropertyId):null;
   if(!property){alert('Selected property could not be found. No settings were changed.');return;}
   const v=id=>document.getElementById(id)?.value;
   const tax={
@@ -22756,7 +22777,7 @@ window.saveSriLankaTaxSettings=async function(){
       if(client && typeof getSupabaseSessionUser==='function'){
         const authUser=await getSupabaseSessionUser();
         if(!authUser)throw new Error('Please sign in with Supabase before saving tax settings.');
-        const cloudId=typeof resolveSupabasePropertyId==='function' ? await resolveSupabasePropertyId(String(currentPropertyId)) : String(currentPropertyId);
+        const cloudId=typeof resolveSupabasePropertyId==='function' ? await resolveSupabasePropertyId(selectedPropertyId) : selectedPropertyId;
         if(!cloudId)throw new Error('Cloud property could not be resolved for the selected hotel.');
         const {data:row,error:readError}=await client.from('properties').select('id,settings_data').eq('id',String(cloudId)).maybeSingle();
         if(readError)throw readError;
@@ -22773,21 +22794,24 @@ window.saveSriLankaTaxSettings=async function(){
         throw new Error('Cloud session verification is unavailable.');
       }
     }
-    try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){console.warn('Daily Revenue tax preview refresh skipped:',e);}
+    if(String(currentPropertyId||'')===selectedPropertyId){
+      try{if(typeof loadSriLankaTaxSettings==='function')loadSriLankaTaxSettings();}catch(e){}
+      try{if(typeof renderDailyRevenuePosting==='function')renderDailyRevenuePosting();}catch(e){console.warn('Daily Revenue tax preview refresh skipped:',e);}
+    }
     alert('Tax & billing settings saved for '+(property.property||property.name||'the selected property')+'.');
   }catch(err){
     console.error('Property-scoped tax settings cloud save failed:',err);
     alert('Tax settings were saved locally for '+(property.property||property.name||'the selected property')+', but cloud sync failed: '+(err?.message||err)+'. Please check the cloud status before switching devices.');
   }
 };
-function loadSriLankaTaxSettings(){
+window.loadSriLankaTaxSettings=function(){
   const p=(Array.isArray(properties)?properties.find(x=>String(x.id)===String(currentPropertyId)):null)||currentProp(),t=taxCfg(p);
   const set=(id,val)=>{const e=document.getElementById(id);if(e)e.value=val;};
   set('slVatEnabled',t.vatEnabled?'yes':'no');set('slVatRate',t.vatRate);set('slVatInclusive',t.vatInclusive?'yes':'no');
   set('slServiceChargeEnabled',t.serviceChargeEnabled?'yes':'no');set('slServiceChargeRate',t.serviceChargeRate);
   set('slTdlEnabled',t.tdlEnabled?'yes':'no');set('slTdlRate',t.tdlRate);set('slTdlSmallRate',t.tdlSmallRate);
   set('slSsclEnabled',t.ssclEnabled?'yes':'no');set('slSsclRate',t.ssclRate);
-}
+};
 
 window.applyFolioDiscount=function(id){
   if(typeof requireActionPermission==='function'&&!requireActionPermission('folios.discount'))return;
