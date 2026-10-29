@@ -15096,7 +15096,23 @@ function dailyRevenueRows(date){
     const outletName=String(x.outletName||outlet?.name||'').toLowerCase();
     const isBar=outletType==='bar' || outletName.includes('bar') || itemBar;
     const revenueAccount=isBar?'Bar Revenue':'Restaurant Revenue';
-    rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference:x.invoiceNo||x.id||'',description:(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale')),amount:toAccountingAmount(amount,x),account:revenueAccount});
+    const reference=x.invoiceNo||x.id||'';
+    const description=(x.outletName?('['+x.outletName+'] '):'')+(x.customerName||r?.guestName||(isBar?'Bar Sale':'Restaurant Sale'));
+    const tb=x.taxBreakdown&&typeof x.taxBreakdown==='object'?x.taxBreakdown:null;
+    // Use the tax amounts saved on the actual POS invoice. Never recalculate tax
+    // from the gross invoice total or from the currently selected property's settings.
+    const sub=Number(tb?.subtotal), sc=Number(tb?.serviceCharge), vat=Number(tb?.tax);
+    const breakdownValid=!!tb && tb.taxApplied===true && Number.isFinite(sub) && sub>=0 &&
+      Number.isFinite(sc) && sc>=0 && Number.isFinite(vat) && vat>=0 &&
+      Math.abs((sub+sc+vat)-Number(x.total||x.amount||0))<0.03;
+    if(breakdownValid){
+      if(sub>0.009)rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference,description,amount:toAccountingAmount(sub,x),account:revenueAccount});
+      if(sc>0.009)rows.push({date:d,source:'F&B POS Tax',revenueSource:'Service Charge Liability',reference,description:description+' — Service Charge',amount:toAccountingAmount(sc,x),account:'Service Charge Payable'});
+      if(vat>0.009)rows.push({date:d,source:'F&B POS Tax',revenueSource:'Tax Liability',reference,description:description+' — VAT / Tax',amount:toAccountingAmount(vat,x),account:'Tax Payable'});
+    }else{
+      // Legacy or inconsistent invoices are preserved as recorded; do not invent tax splits.
+      rows.push({date:d,source:'F&B POS',revenueSource:isBar?'Bar POS':'Restaurant POS',reference,description,amount:toAccountingAmount(amount,x),account:revenueAccount});
+    }
   });
   accProp(folios||[]).forEach(f=>{
     const r=reservations.find(z=>z.id===f.reservationId);
@@ -15242,24 +15258,10 @@ function renderDailyRevenuePosting(){
   const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);
-  // Resolve current-property tax config from both the selected property and active config.
-  // Some builds keep the current property's settings in `settings`; merge rather than letting
-  // stale false/zero fields in one object mask enabled values in the other.
-  let taxProp={};
-  try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
-  let activeCfg={};
-  try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
-  const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
-  const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
-  const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
-  // Preview must never inherit tax configuration from shared settings or stale form controls.
-  const vatEnabled=taxBool(taxProp.vatEnabled);
-  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled);
-  const vatRate=Math.max(0,Number(taxProp.vatRate ?? taxProp.taxRate ?? 0)||0);
-  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate ?? 0)||0);
-  const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
-  const previewSC=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
-  const previewVAT=vatEnabled?Number(((taxableBase+previewSC)*vatRate/100).toFixed(2)):0;
+  // This field shows actual tax/service-charge amounts already stored on POS invoices,
+  // not a second calculation applied to gross revenue. Tax is posted from invoice breakdowns.
+  const previewSC=Math.max(0,Number(totals['Service Charge Payable']||0));
+  const previewVAT=Math.max(0,Number(totals['Tax Payable']||0));
   set('dailyPostTax',previewSC+previewVAT);
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
@@ -15292,11 +15294,20 @@ function renderDailyRevenuePosting(){
 }
 window.postDailyRevenue=function(){
   if(!requireRole('Admin','Manager'))return;
+  // New POS tax-liability rows are posted only from saved invoice taxBreakdown data.
+  // Existing journals are intentionally not rewritten or auto-reversed by this patch.
   const d=dailyRevenueSelectedDate();
   if(d>accountingBusinessDate()){alert('Revenue date cannot be after the current business date.');return;}
   const alreadyPosted=dailyRevenueJournalExists(d);
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const accountDeltas=dailyRevenueAccountDeltas(d);
+  // A legacy journal may already have posted the POS gross total entirely to revenue.
+  // Do not append liability credits and debit AR again for that same already-posted date.
+  // It needs a separately reviewed reclassification journal instead.
+  if(alreadyPosted && (Number(accountDeltas['Service Charge Payable']||0)>0.009 || Number(accountDeltas['Tax Payable']||0)>0.009)){
+    alert('Tax/service-charge amounts exist for '+d+', but this date already has a revenue journal that may have posted gross POS totals to revenue. Automatic incremental posting is blocked to avoid duplicating Accounts Receivable. Review and post a reclassification journal for this date first. No journal was changed.');
+    return;
+  }
   const commissionDelta=dailyRevenueOtaCommissionDelta(d);
   const grossupDelta=alreadyPosted?dailyRevenueGrossupDelta(d):commissionDelta;
   let lines=[], revenueAmount=0;
