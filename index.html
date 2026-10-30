@@ -29001,8 +29001,9 @@ function agentBalances(){
         if(a){a.accrued+=Number(l.debit||0);a.entries.push({date:j.businessDate||j.date,reference:j.reference,bookingReferences:l.bookingReferences||[],description:j.description,amount:Number(l.debit||0),type:'Commission accrued'});}
         else if(!id){const name=String(l.travelAgentName||'Unassigned');const key='unassigned:'+name;const x=map.get(key)||{id:key,name,contact:'',commission:0,paymentMode:'',creditTerms:'',accrued:0,paid:0,unassigned:0,entries:[]};x.unassigned+=Number(l.debit||0);x.accrued+=Number(l.debit||0);x.entries.push({date:j.businessDate||j.date,reference:j.reference,bookingReferences:l.bookingReferences||[],description:j.description,amount:Number(l.debit||0),type:'Unassigned commission'});map.set(key,x);}
       }
-      if(l?.revenueSource==='Travel Agent Commission Payment'&&Number(l.credit||0)>0){
-        const a=map.get(String(l.travelAgentId||''));if(a){a.paid+=Number(l.credit||0);a.entries.push({date:j.businessDate||j.date,reference:j.reference,description:j.description,amount:Number(l.credit||0),type:'Payment'});}
+      // Settle Accounts Payable using its DEBIT. The cash/bank credit is not a second payment.
+      if(l?.revenueSource==='Travel Agent Commission Payment'&&String(l.account||'')==='Accounts Payable'&&Number(l.debit||0)>0){
+        const a=map.get(String(l.travelAgentId||''));if(a){a.paid+=Number(l.debit||0);a.entries.push({date:j.businessDate||j.date,reference:j.reference,description:j.description,amount:Number(l.debit||0),type:'Payment'});}
       }
     });
   });
@@ -29037,20 +29038,29 @@ function assignUnassignedCommission(unassignedId){
   if(!agent){alert('Please select the correct Travel Agent first.');return;}
   const unassignedName=String(unassignedId).replace(/^unassigned:/,'');
   if(!confirm('Assign the existing unassigned commission to '+String(agent.name)+'? No new journal or commission will be created.'))return;
-  const all=journals();let changed=false;const refs=[];
+  const all=journals();let changed=false;let moved=0;
+  const isConfigured=id=>!!String(id||'')&&(sales().travelAgents||[]).some(x=>x.active!==false&&String(x.id)===String(id));
   all.forEach(j=>{
     if(!sameProp(j)||!Array.isArray(j.lines))return;
-    const expense=j.lines.some(l=>l?.revenueSource==='Travel Agent Commission Expense'&&!String(l.travelAgentId||'')&&(String(l.travelAgentName||'Unassigned')===unassignedName));
-    if(!expense)return;
-    const related=j.lines.filter(l=>l?.revenueSource==='Travel Agent Commission Expense'||l?.revenueSource==='Travel Agent Commission Payable');
-    related.forEach(l=>{if(!String(l.travelAgentId||'')){l.travelAgentId=String(agent.id);l.travelAgentName=String(agent.name);changed=true;}});
-    if(changed){j.updatedAt=new Date().toISOString();refs.push(String(j.reference||''));}
+    const targetLines=j.lines.filter(l=>l?.revenueSource==='Travel Agent Commission Expense'&&
+      (!isConfigured(l.travelAgentId))&&
+      (String(l.travelAgentName||'Unassigned')===unassignedName||unassignedName==='Unassigned'));
+    if(!targetLines.length)return;
+    targetLines.forEach(l=>{l.travelAgentId=String(agent.id);l.travelAgentName=String(agent.name);changed=true;moved+=Number(l.debit||0);});
+    j.lines.forEach(l=>{
+      if(l?.revenueSource==='Travel Agent Commission Payable'&&!isConfigured(l.travelAgentId)&&
+        (String(l.travelAgentName||'Unassigned')===unassignedName||unassignedName==='Unassigned')){
+        l.travelAgentId=String(agent.id);l.travelAgentName=String(agent.name);changed=true;
+      }
+    });
+    j.updatedAt=new Date().toISOString();
   });
-  if(!changed){alert('No matching unassigned commission journal was found.');return;}
+  if(!changed){alert('No matching unassigned commission accrual was found. No payment was recorded.');return;}
   writeJournals(all);
   try{const sync=window.signatureAccountingJournalCloud?.sync?.();if(sync&&typeof sync.catch==='function')sync.catch(e=>console.warn('Travel Agent assignment cloud sync pending',e));}catch(e){console.warn('Travel Agent assignment cloud sync pending',e);}
-  render();alert('Existing commission assigned to '+String(agent.name)+'. Journal amounts were not changed. Cloud sync was requested.');
+  render();alert('Existing commission assigned to '+String(agent.name)+'. Accrual moved: '+money(moved)+'. No payment was recorded and no journal amount was changed. Cloud sync was requested.');
 }
+
 function showStatement(id){
   const a=agentBalances().find(x=>x.id===String(id));if(!a)return;
   const rows=a.entries.map(x=>`<tr><td>${esc(String(x.date||'').slice(0,10))}</td><td>${esc(x.reference||'')}</td><td>${esc(x.type)}</td><td>${esc((x.bookingReferences||[]).join(', '))}</td><td>${money(x.amount)}</td></tr>`).join('');
