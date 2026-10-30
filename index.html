@@ -15432,6 +15432,24 @@ window.postDailyRevenue=function(){
   if(taxDeltas['Service Charge Payable']>0.009)lines.push({account:'Service Charge Payable',debit:0,credit:taxDeltas['Service Charge Payable'],revenueSource:'Folio Service Charge'});
   if(taxDeltas['Tax Payable']>0.009)lines.push({account:'Tax Payable',debit:0,credit:taxDeltas['Tax Payable'],revenueSource:'Folio VAT'});
   const pendingCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+  /* Correct labels on an already-posted Travel Agent-only commission journal.
+     Keep its amounts and accounts unchanged; only the reference and description change. */
+  try{
+    const storedJournals=accRead(ACC_STORE.journals);
+    let labelsChanged=false;
+    storedJournals.forEach(j=>{
+      if(String(j.propertyId||currentPropertyId)!==String(currentPropertyId) || String(j.source||'')!=='Daily Revenue Commission' || String(j.businessDate||j.date||'').slice(0,10)!==d) return;
+      const jlines=Array.isArray(j.lines)?j.lines:[];
+      const taOnly=jlines.some(l=>String(l.revenueSource||'')==='Travel Agent Commission Expense') &&
+        !jlines.some(l=>String(l.revenueSource||'')==='OTA Commission Expense');
+      if(taOnly && !/^TA-COM-/.test(String(j.reference||''))){
+        j.reference='TA-COM-'+d.replace(/-/g,'');
+        j.description='Travel Agent Commission — '+d;
+        labelsChanged=true;
+      }
+    });
+    if(labelsChanged){accWrite(ACC_STORE.journals,storedJournals);try{renderAccounting();if(typeof renderJournalReview==='function')renderJournalReview();}catch(renderLabelError){}}
+  }catch(labelError){console.warn('Travel Agent commission label correction skipped:',labelError?.message||labelError);}
   if(alreadyPosted && pendingCredits<=0.009 && commissionDelta<=0.009 && travelAgentCommissionDelta<=0.009){
     alert('Daily revenue for '+d+' has already been fully posted. No new revenue or tax was found.');
     return;
@@ -15440,15 +15458,16 @@ window.postDailyRevenue=function(){
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
   if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
 
-  const commissionLines=[];
+  const otaCommissionLines=[];
+  const travelAgentCommissionLines=[];
   if(commissionDelta>0.009){
-    commissionLines.push(
+    otaCommissionLines.push(
       {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
       {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
     );
   }
   if(travelAgentCommissionDelta>0.009){
-    commissionLines.push(
+    travelAgentCommissionLines.push(
       {account:'OTA / Booking Commissions',debit:travelAgentCommissionDelta,credit:0,revenueSource:'Travel Agent Commission Expense'},
       {account:'Accounts Payable',debit:0,credit:travelAgentCommissionDelta,revenueSource:'Travel Agent Commission Payable'}
     );
@@ -15458,14 +15477,19 @@ window.postDailyRevenue=function(){
       postJournal(d,ref,description,lines,'Daily Revenue');
       const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
     }
-    if(commissionLines.length){
+    if(otaCommissionLines.length){
       const commissionRef='OTA-COM-'+d.replace(/-/g,'')+(alreadyPosted?'-'+Date.now():'');
-      postJournal(d,commissionRef,'OTA Commission Expense — '+d,commissionLines,'Daily Revenue Commission');
+      postJournal(d,commissionRef,'OTA Commission Expense — '+d,otaCommissionLines,'Daily Revenue Commission');
       const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
     }
-    logAudit('DAILY_REVENUE_POSTED',ref,'Daily revenue posted: '+newRevenueCredits+'; OTA commission: '+commissionDelta,currentPropertyId);
+    if(travelAgentCommissionLines.length){
+      const taRef='TA-COM-'+d.replace(/-/g,'')+(alreadyPosted?'-'+Date.now():'');
+      postJournal(d,taRef,'Travel Agent Commission — '+d,travelAgentCommissionLines,'Daily Revenue Commission');
+      const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
+    }
+    logAudit('DAILY_REVENUE_POSTED',ref,'Daily revenue posted: '+newRevenueCredits+'; OTA commission: '+commissionDelta+'; Travel Agent commission: '+travelAgentCommissionDelta,currentPropertyId);
     renderAccounting();renderDailyRevenuePosting();
-    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission delta: '+accMoney(commissionDelta)+'. Travel Agent commission delta: '+accMoney(travelAgentCommissionDelta)+'.');
+    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission: '+accMoney(commissionDelta)+'. Travel Agent commission: '+accMoney(travelAgentCommissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
 /* v2.1.474 — disable the legacy gross-up reversal repair. The correct gross-up is now
