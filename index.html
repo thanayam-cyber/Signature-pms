@@ -15180,9 +15180,44 @@ function dailyRevenueOtaCommissionRows(date){
 function dailyRevenuePostedOtaCommission(date){
   let total=0;
   journalEntries().filter(j=>['Daily Revenue','Daily Revenue Commission'].includes(String(j.source||'')) && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
-    (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions')total+=Number(l.debit||0);});
+    (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions' && String(l.revenueSource||'')==='OTA Commission Expense')total+=Number(l.debit||0);});
   });
   return total;
+}
+/* Deduct-mode Travel Agent commissions are recognized as an expense and payable
+   for each occupied business night. They are not grossed up into room revenue. */
+function dailyRevenueTravelAgentCommissionRows(date){
+  const d=date||dailyRevenueSelectedDate();
+  const sd=normalizeSalesDistribution(settings?.salesDistribution);
+  const active=accProp(reservations||[]).filter(r=>{
+    const ci=String(r.checkIn||'').slice(0,10),co=String(r.checkOut||'').slice(0,10);
+    return ['Checked-In','Checked-Out'].includes(String(r.status||'')) && ci && co && ci<=d && d<co;
+  });
+  const out=[];
+  active.forEach(r=>{
+    const channel=reservationBookingChannelValue(r).trim();
+    if(!/travel agent/i.test(channel))return;
+    const agentId=String(r.travelAgentId||r.reservationTravelAgentId||'');
+    const agent=(sd.travelAgents||[]).find(x=>String(x.id)===agentId && x.active!==false);
+    if(!agent || agent.calculation!=='deduct' || Number(agent.commission)<=0)return;
+    const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
+    const dailyGross=Number(r.total||0)/nights;
+    const rate=Math.max(0,Math.min(99.99,Number(agent.commission)||0));
+    const amount=toAccountingAmount(dailyGross*rate/100,r);
+    if(amount>0.009)out.push({date:d,source:'Travel Agent Commission',revenueSource:'Travel Agent Commission Expense',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+String(agent.name||'Travel Agent')+' commission',amount,account:'OTA / Booking Commissions',commissionChannel:String(agent.name||'Travel Agent'),agentId});
+  });
+  return out;
+}
+function dailyRevenuePostedTravelAgentCommission(date){
+  let total=0;
+  journalEntries().filter(j=>['Daily Revenue','Daily Revenue Commission'].includes(String(j.source||'')) && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions' && String(l.revenueSource||'')==='Travel Agent Commission Expense')total+=Number(l.debit||0);});
+  });
+  return Math.round(total*100)/100;
+}
+function dailyRevenueTravelAgentCommissionDelta(date){
+  const expected=dailyRevenueTravelAgentCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
+  return Math.max(0,Math.round((expected-dailyRevenuePostedTravelAgentCommission(date))*100)/100);
 }
 function dailyRevenueOtaCommissionDelta(date){
   const expected=dailyRevenueOtaCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
@@ -15305,7 +15340,8 @@ function dailyRevenueHasUnpostedRevenue(date){
   return Object.values(accountDeltas).some(v=>Number(v||0)>0.009) ||
     Object.values(taxDeltas).some(v=>Number(v||0)>0.009) ||
     dailyRevenueGrossupDelta(date)>0.009 ||
-    dailyRevenueOtaCommissionDelta(date)>0.009;
+    dailyRevenueOtaCommissionDelta(date)>0.009 ||
+    dailyRevenueTravelAgentCommissionDelta(date)>0.009;
 }
 function renderDailyRevenuePosting(){
   try{if(typeof updateAsaMealAllocationCorrectionButton==='function')updateAsaMealAllocationCorrectionButton();}catch(e){}
@@ -15313,7 +15349,7 @@ function renderDailyRevenuePosting(){
   const current=accountingBusinessDate();
   const dateEl=document.getElementById('dailyRevenuePostingDate');
   if(dateEl){dateEl.max=current;if(!dateEl.value || dateEl.value>current)dateEl.value=current;}
-  const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), totals=dailyRevenueTotals(d);
+  const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), otaCommissionRows=dailyRevenueOtaCommissionRows(d), travelAgentCommissionRows=dailyRevenueTravelAgentCommissionRows(d), commissionRows=otaCommissionRows.concat(travelAgentCommissionRows), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);
   const previewTax=dailyRevenueTaxAmounts(d);
@@ -15321,7 +15357,7 @@ function renderDailyRevenuePosting(){
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
   if(st){
-    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d),taxDelta=dailyRevenueTaxDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · Service Charge: ${accMoney(taxDelta['Service Charge Payable']||0)} · VAT: ${accMoney(taxDelta['Tax Payable']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))}. Only new unposted amounts will be posted.`;}
+    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d),taxDelta=dailyRevenueTaxDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · Service Charge: ${accMoney(taxDelta['Service Charge Payable']||0)} · VAT: ${accMoney(taxDelta['Tax Payable']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))} · Travel Agent commission: ${accMoney(dailyRevenueTravelAgentCommissionDelta(d))}. Only new unposted amounts will be posted.`;}
     else if(posted) st.innerHTML=`<strong>Already Posted</strong> — Revenue for business date ${escapeHtml(d)} is fully posted.`;
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
@@ -15329,7 +15365,7 @@ function renderDailyRevenuePosting(){
   /* Display gross OTA revenue and commission expense in separate sections.
      The OTA gross-up is revenue; the matching commission is an expense and
      must not be added to the Daily Revenue total a second time. This is display-only. */
-  const grossupRows=commissionRows.map(r=>({...r,source:'OTA Gross-up Revenue',revenueSource:'OTA Gross-up Revenue',description:r.description.replace(/ commission$/i,' commission gross-up (revenue)')}));
+  const grossupRows=otaCommissionRows.map(r=>({...r,source:'OTA Gross-up Revenue',revenueSource:'OTA Gross-up Revenue',description:r.description.replace(/ commission$/i,' commission gross-up (revenue)')}));
   const revenueRows=rows.concat(grossupRows);
   const revenueTotal=revenueRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
   const expenseTotal=commissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
@@ -15340,10 +15376,16 @@ function renderDailyRevenuePosting(){
     display+=revenueRows.map(renderRow).join('');
     display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total Daily Revenue</td><td style="text-align:right;font-weight:700">${accMoney(revenueTotal)}</td></tr>`;
   }
-  if(commissionRows.length){
+  if(otaCommissionRows.length){
+    const otaExpense=otaCommissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
     display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">OTA COMMISSION EXPENSE (NOT INCLUDED IN REVENUE TOTAL)</td></tr>`;
-    display+=commissionRows.map(r=>renderRow({...r,source:'OTA Commission Expense',description:r.description+' (expense)'})).join('');
-    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total OTA Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(expenseTotal)}</td></tr>`;
+    display+=otaCommissionRows.map(r=>renderRow({...r,source:'OTA Commission Expense',description:r.description+' (expense)'})).join('');
+    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total OTA Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(otaExpense)}</td></tr>`;
+  }
+  if(travelAgentCommissionRows.length){
+    display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">TRAVEL AGENT COMMISSION EXPENSE — DEDUCT (NOT INCLUDED IN REVENUE TOTAL)</td></tr>`;
+    display+=travelAgentCommissionRows.map(r=>renderRow({...r,source:'Travel Agent Commission Expense',description:r.description+' (expense)'})).join('');
+    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total Travel Agent Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(travelAgentCommissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0))}</td></tr>`;
   }
   tb.innerHTML=display||`<tr><td colspan="5" class="empty">No daily revenue transactions found for ${escapeHtml(d)} in the selected property.</td></tr>`;
 }
@@ -15355,6 +15397,7 @@ window.postDailyRevenue=function(){
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const accountDeltas=dailyRevenueAccountDeltas(d);
   const commissionDelta=dailyRevenueOtaCommissionDelta(d);
+  const travelAgentCommissionDelta=dailyRevenueTravelAgentCommissionDelta(d);
   const grossupDelta=alreadyPosted?dailyRevenueGrossupDelta(d):commissionDelta;
   let lines=[], revenueAmount=0;
   let ref=alreadyPosted?'REV-INC-'+d.replace(/-/g,'')+'-'+Date.now():'REV-'+d.replace(/-/g,'');
@@ -15369,7 +15412,7 @@ window.postDailyRevenue=function(){
     revenueAmount=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
   }else{ 
     revenueAmount=Object.values(totals).reduce((sum,v)=>sum+Number(v||0),0);
-    if(revenueAmount<=0.009 && commissionDelta<=0.009){
+    if(revenueAmount<=0.009 && commissionDelta<=0.009 && travelAgentCommissionDelta<=0.009){
       alert('No revenue or OTA commission is available to post for business date '+d+'.');return;
     }
     const grouped={};
@@ -15389,7 +15432,7 @@ window.postDailyRevenue=function(){
   if(taxDeltas['Service Charge Payable']>0.009)lines.push({account:'Service Charge Payable',debit:0,credit:taxDeltas['Service Charge Payable'],revenueSource:'Folio Service Charge'});
   if(taxDeltas['Tax Payable']>0.009)lines.push({account:'Tax Payable',debit:0,credit:taxDeltas['Tax Payable'],revenueSource:'Folio VAT'});
   const pendingCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
-  if(alreadyPosted && pendingCredits<=0.009 && commissionDelta<=0.009){
+  if(alreadyPosted && pendingCredits<=0.009 && commissionDelta<=0.009 && travelAgentCommissionDelta<=0.009){
     alert('Daily revenue for '+d+' has already been fully posted. No new revenue or tax was found.');
     return;
   }
@@ -15397,10 +15440,19 @@ window.postDailyRevenue=function(){
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
   if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
 
-  const commissionLines=commissionDelta>0.009?[
-    {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
-    {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
-  ]:[];
+  const commissionLines=[];
+  if(commissionDelta>0.009){
+    commissionLines.push(
+      {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
+      {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
+    );
+  }
+  if(travelAgentCommissionDelta>0.009){
+    commissionLines.push(
+      {account:'OTA / Booking Commissions',debit:travelAgentCommissionDelta,credit:0,revenueSource:'Travel Agent Commission Expense'},
+      {account:'Accounts Payable',debit:0,credit:travelAgentCommissionDelta,revenueSource:'Travel Agent Commission Payable'}
+    );
+  }
   try{
     if(lines.length){
       postJournal(d,ref,description,lines,'Daily Revenue');
@@ -15413,7 +15465,7 @@ window.postDailyRevenue=function(){
     }
     logAudit('DAILY_REVENUE_POSTED',ref,'Daily revenue posted: '+newRevenueCredits+'; OTA commission: '+commissionDelta,currentPropertyId);
     renderAccounting();renderDailyRevenuePosting();
-    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission delta: '+accMoney(commissionDelta)+'.');
+    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission delta: '+accMoney(commissionDelta)+'. Travel Agent commission delta: '+accMoney(travelAgentCommissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
 /* v2.1.474 — disable the legacy gross-up reversal repair. The correct gross-up is now
@@ -28808,3 +28860,5 @@ body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
 })();
 
 </script>
+
+<!-- v2.1.475 targeted addition: deduct-mode Travel Agent commission expense/payable posting. -->
