@@ -11863,7 +11863,9 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+(method==="Room Charge"?" — Service Charge and VAT will be calculated on the final guest folio":"")+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script>window.onload=function(){window.print();}<\/script></body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script>window.onload=function(){window.print();}<\/script>
+<!-- Signature PMS accounting patch: Daily Revenue journal now posts property-specific Service Charge and VAT liability lines; incremental tax deltas are idempotent. -->
+</body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
@@ -15192,6 +15194,40 @@ function dailyRevenueTotals(date){
   const rows=dailyRevenueRows(date);
   return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Experience / Recreation Revenue':0,'Other Operating Revenue':0});
 }
+/* Calculate the same property-specific Service Charge and VAT shown in the preview,
+   and use those amounts in the actual Daily Revenue journal as liability credits. */
+function dailyRevenueTaxAmounts(date){
+  const totals=dailyRevenueTotals(date);
+  let taxProp={};
+  try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
+  let activeCfg={};
+  try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
+  const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
+  const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
+  const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
+  const vatEnabled=taxBool(taxProp.vatEnabled)||taxBool(settings?.vatEnabled)||taxBool(activeCfg.vatEnabled)||(vatControl?.value==='yes');
+  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled)||taxBool(settings?.serviceChargeEnabled)||taxBool(activeCfg.serviceChargeEnabled)||(scControl?.value==='yes');
+  const vatRate=Math.max(0,Number(taxProp.vatRate||settings?.vatRate||activeCfg.vatRate||(vatRateControl?vatRateControl.value:0)||taxProp.taxRate||settings?.taxRate)||0);
+  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate||settings?.serviceChargeRate||activeCfg.serviceChargeRate||(scRateControl?scRateControl.value:0))||0);
+  const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
+  const serviceCharge=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
+  const vat=vatEnabled?Number(((taxableBase+serviceCharge)*vatRate/100).toFixed(2)):0;
+  return {taxableBase,serviceCharge,vat};
+}
+function dailyRevenuePostedTaxTotals(date){
+  const out={'Service Charge Payable':0,'Tax Payable':0};
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{const a=String(l.account||'');if(Object.prototype.hasOwnProperty.call(out,a))out[a]+=Number(l.credit||0);});
+  });
+  return out;
+}
+function dailyRevenueTaxDeltas(date){
+  const expected=dailyRevenueTaxAmounts(date),posted=dailyRevenuePostedTaxTotals(date);
+  return {
+    'Service Charge Payable':Math.max(0,Math.round((expected.serviceCharge-posted['Service Charge Payable'])*100)/100),
+    'Tax Payable':Math.max(0,Math.round((expected.vat-posted['Tax Payable'])*100)/100)
+  };
+}
 function dailyRevenueJournalExists(date){
   return journalEntries().some(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10));
 }
@@ -15267,8 +15303,9 @@ function dailyRevenueGrossupDelta(date){
   return Math.max(0,Math.round((expected-dailyRevenuePostedGrossup(date))*100)/100);
 }
 function dailyRevenueHasUnpostedRevenue(date){
-  const accountDeltas=dailyRevenueAccountDeltas(date);
+  const accountDeltas=dailyRevenueAccountDeltas(date),taxDeltas=dailyRevenueTaxDeltas(date);
   return Object.values(accountDeltas).some(v=>Number(v||0)>0.009) ||
+    Object.values(taxDeltas).some(v=>Number(v||0)>0.009) ||
     dailyRevenueGrossupDelta(date)>0.009 ||
     dailyRevenueOtaCommissionDelta(date)>0.009;
 }
@@ -15281,28 +15318,12 @@ function renderDailyRevenuePosting(){
   const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);
-  // Resolve current-property tax config from both the selected property and active config.
-  // Some builds keep the current property's settings in `settings`; merge rather than letting
-  // stale false/zero fields in one object mask enabled values in the other.
-  let taxProp={};
-  try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
-  let activeCfg={};
-  try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
-  const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
-  const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
-  const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
-  const vatEnabled=taxBool(taxProp.vatEnabled)||taxBool(settings?.vatEnabled)||taxBool(activeCfg.vatEnabled)||(vatControl?.value==='yes');
-  const serviceEnabled=taxBool(taxProp.serviceChargeEnabled)||taxBool(settings?.serviceChargeEnabled)||taxBool(activeCfg.serviceChargeEnabled)||(scControl?.value==='yes');
-  const vatRate=Math.max(0,Number(taxProp.vatRate||settings?.vatRate||activeCfg.vatRate||(vatRateControl?vatRateControl.value:0)||taxProp.taxRate||settings?.taxRate)||0);
-  const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate||settings?.serviceChargeRate||activeCfg.serviceChargeRate||(scRateControl?scRateControl.value:0))||0);
-  const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
-  const previewSC=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
-  const previewVAT=vatEnabled?Number(((taxableBase+previewSC)*vatRate/100).toFixed(2)):0;
-  set('dailyPostTax',previewSC+previewVAT);
+  const previewTax=dailyRevenueTaxAmounts(d);
+  set('dailyPostTax',previewTax.serviceCharge+previewTax.vat);
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
   if(st){
-    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))}. Only new unposted amounts will be posted.`;}
+    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d),taxDelta=dailyRevenueTaxDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · Service Charge: ${accMoney(taxDelta['Service Charge Payable']||0)} · VAT: ${accMoney(taxDelta['Tax Payable']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))}. Only new unposted amounts will be posted.`;}
     else if(posted) st.innerHTML=`<strong>Already Posted</strong> — Revenue for business date ${escapeHtml(d)} is fully posted.`;
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
@@ -15348,11 +15369,7 @@ window.postDailyRevenue=function(){
     });
     if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
     revenueAmount=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
-    if(revenueAmount<=0.009 && commissionDelta<=0.009){
-      alert('Daily revenue for '+d+' has already been fully posted. No new revenue was found.');
-      return;
-    }
-  }else{
+  }else{ 
     revenueAmount=Object.values(totals).reduce((sum,v)=>sum+Number(v||0),0);
     if(revenueAmount<=0.009 && commissionDelta<=0.009){
       alert('No revenue or OTA commission is available to post for business date '+d+'.');return;
@@ -15368,7 +15385,17 @@ window.postDailyRevenue=function(){
     if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
   }
 
-  // Debit AR for the newly recognized revenue only, including any new OTA gross-up.
+  // Post only the Service Charge and VAT amounts not already credited for this date.
+  // This also repairs dates where operational revenue posted but the tax liability lines did not.
+  const taxDeltas=dailyRevenueTaxDeltas(d);
+  if(taxDeltas['Service Charge Payable']>0.009)lines.push({account:'Service Charge Payable',debit:0,credit:taxDeltas['Service Charge Payable'],revenueSource:'Folio Service Charge'});
+  if(taxDeltas['Tax Payable']>0.009)lines.push({account:'Tax Payable',debit:0,credit:taxDeltas['Tax Payable'],revenueSource:'Folio VAT'});
+  const pendingCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+  if(alreadyPosted && pendingCredits<=0.009 && commissionDelta<=0.009){
+    alert('Daily revenue for '+d+' has already been fully posted. No new revenue or tax was found.');
+    return;
+  }
+  // Debit AR for newly recognized revenue plus its related tax/service-charge liabilities.
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
   if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
 
