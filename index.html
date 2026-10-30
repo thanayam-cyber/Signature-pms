@@ -11863,9 +11863,7 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+(method==="Room Charge"?" — Service Charge and VAT will be calculated on the final guest folio":"")+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script>window.onload=function(){window.print();}<\/script>
-<!-- Signature PMS accounting patch: Daily Revenue journal now posts property-specific Service Charge and VAT liability lines; incremental tax deltas are idempotent. -->
-</body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script>window.onload=function(){window.print();}<\/script></body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
