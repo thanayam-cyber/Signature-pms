@@ -8038,9 +8038,9 @@ async function clearRevenueHistory(){
 
 function setDefaultDates(){
 
-    const today=localDateString();
+    const today=(typeof reservationMinDate==="function")?reservationMinDate():localDateString();
 
-    const tomorrow=new Date();
+    const tomorrow=new Date(today+"T00:00:00");
 
     tomorrow.setDate(
         tomorrow.getDate()+1
@@ -8123,6 +8123,7 @@ function openReservationModal(roomId=null,startDate=null,reservationId=null){
         document.getElementById("checkIn").value=existing.checkIn || localDateString();
         document.getElementById("checkOut").value=existing.checkOut || localDateString();
     }else{
+        if(startDate && startDate<reservationMinDate()) startDate=reservationMinDate();
         if(startDate){
             document.getElementById("checkIn").value=startDate;
             const d=new Date(startDate+"T00:00:00");
@@ -8135,6 +8136,13 @@ function openReservationModal(roomId=null,startDate=null,reservationId=null){
     }
 
     calculateReservation();
+    {
+        const _min=reservationMinDate();
+        const ciEl=document.getElementById("checkIn"),coEl=document.getElementById("checkOut");
+        /* Browser date pickers grey out past dates. Existing reservations keep their own start date. */
+        if(ciEl) ciEl.min=(existing && existing.checkIn && existing.checkIn<_min)?existing.checkIn:_min;
+        if(coEl) coEl.min=ciEl?ciEl.min:_min;
+    }
     document.getElementById("reservationModal").classList.add("show");
 }
 
@@ -8252,6 +8260,14 @@ function nextBookingNumber(){
     return prefix+"-"+year+"-"+String(max+1).padStart(4,"0");
 }
 
+function reservationMinDate(){
+    /* Earliest date a reservation may start: the current property business date (Night Audit). */
+    try{
+        const d=(typeof cashierBusinessDate==="function")?cashierBusinessDate():localDateString();
+        return /^\d{4}-\d{2}-\d{2}$/.test(d)?d:localDateString();
+    }catch(e){return localDateString();}
+}
+
 function saveReservation(){
 
     const requiredPermission=editingReservationId?"reservations.edit":"reservations.create";
@@ -8281,6 +8297,14 @@ function saveReservation(){
     const guestDateOfBirth=document.getElementById("guestDateOfBirth")?.value||"";
     if(!checkIn || !checkOut){ error.textContent="Check-in and check-out dates are required."; return; }
     if(checkOut<=checkIn){ error.textContent="Check-out must be after check-in."; return; }
+    /* Past-date protection: new reservations cannot start before the business date.
+       When editing, an unchanged (already existing) check-in date is still allowed. */
+    const _minResDate=reservationMinDate();
+    const _origCheckIn=editingReservationId?String((reservations.find(r=>r.id===editingReservationId)||{}).checkIn||"").slice(0,10):"";
+    if(checkIn<_minResDate && checkIn!==_origCheckIn){
+        error.textContent="Past-date reservations are not allowed. Check-in cannot be earlier than the current business date ("+_minResDate+").";
+        return;
+    }
     if(bookingType!=="villa" && !roomId){ error.textContent="Please select a room."; return; }
     const maxGuests=Number(settings?.maxGuests||0);
     if(maxGuests>0 && totalGuests>maxGuests){
@@ -9151,6 +9175,11 @@ function openReservationFromCalendar(
     date,
     roomId
 ){
+
+    if(date && String(date).slice(0,10)<reservationMinDate()){
+        alert("Past-date reservations are not allowed. Please select the current business date ("+reservationMinDate()+") or a future date.");
+        return;
+    }
 
     openReservationModal(
         roomId,
@@ -17072,7 +17101,7 @@ window.printHRPayslip=function(payId){
  const w=window.open('','_blank','width=850,height=900');
  if(!w){alert('Please allow pop-ups for Signature PMS to print the payslip.');return;}
  w.document.open();
- w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pay Slip - ${safe(rec.name)} - ${safe(rec.period)}</title><style>body{font-family:Arial,sans-serif;color:#17251d;margin:28px}.slip{max-width:760px;margin:auto;border:1px solid #cbd5e1;padding:28px}.head{text-align:center;border-bottom:2px solid #17251d;padding-bottom:14px;margin-bottom:20px}.head h1{font-size:23px;margin:0 0 6px}.head p{margin:0;color:#64748b}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:22px}.meta div{padding:7px 0;border-bottom:1px solid #e5e7eb}.meta b{display:inline-block;min-width:135px}.section{font-weight:bold;margin:18px 0 8px}.line{display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid #e5e7eb}.net{font-size:18px;font-weight:bold;background:#f1f5f9;padding:14px;margin-top:14px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:65px}.sign div{border-top:1px solid #475569;padding-top:8px;text-align:center;font-size:12px}.foot{margin-top:22px;font-size:11px;color:#64748b;text-align:center}@media print{body{margin:0}.slip{border:0;padding:18mm;max-width:none}.no-print{display:none}}</style></head><body><div class="slip"><div class="head"><h1>${safe(property?.name||'Signature PMS')}</h1><p>EMPLOYEE PAY SLIP</p><p>Salary period: ${safe(rec.period)}</p></div><div class="meta"><div><b>Employee No.</b> ${safe(rec.employeeNo)}</div><div><b>Employee Name</b> ${safe(rec.name)}</div><div><b>Department</b> ${safe(employee.department||'—')}</div><div><b>Designation</b> ${safe(employee.position||employee.designation||'—')}</div><div><b>Present Days</b> ${safe(rec.presentDays||0)}</div><div><b>Absent Days</b> ${safe(rec.absentDays||0)}</div><div><b>Payroll Status</b> ${safe(rec.status)}</div><div><b>Payment Date</b> ${safe(rec.paidAt?String(rec.paidAt).slice(0,10):'—')}</div></div><div class="section">EARNINGS</div><div class="line"><span>Basic Salary</span><span>${money(rec.basic)}</span></div><div class="line"><span>Fixed Allowances</span><span>${money(rec.allowances)}</span></div><div class="line"><span>Overtime</span><span>${money(rec.ot)}</span></div><div class="section">DEDUCTIONS</div><div class="line"><span>Salary Deductions</span><span>${money(rec.deductions)}</span></div><div class="net"><span>NET SALARY PAYABLE</span><span style="float:right">${money(rec.netPay)}</span></div><div class="sign"><div>Employee Signature</div><div>Authorized Signature</div></div><div class="foot">This payslip was generated by Signature PMS.</div><div class="no-print" style="text-align:center;margin-top:22px"><button onclick="window.print()">Print Pay Slip</button></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
+ w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pay Slip - ${safe(rec.name)} - ${safe(rec.period)}</title><style>body{font-family:Arial,sans-serif;color:#17251d;margin:28px}.slip{max-width:760px;margin:auto;border:1px solid #cbd5e1;padding:28px}.head{text-align:center;border-bottom:2px solid #17251d;padding-bottom:14px;margin-bottom:20px}.head h1{font-size:23px;margin:0 0 6px}.head p{margin:0;color:#64748b}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:22px}.meta div{padding:7px 0;border-bottom:1px solid #e5e7eb}.meta b{display:inline-block;min-width:135px}.section{font-weight:bold;margin:18px 0 8px}.line{display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid #e5e7eb}.net{font-size:18px;font-weight:bold;background:#f1f5f9;padding:14px;margin-top:14px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:65px}.sign div{border-top:1px solid #475569;padding-top:8px;text-align:center;font-size:12px}.foot{margin-top:22px;font-size:11px;color:#64748b;text-align:center}@media print{body{margin:0}.slip{border:0;padding:18mm;max-width:none}.no-print{display:none}}</style></head><body><div class="slip"><div class="head"><h1>${safe(property?.property||property?.name||(typeof settings!=='undefined'&&settings?.property)||'Signature PMS')}</h1><p>EMPLOYEE PAY SLIP</p><p>Salary period: ${safe(rec.period)}</p></div><div class="meta"><div><b>Employee No.</b> ${safe(rec.employeeNo)}</div><div><b>Employee Name</b> ${safe(rec.name)}</div><div><b>Department</b> ${safe(employee.department||'—')}</div><div><b>Designation</b> ${safe(employee.position||employee.designation||'—')}</div><div><b>Present Days</b> ${safe(rec.presentDays||0)}</div><div><b>Absent Days</b> ${safe(rec.absentDays||0)}</div><div><b>Payroll Status</b> ${safe(rec.status)}</div><div><b>Payment Date</b> ${safe(rec.paidAt?String(rec.paidAt).slice(0,10):'—')}</div></div><div class="section">EARNINGS</div><div class="line"><span>Basic Salary</span><span>${money(rec.basic)}</span></div><div class="line"><span>Fixed Allowances</span><span>${money(rec.allowances)}</span></div><div class="line"><span>Overtime</span><span>${money(rec.ot)}</span></div><div class="section">DEDUCTIONS</div><div class="line"><span>Salary Deductions</span><span>${money(rec.deductions)}</span></div><div class="net"><span>NET SALARY PAYABLE</span><span style="float:right">${money(rec.netPay)}</span></div><div class="sign"><div>Employee Signature</div><div>Authorized Signature</div></div><div class="foot">This payslip was generated by Signature PMS.</div><div class="no-print" style="text-align:center;margin-top:22px"><button onclick="window.print()">Print Pay Slip</button></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
  w.document.close();
 }; function renderPayroll(){const e=document.getElementById('hrPayrollTable');if(!e)return;const a=rows(K.pay).slice(-100).reverse();e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.period)}</td><td>${esc(x.employeeNo)}</td><td>${esc(x.name)}</td><td>${x.presentDays||0}</td><td>${x.absentDays||0}</td><td>${typeof accMoney==='function'?accMoney(x.basic):x.basic}</td><td>${typeof accMoney==='function'?accMoney(x.ot):x.ot}</td><td>${typeof accMoney==='function'?accMoney(x.deductions):x.deductions}</td><td>${typeof accMoney==='function'?accMoney(x.netPay):x.netPay}</td><td>${esc(x.status)}</td><td><button class="btn btn-secondary btn-small" type="button" onclick="window.printHRPayslip('${esc(x.id)}')">Print Pay Slip</button></td></tr>`).join(''):`<tr><td colspan="11" class="empty">No payroll records.</td></tr>`;} function hrShiftDefs(){return prop(read(K.shift)).filter(x=>x.active!==false).sort((a,b)=>String(a.code||'').localeCompare(String(b.code||'')));}
 function hrRosterRows(){return prop(read(K.roster));}
