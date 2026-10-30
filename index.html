@@ -15155,9 +15155,8 @@ function dailyRevenueRows(date){
   });
   return rows;
 }
-/* OTA commission accounting: commission is separate from the meal-plan food allocation.
-   For Gross-up channels, the commission is calculated from the saved reservation total
-   per occupied night and posted as an expense with an Accounts Payable credit. */
+/* Commission accounting: OTA gross-up commissions and Travel Agent commissions
+   are tracked separately so Travel Agent journals never use OTA references/labels. */
 function dailyRevenueOtaCommissionRows(date){
   const d=date||dailyRevenueSelectedDate();
   const sd=normalizeSalesDistribution(settings?.salesDistribution);
@@ -15177,15 +15176,6 @@ function dailyRevenueOtaCommissionRows(date){
   });
   return out;
 }
-function dailyRevenuePostedOtaCommission(date){
-  let total=0;
-  journalEntries().filter(j=>['Daily Revenue','Daily Revenue Commission'].includes(String(j.source||'')) && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
-    (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions' && String(l.revenueSource||'')==='OTA Commission Expense')total+=Number(l.debit||0);});
-  });
-  return total;
-}
-/* Deduct-mode Travel Agent commissions are recognized as an expense and payable
-   for each occupied business night. They are not grossed up into room revenue. */
 function dailyRevenueTravelAgentCommissionRows(date){
   const d=date||dailyRevenueSelectedDate();
   const sd=normalizeSalesDistribution(settings?.salesDistribution);
@@ -15196,70 +15186,74 @@ function dailyRevenueTravelAgentCommissionRows(date){
   const out=[];
   active.forEach(r=>{
     const channel=reservationBookingChannelValue(r).trim();
-    if(!/travel agent/i.test(channel))return;
-    const agentId=String(r.travelAgentId||r.reservationTravelAgentId||'');
-    const agent=(sd.travelAgents||[]).find(x=>String(x.id)===agentId && x.active!==false);
+    const agentId=String(r.reservationTravelAgentId||r.travelAgentId||'');
+    const agentName=String(r.travelAgentName||r.reservationTravelAgentName||'').trim();
+    let agent=(sd.travelAgents||[]).find(x=>x.active!==false && agentId && String(x.id)===agentId);
+    if(!agent && agentName) agent=(sd.travelAgents||[]).find(x=>x.active!==false && String(x.name||'').trim().toLowerCase()===agentName.toLowerCase());
+    if(!agent && channel) agent=(sd.travelAgents||[]).find(x=>x.active!==false && String(x.name||'').trim().toLowerCase()===channel.toLowerCase());
+    // A generic "Travel Agent" channel is only resolvable when exactly one active agent exists.
+    if(!agent && /travel agent/i.test(channel)){
+      const candidates=(sd.travelAgents||[]).filter(x=>x.active!==false);
+      if(candidates.length===1)agent=candidates[0];
+    }
     if(!agent || agent.calculation!=='deduct' || Number(agent.commission)<=0)return;
     const nights=Math.max(1,Math.round((new Date(String(r.checkOut).slice(0,10)+'T12:00:00')-new Date(String(r.checkIn).slice(0,10)+'T12:00:00'))/86400000));
-    const dailyGross=Number(r.total||0)/nights;
-    const rate=Math.max(0,Math.min(99.99,Number(agent.commission)||0));
-    const amount=toAccountingAmount(dailyGross*rate/100,r);
-    if(amount>0.009)out.push({date:d,source:'Travel Agent Commission',revenueSource:'Travel Agent Commission Expense',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+String(agent.name||'Travel Agent')+' commission',amount,account:'OTA / Booking Commissions',commissionChannel:String(agent.name||'Travel Agent'),agentId});
+    const dailyBase=reservationAmountLKR(r,Number(r.total||0))/nights;
+    const amount=toAccountingAmount(dailyBase*(Math.max(0,Math.min(99.99,Number(agent.commission)||0))/100),r);
+    if(amount>0.009)out.push({date:d,source:'Travel Agent Commission',revenueSource:'Travel Agent Commission Expense',reference:r.bookingNo||r.id,description:(r.guestName||'Guest')+' — '+agent.name+' commission',amount,account:'OTA / Booking Commissions',commissionAgent:agent.name,commissionAgentId:String(agent.id),commissionRate:Number(agent.commission),bookingId:String(r.id||''),guestName:String(r.guestName||r.guest||'Guest')});
   });
   return out;
+}
+function dailyRevenuePostedOtaCommission(date){
+  let total=0;
+  journalEntries().filter(j=>['Daily Revenue','Daily Revenue Commission'].includes(String(j.source||'')) && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
+    (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions' && String(l.revenueSource||'')==='OTA Commission Expense')total+=Number(l.debit||0);});
+  });
+  return total;
+}
+function dailyRevenueOtaCommissionDelta(date){
+  const expected=dailyRevenueOtaCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
+  return Math.max(0,expected-dailyRevenuePostedOtaCommission(date));
 }
 function dailyRevenuePostedTravelAgentCommission(date){
   let total=0;
   journalEntries().filter(j=>['Daily Revenue','Daily Revenue Commission'].includes(String(j.source||'')) && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
     (j.lines||[]).forEach(l=>{if(String(l.account||'')==='OTA / Booking Commissions' && String(l.revenueSource||'')==='Travel Agent Commission Expense')total+=Number(l.debit||0);});
   });
-  return Math.round(total*100)/100;
+  return total;
 }
 function dailyRevenueTravelAgentCommissionDelta(date){
   const expected=dailyRevenueTravelAgentCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
   return Math.max(0,Math.round((expected-dailyRevenuePostedTravelAgentCommission(date))*100)/100);
 }
-function dailyRevenueOtaCommissionDelta(date){
-  const expected=dailyRevenueOtaCommissionRows(date).reduce((sum,r)=>sum+Number(r.amount||0),0);
-  return Math.max(0,expected-dailyRevenuePostedOtaCommission(date));
-}
-function dailyRevenueTotals(date){
-  const rows=dailyRevenueRows(date);
-  return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Experience / Recreation Revenue':0,'Other Operating Revenue':0});
-}
-/* Calculate the same property-specific Service Charge and VAT shown in the preview,
-   and use those amounts in the actual Daily Revenue journal as liability credits. */
 function dailyRevenueTaxAmounts(date){
   const totals=dailyRevenueTotals(date);
-  let taxProp={};
-  try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
-  let activeCfg={};
-  try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
+  let taxProp={};try{taxProp=Array.isArray(properties)?(properties.find(p=>String(p.id)===String(currentPropertyId))||{}):{};}catch(e){}
+  let activeCfg={};try{activeCfg=(typeof cfg==='function'?cfg():{})||{};}catch(e){}
   const taxBool=v=>v===true||v===1||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='yes';
-  const vatControl=document.getElementById('slVatEnabled'), vatRateControl=document.getElementById('slVatRate');
-  const scControl=document.getElementById('slServiceChargeEnabled'), scRateControl=document.getElementById('slServiceChargeRate');
+  const vatControl=document.getElementById('slVatEnabled'),vatRateControl=document.getElementById('slVatRate');
+  const scControl=document.getElementById('slServiceChargeEnabled'),scRateControl=document.getElementById('slServiceChargeRate');
   const vatEnabled=taxBool(taxProp.vatEnabled)||taxBool(settings?.vatEnabled)||taxBool(activeCfg.vatEnabled)||(vatControl?.value==='yes');
   const serviceEnabled=taxBool(taxProp.serviceChargeEnabled)||taxBool(settings?.serviceChargeEnabled)||taxBool(activeCfg.serviceChargeEnabled)||(scControl?.value==='yes');
   const vatRate=Math.max(0,Number(taxProp.vatRate||settings?.vatRate||activeCfg.vatRate||(vatRateControl?vatRateControl.value:0)||taxProp.taxRate||settings?.taxRate)||0);
   const serviceRate=Math.max(0,Number(taxProp.serviceChargeRate||settings?.serviceChargeRate||activeCfg.serviceChargeRate||(scRateControl?scRateControl.value:0))||0);
-  const taxableBase=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
-  const serviceCharge=serviceEnabled?Number((taxableBase*serviceRate/100).toFixed(2)):0;
-  const vat=vatEnabled?Number(((taxableBase+serviceCharge)*vatRate/100).toFixed(2)):0;
-  return {taxableBase,serviceCharge,vat};
+  const base=['Room Revenue','Restaurant Revenue','Bar Revenue','Experience / Recreation Revenue','Other Operating Revenue'].reduce((sum,k)=>sum+Math.max(0,Number(totals[k]||0)),0);
+  const serviceCharge=serviceEnabled?Number((base*serviceRate/100).toFixed(2)):0;
+  const vat=vatEnabled?Number(((base+serviceCharge)*vatRate/100).toFixed(2)):0;
+  return {serviceCharge,vat};
 }
 function dailyRevenuePostedTaxTotals(date){
   const out={'Service Charge Payable':0,'Tax Payable':0};
-  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>{
-    (j.lines||[]).forEach(l=>{const a=String(l.account||'');if(Object.prototype.hasOwnProperty.call(out,a))out[a]+=Number(l.credit||0);});
-  });
+  journalEntries().filter(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10)).forEach(j=>(j.lines||[]).forEach(l=>{const a=String(l.account||'');if(Object.prototype.hasOwnProperty.call(out,a))out[a]+=Number(l.credit||0);}));
   return out;
 }
 function dailyRevenueTaxDeltas(date){
   const expected=dailyRevenueTaxAmounts(date),posted=dailyRevenuePostedTaxTotals(date);
-  return {
-    'Service Charge Payable':Math.max(0,Math.round((expected.serviceCharge-posted['Service Charge Payable'])*100)/100),
-    'Tax Payable':Math.max(0,Math.round((expected.vat-posted['Tax Payable'])*100)/100)
-  };
+  return {'Service Charge Payable':Math.max(0,Math.round((expected.serviceCharge-posted['Service Charge Payable'])*100)/100),'Tax Payable':Math.max(0,Math.round((expected.vat-posted['Tax Payable'])*100)/100)};
+}
+function dailyRevenueTotals(date){
+  const rows=dailyRevenueRows(date);
+  return rows.reduce((o,r)=>{o[r.account]=(o[r.account]||0)+Number(r.amount||0);return o;},{'Room Revenue':0,'Restaurant Revenue':0,'Bar Revenue':0,'Experience / Recreation Revenue':0,'Other Operating Revenue':0});
 }
 function dailyRevenueJournalExists(date){
   return journalEntries().some(j=>j.source==='Daily Revenue' && String(j.businessDate||j.date||'').slice(0,10)===String(date).slice(0,10));
@@ -15349,15 +15343,15 @@ function renderDailyRevenuePosting(){
   const current=accountingBusinessDate();
   const dateEl=document.getElementById('dailyRevenuePostingDate');
   if(dateEl){dateEl.max=current;if(!dateEl.value || dateEl.value>current)dateEl.value=current;}
-  const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), otaCommissionRows=dailyRevenueOtaCommissionRows(d), travelAgentCommissionRows=dailyRevenueTravelAgentCommissionRows(d), commissionRows=otaCommissionRows.concat(travelAgentCommissionRows), totals=dailyRevenueTotals(d);
+  const d=dailyRevenueSelectedDate(), rows=dailyRevenueRows(d), commissionRows=dailyRevenueOtaCommissionRows(d), taCommissionRows=dailyRevenueTravelAgentCommissionRows(d), totals=dailyRevenueTotals(d);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=accMoney(v);};
   set('dailyPostRoom',totals['Room Revenue']||0);set('dailyPostRestaurant',totals['Restaurant Revenue']||0);set('dailyPostBar',totals['Bar Revenue']||0);set('dailyPostExperience',totals['Experience / Recreation Revenue']||0);set('dailyPostOther',totals['Other Operating Revenue']||0);
-  const previewTax=dailyRevenueTaxAmounts(d);
-  set('dailyPostTax',previewTax.serviceCharge+previewTax.vat);
+  const taxAmounts=dailyRevenueTaxAmounts(d);
+  set('dailyPostTax',taxAmounts.serviceCharge+taxAmounts.vat);
   const posted=dailyRevenueJournalExists(d), fnbDelta=dailyRevenueFNBDelta(d), experienceDelta=dailyRevenueExperienceDelta(d);
   const st=document.getElementById('dailyRevenuePostingStatus');
   if(st){
-    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d),taxDelta=dailyRevenueTaxDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · Service Charge: ${accMoney(taxDelta['Service Charge Payable']||0)} · VAT: ${accMoney(taxDelta['Tax Payable']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))} · Travel Agent commission: ${accMoney(dailyRevenueTravelAgentCommissionDelta(d))}. Only new unposted amounts will be posted.`;}
+    if(posted && dailyRevenueHasUnpostedRevenue(d)){const delta=dailyRevenueAccountDeltas(d);st.innerHTML=`<strong>Additional Revenue Ready to Post</strong> — Room: ${accMoney(delta['Room Revenue']||0)} · Restaurant: ${accMoney(delta['Restaurant Revenue']||0)} · Bar: ${accMoney(delta['Bar Revenue']||0)} · Experience: ${accMoney(delta['Experience / Recreation Revenue']||0)} · Other: ${accMoney(delta['Other Operating Revenue']||0)} · OTA gross-up: ${accMoney(dailyRevenueGrossupDelta(d))} · TA commission: ${accMoney(dailyRevenueTravelAgentCommissionDelta(d))} · Service Charge: ${accMoney(dailyRevenueTaxDeltas(d)['Service Charge Payable'])} · VAT: ${accMoney(dailyRevenueTaxDeltas(d)['Tax Payable'])}. Only new unposted amounts will be posted.`;}
     else if(posted) st.innerHTML=`<strong>Already Posted</strong> — Revenue for business date ${escapeHtml(d)} is fully posted.`;
     else if(rows.length) st.innerHTML=`<strong>Ready to Post</strong> — Revenue date ${escapeHtml(d)}. Current PMS business date is ${escapeHtml(current)}. Review the rows below before posting.`;
     else st.innerHTML=`<strong>No Revenue Found</strong> — No room, POS or folio revenue transactions were found for ${escapeHtml(d)} in the selected property.`;
@@ -15365,7 +15359,7 @@ function renderDailyRevenuePosting(){
   /* Display gross OTA revenue and commission expense in separate sections.
      The OTA gross-up is revenue; the matching commission is an expense and
      must not be added to the Daily Revenue total a second time. This is display-only. */
-  const grossupRows=otaCommissionRows.map(r=>({...r,source:'OTA Gross-up Revenue',revenueSource:'OTA Gross-up Revenue',description:r.description.replace(/ commission$/i,' commission gross-up (revenue)')}));
+  const grossupRows=commissionRows.map(r=>({...r,source:'OTA Gross-up Revenue',revenueSource:'OTA Gross-up Revenue',description:r.description.replace(/ commission$/i,' commission gross-up (revenue)')}));
   const revenueRows=rows.concat(grossupRows);
   const revenueTotal=revenueRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
   const expenseTotal=commissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
@@ -15376,28 +15370,55 @@ function renderDailyRevenuePosting(){
     display+=revenueRows.map(renderRow).join('');
     display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total Daily Revenue</td><td style="text-align:right;font-weight:700">${accMoney(revenueTotal)}</td></tr>`;
   }
-  if(otaCommissionRows.length){
-    const otaExpense=otaCommissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
+  if(commissionRows.length){
     display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">OTA COMMISSION EXPENSE (NOT INCLUDED IN REVENUE TOTAL)</td></tr>`;
-    display+=otaCommissionRows.map(r=>renderRow({...r,source:'OTA Commission Expense',description:r.description+' (expense)'})).join('');
-    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total OTA Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(otaExpense)}</td></tr>`;
+    display+=commissionRows.map(r=>renderRow({...r,source:'OTA Commission Expense',description:r.description+' (expense)'})).join('');
+    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total OTA Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(expenseTotal)}</td></tr>`;
   }
-  if(travelAgentCommissionRows.length){
-    display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">TRAVEL AGENT COMMISSION EXPENSE — DEDUCT (NOT INCLUDED IN REVENUE TOTAL)</td></tr>`;
-    display+=travelAgentCommissionRows.map(r=>renderRow({...r,source:'Travel Agent Commission Expense',description:r.description+' (expense)'})).join('');
-    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total Travel Agent Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(travelAgentCommissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0))}</td></tr>`;
+  if(taCommissionRows.length){
+    const taExpenseTotal=taCommissionRows.reduce((sum,r)=>sum+Number(r.amount||0),0);
+    display+=`<tr><td colspan="5" style="font-weight:700;background:var(--surface-muted,#f3f4f6)">TRAVEL AGENT COMMISSION EXPENSE (NOT INCLUDED IN REVENUE TOTAL)</td></tr>`;
+    display+=taCommissionRows.map(r=>renderRow({...r,source:'Travel Agent Commission Expense',description:r.description+' (expense)'})).join('');
+    display+=`<tr><td colspan="4" style="text-align:right;font-weight:700">Total Travel Agent Commission Expense</td><td style="text-align:right;font-weight:700">${accMoney(taExpenseTotal)}</td></tr>`;
   }
   tb.innerHTML=display||`<tr><td colspan="5" class="empty">No daily revenue transactions found for ${escapeHtml(d)} in the selected property.</td></tr>`;
+}
+function migrateTravelAgentCommissionJournalLabels(date){
+  try{
+    const all=accRead(ACC_STORE.journals);let changed=false;
+    all.forEach(j=>{
+      if(!j || String(j.propertyId||'')!==String(currentPropertyId||''))return;
+      const lines=Array.isArray(j.lines)?j.lines:[];
+      const isTA=lines.some(l=>String(l.account||'')==='OTA / Booking Commissions' && String(l.revenueSource||'')==='Travel Agent Commission Expense');
+      if(!isTA || String(j.businessDate||j.date||'').slice(0,10)!==String(date).slice(0,10))return;
+      const suffix=String(date).replace(/-/g,'');
+      if(/^OTA-COM-/i.test(String(j.reference||''))){
+        j.reference=String(j.reference).replace(/^OTA-COM-/i,'TA-COM-');
+        changed=true;
+      }else if(!/^TA-COM-/i.test(String(j.reference||''))){
+        const base='TA-COM-'+suffix+'-'+String(j.id||Date.now()).replace(/[^a-zA-Z0-9]/g,'').slice(-10);
+        j.reference=base;changed=true;
+      }
+      if(String(j.description||'').startsWith('OTA Commission Expense')){j.description='Travel Agent Commission — '+date;changed=true;}
+      if(String(j.source||'')!=='Daily Revenue Commission'){j.source='Daily Revenue Commission';changed=true;}
+      lines.forEach(l=>{if(String(l.account||'')==='Accounts Payable' && String(l.revenueSource||'').includes('Travel Agent'))l.revenueSource='Travel Agent Commission Payable';});
+      j.lines=lines;j.businessDate=date;j.updatedAt=new Date().toISOString();
+    });
+    if(changed){accWrite(ACC_STORE.journals,all);try{window.signatureAccountingJournalCloud?.sync?.();}catch(e){}}
+    return changed;
+  }catch(e){console.warn('Travel Agent commission journal label migration failed:',e);return false;}
 }
 window.postDailyRevenue=function(){
   if(!requireRole('Admin','Manager'))return;
   const d=dailyRevenueSelectedDate();
+  migrateTravelAgentCommissionJournalLabels(d);
   if(d>accountingBusinessDate()){alert('Revenue date cannot be after the current business date.');return;}
   const alreadyPosted=dailyRevenueJournalExists(d);
   const rows=dailyRevenueRows(d), totals=dailyRevenueTotals(d);
   const accountDeltas=dailyRevenueAccountDeltas(d);
   const commissionDelta=dailyRevenueOtaCommissionDelta(d);
-  const travelAgentCommissionDelta=dailyRevenueTravelAgentCommissionDelta(d);
+  const taCommissionDelta=dailyRevenueTravelAgentCommissionDelta(d);
+  const taxDeltas=dailyRevenueTaxDeltas(d);
   const grossupDelta=alreadyPosted?dailyRevenueGrossupDelta(d):commissionDelta;
   let lines=[], revenueAmount=0;
   let ref=alreadyPosted?'REV-INC-'+d.replace(/-/g,'')+'-'+Date.now():'REV-'+d.replace(/-/g,'');
@@ -15409,10 +15430,16 @@ window.postDailyRevenue=function(){
       if(a>0.009)lines.push({account,debit:0,credit:a,revenueSource:'Incremental Operational Revenue'});
     });
     if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
+    if(taxDeltas['Service Charge Payable']>0.009)lines.push({account:'Service Charge Payable',debit:0,credit:taxDeltas['Service Charge Payable'],revenueSource:'Folio Service Charge'});
+    if(taxDeltas['Tax Payable']>0.009)lines.push({account:'Tax Payable',debit:0,credit:taxDeltas['Tax Payable'],revenueSource:'Folio VAT'});
     revenueAmount=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
-  }else{ 
+    if(revenueAmount<=0.009 && commissionDelta<=0.009 && taCommissionDelta<=0.009){
+      alert('Daily revenue for '+d+' has already been fully posted. No new revenue was found.');
+      return;
+    }
+  }else{
     revenueAmount=Object.values(totals).reduce((sum,v)=>sum+Number(v||0),0);
-    if(revenueAmount<=0.009 && commissionDelta<=0.009 && travelAgentCommissionDelta<=0.009){
+    if(revenueAmount<=0.009 && commissionDelta<=0.009 && taCommissionDelta<=0.009){
       alert('No revenue or OTA commission is available to post for business date '+d+'.');return;
     }
     const grouped={};
@@ -15424,72 +15451,43 @@ window.postDailyRevenue=function(){
     });
     lines=Object.values(grouped);
     if(grossupDelta>0.009)lines.push({account:'Room Revenue',debit:0,credit:grossupDelta,revenueSource:'OTA Gross-up Revenue'});
+    if(taxDeltas['Service Charge Payable']>0.009)lines.push({account:'Service Charge Payable',debit:0,credit:taxDeltas['Service Charge Payable'],revenueSource:'Folio Service Charge'});
+    if(taxDeltas['Tax Payable']>0.009)lines.push({account:'Tax Payable',debit:0,credit:taxDeltas['Tax Payable'],revenueSource:'Folio VAT'});
   }
 
-  // Post only the Service Charge and VAT amounts not already credited for this date.
-  // This also repairs dates where operational revenue posted but the tax liability lines did not.
-  const taxDeltas=dailyRevenueTaxDeltas(d);
-  if(taxDeltas['Service Charge Payable']>0.009)lines.push({account:'Service Charge Payable',debit:0,credit:taxDeltas['Service Charge Payable'],revenueSource:'Folio Service Charge'});
-  if(taxDeltas['Tax Payable']>0.009)lines.push({account:'Tax Payable',debit:0,credit:taxDeltas['Tax Payable'],revenueSource:'Folio VAT'});
-  const pendingCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
-  /* Correct labels on an already-posted Travel Agent-only commission journal.
-     Keep its amounts and accounts unchanged; only the reference and description change. */
-  try{
-    const storedJournals=accRead(ACC_STORE.journals);
-    let labelsChanged=false;
-    storedJournals.forEach(j=>{
-      if(String(j.propertyId||currentPropertyId)!==String(currentPropertyId) || String(j.source||'')!=='Daily Revenue Commission' || String(j.businessDate||j.date||'').slice(0,10)!==d) return;
-      const jlines=Array.isArray(j.lines)?j.lines:[];
-      const taOnly=jlines.some(l=>String(l.revenueSource||'')==='Travel Agent Commission Expense') &&
-        !jlines.some(l=>String(l.revenueSource||'')==='OTA Commission Expense');
-      if(taOnly && !/^TA-COM-/.test(String(j.reference||''))){
-        j.reference='TA-COM-'+d.replace(/-/g,'');
-        j.description='Travel Agent Commission — '+d;
-        labelsChanged=true;
-      }
-    });
-    if(labelsChanged){accWrite(ACC_STORE.journals,storedJournals);try{renderAccounting();if(typeof renderJournalReview==='function')renderJournalReview();}catch(renderLabelError){}}
-  }catch(labelError){console.warn('Travel Agent commission label correction skipped:',labelError?.message||labelError);}
-  if(alreadyPosted && pendingCredits<=0.009 && commissionDelta<=0.009 && travelAgentCommissionDelta<=0.009){
-    alert('Daily revenue for '+d+' has already been fully posted. No new revenue or tax was found.');
-    return;
-  }
-  // Debit AR for newly recognized revenue plus its related tax/service-charge liabilities.
+  // Debit AR for the newly recognized revenue only, including any new OTA gross-up.
   const newRevenueCredits=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
   if(newRevenueCredits>0.009)lines.unshift({account:'Accounts Receivable',debit:newRevenueCredits,credit:0,revenueSource:'Daily Revenue Gross OTA Receivable'});
 
-  const otaCommissionLines=[];
-  const travelAgentCommissionLines=[];
-  if(commissionDelta>0.009){
-    otaCommissionLines.push(
-      {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
-      {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
-    );
-  }
-  if(travelAgentCommissionDelta>0.009){
-    travelAgentCommissionLines.push(
-      {account:'OTA / Booking Commissions',debit:travelAgentCommissionDelta,credit:0,revenueSource:'Travel Agent Commission Expense'},
-      {account:'Accounts Payable',debit:0,credit:travelAgentCommissionDelta,revenueSource:'Travel Agent Commission Payable'}
-    );
-  }
+  const commissionLines=commissionDelta>0.009?[
+    {account:'OTA / Booking Commissions',debit:commissionDelta,credit:0,revenueSource:'OTA Commission Expense'},
+    {account:'Accounts Payable',debit:0,credit:commissionDelta,revenueSource:'OTA Commission Payable'}
+  ]:[];
   try{
     if(lines.length){
       postJournal(d,ref,description,lines,'Daily Revenue');
       const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
     }
-    if(otaCommissionLines.length){
+    if(commissionLines.length){
       const commissionRef='OTA-COM-'+d.replace(/-/g,'')+(alreadyPosted?'-'+Date.now():'');
-      postJournal(d,commissionRef,'OTA Commission Expense — '+d,otaCommissionLines,'Daily Revenue Commission');
+      postJournal(d,commissionRef,'OTA Commission Expense — '+d,commissionLines,'Daily Revenue Commission');
       const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
     }
-    if(travelAgentCommissionLines.length){
+    if(taCommissionDelta>0.009){
+      const taRowsForJournal=dailyRevenueTravelAgentCommissionRows(d);
+      const taAgents=[...new Map(taRowsForJournal.map(r=>[String(r.commissionAgentId||r.commissionAgent||''),r])).values()];
+      const taMeta=taAgents.length===1?{travelAgentId:String(taAgents[0].commissionAgentId||''),travelAgentName:String(taAgents[0].commissionAgent||''),bookingReferences:taRowsForJournal.map(r=>String(r.reference||'')).filter(Boolean),guestNames:taRowsForJournal.map(r=>String(r.guestName||'')).filter(Boolean)}:{};
+      const taLines=[
+        {account:'OTA / Booking Commissions',debit:taCommissionDelta,credit:0,revenueSource:'Travel Agent Commission Expense',...taMeta},
+        {account:'Accounts Payable',debit:0,credit:taCommissionDelta,revenueSource:'Travel Agent Commission Payable',...taMeta}
+      ];
       const taRef='TA-COM-'+d.replace(/-/g,'')+(alreadyPosted?'-'+Date.now():'');
-      postJournal(d,taRef,'Travel Agent Commission — '+d,travelAgentCommissionLines,'Daily Revenue Commission');
-      const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j)j.businessDate=d;accWrite(ACC_STORE.journals,all);
+      postJournal(d,taRef,'Travel Agent Commission — '+d,taLines,'Daily Revenue Commission');
+      const all=accRead(ACC_STORE.journals),j=all[all.length-1];if(j){j.businessDate=d;j.updatedAt=new Date().toISOString();}accWrite(ACC_STORE.journals,all);
     }
-    logAudit('DAILY_REVENUE_POSTED',ref,'Daily revenue posted: '+newRevenueCredits+'; OTA commission: '+commissionDelta+'; Travel Agent commission: '+travelAgentCommissionDelta,currentPropertyId);
+    logAudit('DAILY_REVENUE_POSTED',ref,'Daily revenue posted: '+newRevenueCredits+'; OTA commission: '+commissionDelta+'; Travel Agent commission: '+taCommissionDelta,currentPropertyId);
     renderAccounting();renderDailyRevenuePosting();
-    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission: '+accMoney(commissionDelta)+'. Travel Agent commission: '+accMoney(travelAgentCommissionDelta)+'.');
+    alert((alreadyPosted?'Incremental daily revenue posting processed':'Daily revenue posting processed')+' for '+d+'. New revenue journal: '+accMoney(newRevenueCredits)+'. Separate OTA commission delta: '+accMoney(commissionDelta)+'. Travel Agent commission: '+accMoney(taCommissionDelta)+'.');
   }catch(e){alert('Daily revenue could not be posted. '+(e?.message||e));}
 };
 /* v2.1.474 — disable the legacy gross-up reversal repair. The correct gross-up is now
@@ -23531,6 +23529,33 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   function writeLocal(rows){try{localStorage.setItem('signature_pms_accounting_journals',JSON.stringify(rows));return true}catch(e){return false}}
   function localMine(p){return localAll().filter(j=>String(j?.propertyId||p)===p)}
   function journalKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()))}
+  // Normalize legacy Travel Agent commission journals in BOTH local cache and cloud rows.
+  // Keep the journal ID/storage key and all debit/credit amounts unchanged.
+  function normalizeTravelAgentCommissionJournal(j,p){
+    if(!j || String(j.propertyId||p)!==p || !Array.isArray(j.lines))return false;
+    const isTA=j.lines.some(l=>String(l?.account||'')==='OTA / Booking Commissions' && String(l?.revenueSource||'')==='Travel Agent Commission Expense');
+    if(!isTA)return false;
+    const d=String(j.businessDate||j.date||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return false;
+    let changed=false;
+    const ref=String(j.reference||'');
+    if(/^OTA-COM-/i.test(ref)){j.reference=ref.replace(/^OTA-COM-/i,'TA-COM-');changed=true;}
+    if(/^OTA Commission Expense/i.test(String(j.description||''))){j.description='Travel Agent Commission — '+d;changed=true;}
+    if(String(j.source||'')!=='Daily Revenue Commission'){j.source='Daily Revenue Commission';changed=true;}
+    j.lines.forEach(l=>{
+      if(String(l?.account||'')==='Accounts Payable' && /Travel Agent/i.test(String(l?.revenueSource||'')) && String(l.revenueSource)!=='Travel Agent Commission Payable'){
+        l.revenueSource='Travel Agent Commission Payable';changed=true;
+      }
+      if(/^OTA Commission Expense/i.test(String(l?.description||''))){l.description='Travel Agent Commission — '+d;changed=true;}
+    });
+    if(changed)j.updatedAt=new Date().toISOString();
+    return changed;
+  }
+  async function publishAtExistingKey(c,p,u,storageKey,j){
+    const payload={property_id:p,storage_key:storageKey,data:{...j,propertyId:p},updated_by:u,updated_at:new Date().toISOString()};
+    const r=await c.from(TABLE).upsert(payload,{onConflict:'property_id,storage_key'});
+    if(r.error)throw r.error;
+  }
   function mergeJournals(localRows,cloudRows,p){
     const map=new Map();
     [...localRows,...cloudRows].forEach(j=>{
@@ -23591,12 +23616,24 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
         const localBefore=localMine(p);
         const safeLocal=localBefore.filter(j=>!predatesCleanup(j));
         const freshLocal=safeLocal.filter(j=>lockStarted>0&&createdAt(j)>lockStarted);
+        let freshLocalMigrated=false;
+        freshLocal.forEach(j=>{if(normalizeTravelAgentCommissionJournal(j,p))freshLocalMigrated=true;});
+        if(freshLocalMigrated)writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(safeLocal));
         for(const j of freshLocal){try{await publishOne(c,p,u,j)}catch(e){console.warn('New accounting journal publish during cleanup lock failed:',e?.message||e)}}
         if(lockStarted>0){
           const freshQ=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%').gt('updated_at',new Date(lockStarted).toISOString());
           if(freshQ.error)throw freshQ.error;
           if(window.__signaturePropertyCleanupInProgress)return;
-          const freshCloud=(freshQ.data||[]).filter(r=>r&&r.data).map(r=>({...r.data,propertyId:String(r.data.propertyId||p)})).filter(j=>!predatesCleanup(j));
+          const freshCloud=[];
+          for(const r of (freshQ.data||[]).filter(r=>r&&r.data)){
+            const j={...r.data,propertyId:String(r.data.propertyId||p)};
+            if(predatesCleanup(j))continue;
+            if(normalizeTravelAgentCommissionJournal(j,p)){
+              try{await publishAtExistingKey(c,p,u,String(r.storage_key||journalKey(j)),j)}
+              catch(e){console.warn('Fresh Travel Agent commission cloud label migration failed:',e?.message||e)}
+            }
+            freshCloud.push(j);
+          }
           const merged=mergeJournals(safeLocal,freshCloud,p);
           if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
             writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
@@ -23613,7 +23650,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       }
       const localBefore=localMine(p);
       const eligibleLocal=localBefore.filter(j=>!predatesCleanup(j));
-      if(JSON.stringify(eligibleLocal)!==JSON.stringify(localBefore)){
+      let localMigrationChanged=false;
+      eligibleLocal.forEach(j=>{if(normalizeTravelAgentCommissionJournal(j,p))localMigrationChanged=true;});
+      if(localMigrationChanged || JSON.stringify(eligibleLocal)!==JSON.stringify(localBefore)){
         writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(eligibleLocal));
       }
       const local=typeof window.dedupeAccountingJournalRows==='function'
@@ -23625,8 +23664,18 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       const q=await c.from(TABLE).select('storage_key,data,updated_at').eq('property_id',p).like('storage_key',PREFIX+'%');
       if(q.error)throw q.error;
       if(window.__signaturePropertyCleanupInProgress)return;
-      const cloud=(q.data||[]).filter(r=>r&&r.data).map(r=>{const row={...r.data};if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});return row;})
-        .filter(j=>!cleanupLocked&&!predatesCleanup(j));
+      const cloudRows=(q.data||[]).filter(r=>r&&r.data);
+      const cloud=[];
+      for(const r of cloudRows){
+        const row={...r.data};
+        if(r.updated_at)Object.defineProperty(row,'__cloudUpdatedAt',{value:r.updated_at,enumerable:false,configurable:true});
+        if(cleanupLocked||predatesCleanup(row))continue;
+        if(normalizeTravelAgentCommissionJournal(row,p)){
+          try{await publishAtExistingKey(c,p,u,String(r.storage_key||journalKey(row)),row);}
+          catch(e){console.warn('Travel Agent commission cloud label migration failed:',e?.message||e);}
+        }
+        cloud.push(row);
+      }
       const merged=mergeJournals(local,cloud,p);
       if(JSON.stringify(merged)!==JSON.stringify(localBefore)){
         writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(merged));
@@ -28885,4 +28934,170 @@ body{background:var(--sig-bg)!important;color:var(--sig-text)!important;}
 
 </script>
 
-<!-- v2.1.475 targeted addition: deduct-mode Travel Agent commission expense/payable posting. -->
+<!-- Signature PMS patch: restored full original build with incremental folio tax posting and separate Travel Agent Deduct commission journals. -->
+
+<script id="signature-pms-travel-agent-payables-v1">
+(function(){
+'use strict';
+if(window.__sigTravelAgentPayablesV1)return;window.__sigTravelAgentPayablesV1=true;
+const JOURNAL_KEY='signature_pms_accounting_journals';
+const esc=v=>typeof window.escapeHtml==='function'?window.escapeHtml(String(v??'')):String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=v=>typeof window.accMoney==='function'?window.accMoney(Number(v||0)):'LKR '+Number(v||0).toFixed(2);
+const prop=()=>String(window.currentPropertyId||(typeof currentPropertyId!=='undefined'?currentPropertyId:'')||'');
+const journals=()=>{try{const a=JSON.parse(localStorage.getItem(JOURNAL_KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}};
+const writeJournals=a=>localStorage.setItem(JOURNAL_KEY,JSON.stringify(a));
+const sameProp=j=>String(j?.propertyId??j?.property_id??prop())===prop();
+const sales=()=>{try{const st=(typeof settings!=='undefined'&&settings)?settings:(window.settings||null);const raw=st?.salesDistribution||window.getProperty?.(prop())?.settings?.salesDistribution||{};return typeof window.normalizeSalesDistribution==='function'?window.normalizeSalesDistribution(raw):(raw||{});}catch(e){return {};}};
+function enrichLegacyAgentJournals(){
+  const all=journals();let changed=false;
+  all.forEach(j=>{
+    if(!sameProp(j)||!Array.isArray(j.lines)||!j.lines.some(l=>l?.revenueSource==='Travel Agent Commission Expense'))return;
+    const date=String(j.businessDate||j.date||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return;
+    const expense=j.lines.filter(l=>l?.revenueSource==='Travel Agent Commission Expense').reduce((n,l)=>n+Number(l.debit||0),0);
+    let rows=typeof window.dailyRevenueTravelAgentCommissionRows==='function'?window.dailyRevenueTravelAgentCommissionRows(date):[];
+    // Legacy reservations can carry the selected agent under travelAgentId/name even
+    // when the current daily-revenue helper cannot resolve the booking channel.
+    if(!rows.length){
+      const source=window.reservations||(typeof reservations!=='undefined'?reservations:[]);
+      const list=(Array.isArray(source)?source:[]).filter(r=>String(r.propertyId||prop())===prop());
+      const cfg=sales().travelAgents||[];
+      rows=(Array.isArray(list)?list:[]).filter(r=>{
+        const ci=String(r.checkIn||'').slice(0,10),co=String(r.checkOut||'').slice(0,10);
+        return ['Checked-In','Checked-Out'].includes(String(r.status||''))&&ci&&co&&ci<=date&&date<co;
+      }).map(r=>{
+        const id=String(r.reservationTravelAgentId||r.travelAgentId||'');
+        const name=String(r.travelAgentName||r.reservationTravelAgentName||'').trim();
+        const agent=cfg.find(a=>a.active!==false&&((id&&String(a.id)===id)||(name&&String(a.name||'').trim().toLowerCase()===name.toLowerCase())));
+        if(!agent||agent.calculation!=='deduct'||Number(agent.commission)<=0)return null;
+        const nights=Math.max(1,Math.round((new Date(co+'T12:00:00')-new Date(ci+'T12:00:00'))/86400000));
+        const base=typeof window.reservationAmountLKR==='function'?window.reservationAmountLKR(r,Number(r.total||0))/nights:Number(r.total||0)/nights;
+        const amount=typeof window.toAccountingAmount==='function'?window.toAccountingAmount(base*Number(agent.commission)/100,r):base*Number(agent.commission)/100;
+        return {commissionAgentId:String(agent.id),commissionAgent:String(agent.name),amount,reference:r.bookingNo||r.confirmationNumber||r.reference||r.id,guestName:r.guestName||r.guest||'Guest'};
+      }).filter(Boolean);
+    }
+    const groups=new Map();rows.forEach(r=>{const k=String(r.commissionAgentId||r.commissionAgent||'');if(!k)return;const g=groups.get(k)||{id:String(r.commissionAgentId||''),name:String(r.commissionAgent||''),amount:0,refs:[],guests:[]};g.amount+=Number(r.amount||0);if(r.reference)g.refs.push(String(r.reference));if(r.guestName)g.guests.push(String(r.guestName));groups.set(k,g);});
+    const matches=[...groups.values()].filter(g=>Math.abs(g.amount-expense)<=0.01);
+    if(matches.length!==1)return; // Only attach when exactly one agent's booking total matches the journal.
+    const g=matches[0];let journalChanged=false;
+    j.lines.forEach(l=>{if(l?.revenueSource==='Travel Agent Commission Expense'||l?.revenueSource==='Travel Agent Commission Payable'){
+      if(String(l.travelAgentId||'')!==g.id){l.travelAgentId=g.id;journalChanged=true;}
+      if(String(l.travelAgentName||'')!==g.name){l.travelAgentName=g.name;journalChanged=true;}
+      const refs=[...new Set(g.refs)];if(JSON.stringify(l.bookingReferences||[])!==JSON.stringify(refs)){l.bookingReferences=refs;journalChanged=true;}
+      const guests=[...new Set(g.guests)];if(JSON.stringify(l.guestNames||[])!==JSON.stringify(guests)){l.guestNames=guests;journalChanged=true;}
+    }});
+    if(journalChanged){j.updatedAt=new Date().toISOString();changed=true;}
+  });
+  if(changed){writeJournals(all);try{const sync=window.signatureAccountingJournalCloud?.sync?.();if(sync&&typeof sync.catch==='function')sync.catch(e=>console.warn('Agent payable metadata cloud sync pending',e));}catch(e){console.warn('Agent payable metadata cloud sync pending',e);}}
+  return changed;
+}
+function agentBalances(){
+  const map=new Map();
+  const configured=sales().travelAgents||[];
+  configured.forEach(a=>map.set(String(a.id),{id:String(a.id),name:String(a.name||''),contact:String(a.contact||''),commission:Number(a.commission||0),paymentMode:String(a.paymentMode||''),creditTerms:String(a.creditTerms||''),accrued:0,paid:0,unassigned:0,entries:[]}));
+  journals().filter(sameProp).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))).forEach(j=>{
+    (Array.isArray(j.lines)?j.lines:[]).forEach(l=>{
+      if(l?.revenueSource==='Travel Agent Commission Expense'&&Number(l.debit||0)>0){
+        const id=String(l.travelAgentId||'');const a=map.get(id);
+        if(a){a.accrued+=Number(l.debit||0);a.entries.push({date:j.businessDate||j.date,reference:j.reference,bookingReferences:l.bookingReferences||[],description:j.description,amount:Number(l.debit||0),type:'Commission accrued'});}
+        else if(!id){const name=String(l.travelAgentName||'Unassigned');const key='unassigned:'+name;const x=map.get(key)||{id:key,name,contact:'',commission:0,paymentMode:'',creditTerms:'',accrued:0,paid:0,unassigned:0,entries:[]};x.unassigned+=Number(l.debit||0);x.accrued+=Number(l.debit||0);x.entries.push({date:j.businessDate||j.date,reference:j.reference,bookingReferences:l.bookingReferences||[],description:j.description,amount:Number(l.debit||0),type:'Unassigned commission'});map.set(key,x);}
+      }
+      if(l?.revenueSource==='Travel Agent Commission Payment'&&Number(l.credit||0)>0){
+        const a=map.get(String(l.travelAgentId||''));if(a){a.paid+=Number(l.credit||0);a.entries.push({date:j.businessDate||j.date,reference:j.reference,description:j.description,amount:Number(l.credit||0),type:'Payment'});}
+      }
+    });
+  });
+  return [...map.values()].map(a=>({...a,balance:Math.max(0,Math.round((a.accrued-a.paid)*100)/100)})).filter(a=>a.accrued>0||a.paid>0||a.unassigned>0);
+}
+function render(){
+  const page=document.getElementById('accounting');if(!page)return;
+  let section=document.getElementById('travelAgentPayablesSection');
+  if(!section){
+    section=document.createElement('div');section.className='section';section.id='travelAgentPayablesSection';section.style.marginTop='14px';
+    section.innerHTML=`<div class="section-header"><div><h3>Travel Agent Commission Payables</h3><div style="font-size:12px;color:#6b7280">Agent-wise accrued commission, payments and outstanding balances for this property.</div></div><div class="toolbar"><button type="button" class="btn btn-secondary" id="taPayablesRefresh">Refresh</button><button type="button" class="btn btn-secondary" id="taPayablesPrint">Print Statement</button></div></div><div class="grid-4" style="margin-bottom:12px"><div class="card"><div class="card-title">Commission Accrued</div><div class="card-value" id="taAccruedTotal">LKR0.00</div></div><div class="card"><div class="card-title">Commission Paid</div><div class="card-value" id="taPaidTotal">LKR0.00</div></div><div class="card"><div class="card-title">Outstanding</div><div class="card-value" id="taOutstandingTotal">LKR0.00</div></div><div class="card"><div class="card-title">Agents With Balance</div><div class="card-value" id="taAgentCount">0</div></div></div><div class="table-wrap"><table><thead><tr><th>Travel Agent</th><th>Contact</th><th>Commission Accrued</th><th>Payments</th><th>Outstanding</th><th>Action</th></tr></thead><tbody id="travelAgentPayablesTable"><tr><td colspan="6" class="empty">No travel agent commission payables.</td></tr></tbody></table></div><div id="travelAgentStatementDetail" style="margin-top:14px"></div>`;
+    const jr=document.getElementById('journalReviewSection');if(jr?.parentNode)jr.parentNode.insertBefore(section,jr.nextSibling);else page.appendChild(section);
+  }
+  const rows=agentBalances();const assigned=rows.filter(x=>!x.id.startsWith('unassigned:'));
+  const sum=k=>rows.reduce((n,x)=>n+Number(x[k]||0),0);
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  set('taAccruedTotal',money(sum('accrued')));set('taPaidTotal',money(sum('paid')));set('taOutstandingTotal',money(sum('balance')));set('taAgentCount',assigned.filter(x=>x.balance>0.009).length);
+  const tb=document.getElementById('travelAgentPayablesTable');if(tb){
+    const html=rows.map(a=>a.id.startsWith('unassigned:')?`<tr><td><strong>Unassigned commission</strong></td><td colspan="3">${money(a.balance)} — Select the correct configured agent to assign this existing commission.</td><td><select data-ta-assign-select="${esc(a.id)}" class="form-control"><option value="">Select agent</option>${(sales().travelAgents||[]).filter(x=>x.active!==false).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></td><td><button type="button" class="btn btn-primary btn-small" data-ta-assign="${esc(a.id)}">Assign</button></td></tr>`:`<tr><td>${esc(a.name)}</td><td>${esc(a.contact||'')}</td><td>${money(a.accrued)}</td><td>${money(a.paid)}</td><td><strong>${money(a.balance)}</strong></td><td><button type="button" class="btn btn-secondary btn-small" data-ta-statement="${esc(a.id)}">Statement</button> ${a.balance>0.009?`<button type="button" class="btn btn-success btn-small" data-ta-pay="${esc(a.id)}">Pay</button>`:''}</td></tr>`).join('');
+    tb.innerHTML=html||'<tr><td colspan="6" class="empty">No travel agent commission payables for this property.</td></tr>';
+  }
+  const refreshBtn=document.getElementById('taPayablesRefresh');if(refreshBtn)refreshBtn.onclick=()=>{enrichLegacyAgentJournals();render();};
+  const printBtn=document.getElementById('taPayablesPrint');if(printBtn)printBtn.onclick=()=>printStatement();
+  tb?.querySelectorAll('[data-ta-statement]').forEach(b=>b.addEventListener('click',()=>showStatement(b.dataset.taStatement)));
+  tb?.querySelectorAll('[data-ta-pay]').forEach(b=>b.addEventListener('click',()=>openPayment(b.dataset.taPay)));
+  tb?.querySelectorAll('[data-ta-assign]').forEach(b=>b.addEventListener('click',()=>assignUnassignedCommission(b.dataset.taAssign)));
+}
+function assignUnassignedCommission(unassignedId){
+  const select=document.querySelector(`[data-ta-assign-select="${CSS.escape(String(unassignedId))}"]`);
+  const agentId=String(select?.value||'');
+  const agent=(sales().travelAgents||[]).find(x=>x.active!==false&&String(x.id)===agentId);
+  if(!agent){alert('Please select the correct Travel Agent first.');return;}
+  const unassignedName=String(unassignedId).replace(/^unassigned:/,'');
+  if(!confirm('Assign the existing unassigned commission to '+String(agent.name)+'? No new journal or commission will be created.'))return;
+  const all=journals();let changed=false;const refs=[];
+  all.forEach(j=>{
+    if(!sameProp(j)||!Array.isArray(j.lines))return;
+    const expense=j.lines.some(l=>l?.revenueSource==='Travel Agent Commission Expense'&&!String(l.travelAgentId||'')&&(String(l.travelAgentName||'Unassigned')===unassignedName));
+    if(!expense)return;
+    const related=j.lines.filter(l=>l?.revenueSource==='Travel Agent Commission Expense'||l?.revenueSource==='Travel Agent Commission Payable');
+    related.forEach(l=>{if(!String(l.travelAgentId||'')){l.travelAgentId=String(agent.id);l.travelAgentName=String(agent.name);changed=true;}});
+    if(changed){j.updatedAt=new Date().toISOString();refs.push(String(j.reference||''));}
+  });
+  if(!changed){alert('No matching unassigned commission journal was found.');return;}
+  writeJournals(all);
+  try{const sync=window.signatureAccountingJournalCloud?.sync?.();if(sync&&typeof sync.catch==='function')sync.catch(e=>console.warn('Travel Agent assignment cloud sync pending',e));}catch(e){console.warn('Travel Agent assignment cloud sync pending',e);}
+  render();alert('Existing commission assigned to '+String(agent.name)+'. Journal amounts were not changed. Cloud sync was requested.');
+}
+function showStatement(id){
+  const a=agentBalances().find(x=>x.id===String(id));if(!a)return;
+  const rows=a.entries.map(x=>`<tr><td>${esc(String(x.date||'').slice(0,10))}</td><td>${esc(x.reference||'')}</td><td>${esc(x.type)}</td><td>${esc((x.bookingReferences||[]).join(', '))}</td><td>${money(x.amount)}</td></tr>`).join('');
+  const box=document.getElementById('travelAgentStatementDetail');if(box)box.innerHTML=`<div class="card"><h4>${esc(a.name)} — Commission Statement</h4><p>Accrued: <strong>${money(a.accrued)}</strong> &nbsp; Paid: <strong>${money(a.paid)}</strong> &nbsp; Outstanding: <strong>${money(a.balance)}</strong></p><div class="table-wrap"><table><thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Booking</th><th>Amount</th></tr></thead><tbody>${rows||'<tr><td colspan="5">No entries.</td></tr>'}</tbody></table></div></div>`;
+}
+function printStatement(){
+  const rows=agentBalances().filter(a=>!a.id.startsWith('unassigned:'));
+  const html=`<table><thead><tr><th>Agent</th><th>Accrued</th><th>Paid</th><th>Outstanding</th></tr></thead><tbody>${rows.map(a=>`<tr><td>${esc(a.name)}</td><td>${money(a.accrued)}</td><td>${money(a.paid)}</td><td>${money(a.balance)}</td></tr>`).join('')||'<tr><td colspan="4">No travel agent commission balances.</td></tr>'}</tbody></table>`;
+  if(typeof window.reportShell==='function')window.reportShell('Travel Agent Commission Statements',html);else window.print();
+}
+function openPayment(id){
+  if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;
+  const a=agentBalances().find(x=>x.id===String(id));if(!a||a.balance<=0.009)return;
+  if(!document.getElementById('taCommissionPaymentModal'))document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="taCommissionPaymentModal"><div class="modal-box"><div class="modal-header"><h3>Travel Agent Commission Payment</h3><button class="close-btn" type="button" onclick="document.getElementById('taCommissionPaymentModal').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Travel Agent</label><input id="taPayAgentName" readonly></div><div class="form-group"><label>Outstanding</label><input id="taPayOutstanding" readonly></div><div class="form-group"><label>Payment Date</label><input id="taPayDate" type="date"></div><div class="form-group"><label>Amount *</label><input id="taPayAmount" type="number" min="0.01" step="0.01"></div><div class="form-group"><label>Payment Method</label><select id="taPayMethod"><option value="Cash">Cash</option><option value="Bank Transfer">Bank Transfer</option></select></div><div class="form-group"><label>Reference</label><input id="taPayReference" placeholder="Bank slip / receipt reference"></div><div class="form-group full"><label>Notes</label><textarea id="taPayNotes" placeholder="Optional payment note"></textarea></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button type="button" class="btn btn-secondary" onclick="document.getElementById('taCommissionPaymentModal').classList.remove('show')">Cancel</button><button type="button" class="btn btn-success" id="taPaySave">Save Commission Payment</button></div></div></div>`);
+  document.getElementById('taPayAgentName').value=a.name;document.getElementById('taPayOutstanding').value=money(a.balance);document.getElementById('taPayDate').value=typeof window.localDateString==='function'?window.localDateString():new Date().toISOString().slice(0,10);document.getElementById('taPayAmount').value=a.balance.toFixed(2);document.getElementById('taPayAmount').max=a.balance.toFixed(2);document.getElementById('taPayMethod').value='Cash';document.getElementById('taPayReference').value='';document.getElementById('taPayNotes').value='';
+  document.getElementById('taPaySave').onclick=()=>savePayment(a.id);document.getElementById('taCommissionPaymentModal').classList.add('show');
+}
+async function savePayment(id){
+  if(typeof requireRole==='function'&&!requireRole('Admin','Manager'))return;
+  const a=agentBalances().find(x=>x.id===String(id));if(!a||!a.travelAgentId&&!a.id){alert('Travel Agent could not be identified.');return;}
+  const date=String(document.getElementById('taPayDate')?.value||'').slice(0,10),amount=Math.round(Number(document.getElementById('taPayAmount')?.value||0)*100)/100,method=document.getElementById('taPayMethod')?.value||'Cash';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert('Select a valid payment date.');return;}
+  if(amount<=0||amount>a.balance+0.009){alert('Enter an amount up to the outstanding balance of '+money(a.balance)+'.');return;}
+  const reference=String(document.getElementById('taPayReference')?.value||'').trim()||('TA-PAY-'+date.replace(/-/g,'')+'-'+Date.now());
+  if(journals().some(j=>sameProp(j)&&String(j.reference||'')===reference)){alert('This payment reference already exists. Use a unique reference.');return;}
+  const note=String(document.getElementById('taPayNotes')?.value||'').trim();
+  const meta={travelAgentId:a.id,travelAgentName:a.name};
+  try{
+    if(typeof window.postJournal!=='function')throw new Error('Accounting journal posting is unavailable.');
+    window.postJournal(date,reference,'Travel Agent Commission Payment — '+a.name+(note?' — '+note:''),[
+      {account:'Accounts Payable',debit:amount,credit:0,revenueSource:'Travel Agent Commission Payment',...meta},
+      {account:method==='Cash'?'Cash on Hand':'Bank Account',debit:0,credit:amount,revenueSource:'Travel Agent Commission Payment',paymentMethod:method,...meta}
+    ],'Travel Agent Commission Payment');
+    const saved=journals().some(j=>sameProp(j)&&String(j.reference||'')===reference&&String(j.source||'')==='Travel Agent Commission Payment');
+    if(!saved)throw new Error('Payment journal was not confirmed in the local ledger.');
+    document.getElementById('taCommissionPaymentModal').classList.remove('show');
+    let cloud='';try{const result=await window.signatureAccountingJournalCloud?.sync?.();cloud=result===false?'Cloud sync not confirmed; payment is saved locally and will retry through journal sync.':'';}catch(e){cloud='Cloud sync pending: '+(e?.message||e);}
+    render();if(typeof window.renderAccounting==='function')window.renderAccounting();if(typeof window.renderJournalReview==='function')window.renderJournalReview();
+    alert('Travel Agent commission payment recorded for '+a.name+'. Amount: '+money(amount)+'.'+(cloud?'\n'+cloud:''));
+  }catch(e){console.error('Travel Agent commission payment failed',e);alert('Payment was not completed: '+(e?.message||e));}
+}
+window.openTravelAgentCommissionPayment=openPayment;window.renderTravelAgentPayables=render;window.showTravelAgentCommissionStatement=showStatement;
+function boot(){
+  try{enrichLegacyAgentJournals();render();}catch(e){console.warn('Travel Agent payable module initialization paused',e);}
+  const old=window.renderAccounting;if(typeof old==='function'&&!old.__taPayablesWrapped){const wrapped=function(){const r=old.apply(this,arguments);try{enrichLegacyAgentJournals();render();}catch(e){console.warn(e);}return r;};wrapped.__taPayablesWrapped=true;window.renderAccounting=wrapped;}
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+
