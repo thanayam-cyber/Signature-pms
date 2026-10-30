@@ -1550,7 +1550,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
 <div class="section-header"><div><h4>Travel Agents</h4><div style="font-size:12px;color:#6b7280">Manage property-specific travel agents and their commission terms.</div></div><button class="btn btn-secondary" onclick="addTravelAgent()" type="button">+ Add Travel Agent</button></div>
-<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Credit Terms</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td class="empty" colspan="7">No travel agents configured.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Payment Mode</th><th>Credit Terms</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td class="empty" colspan="8">No travel agents configured.</td></tr></tbody></table></div>
 </div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
 <div class="section-header"><div><h4>Channel Manager</h4><div style="font-size:12px;color:#6b7280">Connect this property to a channel manager. Provider-specific connection tools appear only when that provider is selected.</div></div><span class="badge badge-blue" id="channelManagerConnectionBadge">Not Connected</span></div>
@@ -7487,8 +7487,16 @@ function refreshReservationBookingSourceOptions(){
 }
 function ensureReservationAgentField(){
     const channel=document.getElementById('bookingChannel');if(!channel||document.getElementById('reservationTravelAgentId'))return;
-    const wrap=document.createElement('div');wrap.className='form-group';wrap.id='reservationTravelAgentWrap';wrap.innerHTML='<label>Travel Agent</label><select id="reservationTravelAgentId" onchange="calculateReservation()"><option value="">Select travel agent</option></select>';
+    const wrap=document.createElement('div');wrap.className='form-group';wrap.id='reservationTravelAgentWrap';wrap.innerHTML='<label>Travel Agent</label><select id="reservationTravelAgentId" onchange="calculateReservation();showReservationAgentPaymentNote()"><option value="">Select travel agent</option></select><small id="reservationAgentPaymentNote" style="display:block;margin-top:4px;color:#64748b"></small>';
     channel.closest('.form-group')?.after(wrap);
+}
+function showReservationAgentPaymentNote(){
+    const note=document.getElementById('reservationAgentPaymentNote'),sel=document.getElementById('reservationTravelAgentId');
+    if(!note)return;
+    const sd=normalizeSalesDistribution(settings?.salesDistribution);
+    const a=sel&&sel.value?sd.travelAgents.find(x=>String(x.id)===String(sel.value)):null;
+    const txt={prepaid:'Payment mode: Agent pays (prepaid). Guest should not be charged the room rate at checkout, only extras.',pay_at_hotel:'Payment mode: Guest pays at hotel. Collect at checkout; commission is payable to the agent.',direct_bill:'Payment mode: Direct bill. Invoice the agent'+(a&&a.creditTerms?' (credit terms: '+a.creditTerms+')':'')+'.'};
+    note.textContent=a?(txt[a.paymentMode]||'Payment mode not set for this agent (Settings > Travel Agents).'):'';
 }
 function toggleReservationAgentField(){
     ensureReservationAgentField();refreshReservationBookingSourceOptions();const channel=document.getElementById('bookingChannel'),wrap=document.getElementById('reservationTravelAgentWrap'),agent=document.getElementById('reservationTravelAgentId');
@@ -7496,6 +7504,7 @@ function toggleReservationAgentField(){
     if(agent)agent.innerHTML='<option value="">Select travel agent</option>'+sd.travelAgents.filter(x=>x.active!==false).map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join('');
     if(agent&&sd.travelAgents.some(x=>String(x.id)===old))agent.value=old;
     if(wrap)wrap.style.display=channel?.value==='Travel Agent'?'block':'none';
+    showReservationAgentPaymentNote();
 }
 
 function normalizeSalesDistribution(value){
@@ -7517,6 +7526,7 @@ function normalizeSalesDistribution(value){
             contact:String(x?.contact||'').trim(),
             commission:Math.max(0,Number(x?.commission||0)),
             calculation:x?.calculation==='deduct'?'deduct':'grossup',
+            paymentMode:['prepaid','pay_at_hotel','direct_bill'].includes(x?.paymentMode)?x.paymentMode:'',
             creditTerms:String(x?.creditTerms||'').trim(),
             active:x?.active!==false
         })).filter(x=>x.name),
@@ -7561,9 +7571,10 @@ function renderSalesDistribution(){
 <td><input value="${escapeHtml(x.contact)}" onchange="updateAgentField('${x.id}','contact',this.value)" placeholder="Phone / Email"/></td>
 <td><input type="number" min="0" step="0.01" value="${Number(x.commission||0)}" onchange="updateAgentField('${x.id}','commission',this.value)" style="width:90px"/></td>
 <td><select onchange="updateAgentField('${x.id}','calculation',this.value)"><option value="grossup" ${x.calculation==='grossup'?'selected':''}>Gross-up</option><option value="deduct" ${x.calculation==='deduct'?'selected':''}>Deduct</option></select></td>
+<td><select onchange="updateAgentField('${x.id}','paymentMode',this.value)"><option value="" ${!x.paymentMode?'selected':''}>Not set</option><option value="prepaid" ${x.paymentMode==='prepaid'?'selected':''}>Agent pays (prepaid)</option><option value="pay_at_hotel" ${x.paymentMode==='pay_at_hotel'?'selected':''}>Guest pays at hotel</option><option value="direct_bill" ${x.paymentMode==='direct_bill'?'selected':''}>Direct bill to agent</option></select></td>
 <td><input value="${escapeHtml(x.creditTerms)}" onchange="updateAgentField('${x.id}','creditTerms',this.value)" placeholder="e.g. 30 days"/></td>
 <td><input type="checkbox" ${x.active!==false?'checked':''} onchange="updateAgentField('${x.id}','active',this.checked)"/></td>
-<td><button class="btn btn-danger" type="button" onclick="removeTravelAgent('${x.id}')">Remove</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">No travel agents configured.</td></tr>';
+<td><button class="btn btn-danger" type="button" onclick="removeTravelAgent('${x.id}')">Remove</button></td></tr>`).join(''):'<tr><td colspan="8" class="empty">No travel agents configured.</td></tr>';
     }
     const cm=sd.channelManager||{};
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v??'';};
@@ -7591,7 +7602,7 @@ async function persistSalesDistributionToCloud(){
 async function addOTAChannel(){if(!requireRole('Admin','Manager'))return; if(!settings)return; const name=prompt('OTA / Booking Channel name:','Booking.com');if(name===null||!name.trim())return; const sd=normalizeSalesDistribution(settings.salesDistribution); if(sd.otaChannels.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This OTA channel already exists for this property.');return;} sd.otaChannels.push({id:'ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),commission:15,calculation:'grossup',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 async function updateOTAField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.otaChannels.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
 async function removeOTAChannel(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this OTA channel from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.otaChannels=settings.salesDistribution.otaChannels.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
-async function addTravelAgent(){if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',creditTerms:'',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function addTravelAgent(){if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',paymentMode:'',creditTerms:'',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 async function updateAgentField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.travelAgents.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
 async function removeTravelAgent(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this travel agent from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.travelAgents=settings.salesDistribution.travelAgents.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 
