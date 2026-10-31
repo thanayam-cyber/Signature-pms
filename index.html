@@ -1522,6 +1522,13 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </table>
 </div>
 <div style="font-size:11px;color:#6b7280;margin-top:8px">Example: Room 01 → 101 / Deluxe 101 / Deluxe. Existing room records are preserved. Increasing Room Count from Property Management → Edit adds only the missing new rooms; reducing it never deletes existing rooms.</div>
+<div id="familyUnitSetupPanel" style="margin-top:14px;border:1px solid #c7d2fe;background:#f8faff;border-radius:10px;padding:12px;display:none">
+  <div style="font-weight:700;margin-bottom:4px">Family Unit Setup</div>
+  <div style="font-size:12px;color:#475569;margin-bottom:10px">Create virtual Family units by pairing two physical rooms. These pairs use the existing rooms; they do not increase the property's physical room count.</div>
+  <div id="familyUnitRows"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn btn-secondary" type="button" onclick="addFamilyUnitPairRow()">+ Add Family Unit</button><button class="btn btn-primary" type="button" onclick="saveFamilyUnitPairs()">Save Family Units</button></div>
+  <div style="font-size:11px;color:#64748b;margin-top:8px">Rates: add/activate the “Family” Room Type under Room Type Management, then set BB/HB/FB/AI rates under Rate Plan Management. OTA selling rates and commissions remain under Sales &amp; Distribution.</div>
+</div>
 </div>
 <div class="section" id="ratePlanSection">
 <div class="section-header">
@@ -1960,6 +1967,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <label>Room</label>
 <select id="roomSelect"><option value="1">Room 01</option><option value="2">Room 02</option><option value="3">Room 03</option><option value="4">Room 04</option></select>
 </div>
+<div class="form-group" id="familyPairSelectGroup" style="display:none"><label>Family Unit</label><select id="familyPairSelect" onchange="calculateReservation()"><option value="">Select Family Unit</option></select><small style="color:#64748b">Only configured Family Units for this property are shown.</small></div>
 <div class="form-group">
 <label>Meal Plan</label>
 <select id="mealPlan">
@@ -6047,7 +6055,10 @@ async function addProperty(){
     const roomCount=Math.max(1,parseInt(roomsRaw,10)||1);
     const rate=Math.max(0,Number(rateRaw)||0);
     const villaAnswer=prompt("Does this property support Entire Villa bookings? (yes/no):","no");
-    const bookingTypes=String(villaAnswer||"").trim().toLowerCase().startsWith("y") ? ["room","villa"] : ["room"];
+    const familyAnswer=prompt("Does this property support Family Room bookings? (yes/no):","no");
+    const bookingTypes=["room"];
+    if(String(villaAnswer||"").trim().toLowerCase().startsWith("y")) bookingTypes.push("villa");
+    if(String(familyAnswer||"").trim().toLowerCase().startsWith("y")) bookingTypes.push("family");
 
     try{
         const client=initSupabaseClient();
@@ -6231,6 +6242,53 @@ function renderRoomConfiguration(){
         const key=String(i);
         return `<tr><td>${i+1}</td><td><input id="cfgRoomCode_${key}" value="${escapeHtml(code)}" placeholder="101"></td><td><input id="cfgRoomName_${key}" value="${escapeHtml(name)}" placeholder="Deluxe 101"></td><td><select id="cfgRoomType_${key}">${types.map(t=>`<option value="${escapeHtml(t)}" ${t===type?"selected":""}>${escapeHtml(t)}</option>`).join("")}</select></td><td><input id="cfgRoomRate_${key}" type="number" min="0" step="0.01" value="${Number(r.rate||0)}"></td><td><label style="display:flex;align-items:center;gap:6px"><input id="cfgRoomActive_${key}" type="checkbox" ${r.active!==false?"checked":""}> Active</label></td></tr>`;
     }).join("");
+    renderFamilyUnitSetup();
+}
+
+function familyUnitRoomLabel(room){return String(room?.name||room?.code||room?.number||("Room "+room?.id));}
+function renderFamilyUnitSetup(){
+    const panel=document.getElementById("familyUnitSetupPanel"), box=document.getElementById("familyUnitRows");
+    if(!panel||!box)return;
+    const p=properties.find(x=>String(x.id)===String(currentPropertyId));
+    const enabled=Array.isArray(p?.bookingTypes)&&p.bookingTypes.includes("family");
+    panel.style.display=enabled?"block":"none";
+    if(!enabled)return;
+    const rooms=(p.rooms||[]).filter(r=>r&&r.active!==false);
+    p.familyRoomPairs=Array.isArray(p.familyRoomPairs)?p.familyRoomPairs:[];
+    const options=rooms.map(r=>`<option value="${escapeHtml(String(r.id))}">${escapeHtml(familyUnitRoomLabel(r))}</option>`).join("");
+    box.innerHTML=p.familyRoomPairs.map((pair,i)=>`<div class="form-grid" style="grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px"><div class="form-group"><label>First Physical Room</label><select id="familyPairA_${i}"><option value="">Select room</option>${options}</select></div><div class="form-group"><label>Second Physical Room</label><select id="familyPairB_${i}"><option value="">Select room</option>${options}</select></div><button class="btn btn-danger btn-small" type="button" onclick="removeFamilyUnitPairRow(${i})">Remove</button></div>`).join("")||'<div class="empty">No Family Units configured. Click + Add Family Unit.</div>';
+    p.familyRoomPairs.forEach((pair,i)=>{const a=document.getElementById(`familyPairA_${i}`),b=document.getElementById(`familyPairB_${i}`);if(a)a.value=String(pair.roomIds?.[0]??pair.roomA??"");if(b)b.value=String(pair.roomIds?.[1]??pair.roomB??"");});
+}
+function addFamilyUnitPairRow(){
+    const p=properties.find(x=>String(x.id)===String(currentPropertyId));if(!p)return;
+    p.familyRoomPairs=Array.isArray(p.familyRoomPairs)?p.familyRoomPairs:[];
+    p.familyRoomPairs.push({id:"family_"+Date.now()+"_"+Math.random().toString(36).slice(2,6),roomIds:["",""]});
+    renderFamilyUnitSetup();
+}
+function removeFamilyUnitPairRow(index){
+    const p=properties.find(x=>String(x.id)===String(currentPropertyId));if(!p)return;
+    p.familyRoomPairs=Array.isArray(p.familyRoomPairs)?p.familyRoomPairs:[];p.familyRoomPairs.splice(index,1);renderFamilyUnitSetup();
+}
+async function saveFamilyUnitPairs(){
+    if(!hasActionPermission("settings.rooms"))return;
+    const p=properties.find(x=>String(x.id)===String(currentPropertyId));if(!p)return;
+    const rows=Array.isArray(p.familyRoomPairs)?p.familyRoomPairs:[], rooms=(p.rooms||[]).filter(r=>r&&r.active!==false);
+    const used=new Set(), saved=[];
+    for(let i=0;i<rows.length;i++){
+      const a=String(document.getElementById(`familyPairA_${i}`)?.value||""),b=String(document.getElementById(`familyPairB_${i}`)?.value||"");
+      if(!a||!b){alert(`Please select both physical rooms for Family Unit ${i+1}.`);return;}
+      if(a===b){alert(`Family Unit ${i+1} must contain two different rooms.`);return;}
+      if(!rooms.some(r=>String(r.id)===a)||!rooms.some(r=>String(r.id)===b)){alert(`Family Unit ${i+1} contains an inactive or missing room.`);return;}
+      const key=[a,b].sort().join("::");if(used.has(key)){alert("The same room pair has been configured more than once.");return;}used.add(key);
+      saved.push({id:rows[i].id||("family_"+Date.now()+"_"+i),roomIds:[a,b],name:"Family Unit "+(i+1),active:true});
+    }
+    p.familyRoomPairs=saved;saveProperties();if(settings&&String(settings.id)===String(p.id))settings={...settings,familyRoomPairs:JSON.parse(JSON.stringify(saved))};
+    renderFamilyUnitSetup();
+    // Persist Family Unit definitions in the existing property_rooms.room_data
+    // records so they survive browser refreshes and cloud property hydration.
+    const cloudSaved=await syncCurrentPropertyRoomsToSupabase(settings?.rooms||p.rooms||[]);
+    if(!cloudSaved){alert("Family Units were saved on this device, but cloud sync did not complete. Please check the Supabase connection and save again before refreshing.");return;}
+    alert("Family Units saved to this property and synchronized to the cloud.");
 }
 
 function configurePropertyRooms(id){
@@ -6388,11 +6446,16 @@ async function editProperty(id){
     const villaEnabled=currentBookingTypes.includes("villa");
     const villaAnswer=prompt("Does this property support Entire Villa bookings? (yes/no):",villaEnabled?"yes":"no");
     if(villaAnswer===null) return;
+    const familyEnabled=currentBookingTypes.includes("family");
+    const familyAnswer=prompt("Does this property support Family Room bookings? (yes/no):",familyEnabled?"yes":"no");
+    if(familyAnswer===null) return;
 
     p.property=name.trim() || p.property;
     p.location=location.trim();
     p.roomRate=Math.max(0,Number(rate)||0);
-    p.bookingTypes=String(villaAnswer).trim().toLowerCase().startsWith("y") ? ["room","villa"] : ["room"];
+    p.bookingTypes=["room"];
+    if(String(villaAnswer).trim().toLowerCase().startsWith("y")) p.bookingTypes.push("villa");
+    if(String(familyAnswer).trim().toLowerCase().startsWith("y")) p.bookingTypes.push("family");
     // Room Count is the TARGET TOTAL for this property, not the number of new rooms.
     // Keep existing configured rooms where possible and create only the missing rooms.
     if(!Array.isArray(p.rooms))p.rooms=[];
@@ -7438,10 +7501,11 @@ function channelRateOccupancy(adults,children){
     if(a===2&&c>=2)return '2A2C'; if(a===2&&c===1)return '2A1C'; if(a>=3&&c===0)return '3A'; return '2A';
 }
 function getCurrentChannelRateKey(){return document.getElementById('bookingChannel')?.value==='Travel Agent' ? 'agent_'+String(document.getElementById('reservationTravelAgentId')?.value||'').replace(/[^a-zA-Z0-9_-]/g,'_') : channelRateKey(document.getElementById('bookingChannel')?.value||'Direct');}
-function getChannelAdjustedRate(baseRate,mealPlan,adults,children,roomId,bookingType){
+function getChannelAdjustedRate(baseRate,mealPlan,adults,children,roomId,bookingType,forcedRoomTypeId=null){
     const source=document.getElementById('bookingChannel')?.value||'Direct';
     if(bookingType==='villa')return Number(baseRate||0);
-    const rt=getRoomTypeForRoom(roomId); if(!rt)return Number(baseRate||0);
+    const rt=forcedRoomTypeId?(settings?.roomTypes||[]).find(t=>String(t.id)===String(forcedRoomTypeId)):getRoomTypeForRoom(roomId);
+    if(!rt)return Number(baseRate||0);
     const key=source==='Travel Agent'?'agent_'+String(document.getElementById('reservationTravelAgentId')?.value||'').replace(/[^a-zA-Z0-9_-]/g,'_'):channelRateKey(source);
     const sd=normalizeSalesDistribution(settings?.salesDistribution), matrix=sd.channelRateMatrix||{};
     const row=matrix[key]?.[String(rt.id)]?.[String(mealPlan||'BB').toUpperCase()]||{};
@@ -8173,48 +8237,28 @@ function closeReservationModal(){
     editingReservationId=null;
 }
 
-function updateReservationForm(){
-
-    const bookingType=document.getElementById("bookingType");
-    const roomSelect=document.getElementById("roomSelect");
-    const villaAllowed=(settings?.bookingTypes||[]).includes("villa");
-
-    if(bookingType){
-        const current=bookingType.value;
-        bookingType.innerHTML=`<option value="room">${settings?.rooms?.length===1 ? "Guest Room / Cabin" : "Individual Room"}</option>`+
-            (villaAllowed?`<option value="villa">Entire Villa</option>`:"");
-        bookingType.value=((current==="villa"&&villaAllowed)||current==="room")?current:"room";
-    }
-
-    if(roomSelect){
-        const currentRoom=roomSelect.value;
-        roomSelect.innerHTML=(settings?.rooms||[]).filter(r=>r.active!==false).map(r=>
-            `<option value="${escapeHtml(String(r.id))}">${escapeHtml(r.name||("Room "+String(r.id).padStart(2,"0")))}</option>`
-        ).join("");
-        if(currentRoom && [...roomSelect.options].some(o=>o.value===currentRoom)) roomSelect.value=currentRoom;
-    }
-
-    const villa=document.getElementById("bookingType").value==="villa";
-    document.getElementById("roomSelectGroup").style.display=villa?"none":"block";
-
-    const mealPlan=document.getElementById("mealPlan");
-    if(mealPlan){
-        if(villa){
-            mealPlan.value="RO";
-            mealPlan.disabled=true;
-        }else{
-            mealPlan.disabled=false;
-            if(normalizeMealPlan(mealPlan.value)==="RO") mealPlan.value="BB";
-        }
-    }
+function getActiveFamilyPairsForCurrentProperty(){
+    const p=properties.find(x=>String(x.id)===String(currentPropertyId));
+    const rooms=(p?.rooms||settings?.rooms||[]).filter(r=>r&&r.active!==false);
+    const pairs=Array.isArray(p?.familyRoomPairs)?p.familyRoomPairs:(Array.isArray(settings?.familyRoomPairs)?settings.familyRoomPairs:[]);
+    return pairs.filter(pair=>{const ids=Array.isArray(pair.roomIds)?pair.roomIds:[pair.roomA,pair.roomB];return pair.active!==false&&ids.length===2&&ids.every(id=>rooms.some(r=>String(r.id)===String(id)));}).map((pair,i)=>{const ids=(Array.isArray(pair.roomIds)?pair.roomIds:[pair.roomA,pair.roomB]).map(String);const labels=ids.map(id=>{const r=rooms.find(x=>String(x.id)===id);return r?.name||r?.code||r?.number||('Room '+id);});return {...pair,roomIds:ids,displayName:pair.name||('Family Unit '+(i+1)+' — '+labels.join(' + '))};});
 }
-
+function getFamilyRoomType(){return (settings?.roomTypes||[]).find(t=>String(t.name||'').trim().toLowerCase()==='family'||String(t.code||'').trim().toLowerCase()==='family')||null;}
+function updateReservationForm(){
+ const bookingType=document.getElementById('bookingType'),roomSelect=document.getElementById('roomSelect');
+ const types=Array.isArray(settings?.bookingTypes)?settings.bookingTypes:[],villaAllowed=types.includes('villa'),familyAllowed=types.includes('family');
+ if(bookingType){const current=bookingType.value;bookingType.innerHTML=`<option value="room">${settings?.rooms?.length===1?'Guest Room / Cabin':'Individual Room'}</option>`+(familyAllowed?'<option value="family">Family</option>':'')+(villaAllowed?'<option value="villa">Entire Villa</option>':'');bookingType.value=(current==='villa'&&villaAllowed)||(current==='family'&&familyAllowed)||current==='room'?current:'room';}
+ if(roomSelect){const old=roomSelect.value;roomSelect.innerHTML=(settings?.rooms||[]).filter(r=>r.active!==false).map(r=>`<option value="${escapeHtml(String(r.id))}">${escapeHtml(r.name||r.code||('Room '+String(r.id).padStart(2,'0')))}</option>`).join('');if([...roomSelect.options].some(o=>o.value===old))roomSelect.value=old;}
+ const type=bookingType?.value||'room',villa=type==='villa',family=type==='family';const rg=document.getElementById('roomSelectGroup'),fg=document.getElementById('familyPairSelectGroup');if(rg)rg.style.display=(villa||family)?'none':'block';
+ if(fg){fg.style.display=family?'block':'none';const sel=document.getElementById('familyPairSelect'),old=sel?.value||'';if(sel){const pairs=getActiveFamilyPairsForCurrentProperty();sel.innerHTML='<option value="">Select Family Unit</option>'+pairs.map(x=>`<option value="${escapeHtml(String(x.id))}">${escapeHtml(x.displayName)}</option>`).join('');if(pairs.some(x=>String(x.id)===old))sel.value=old;}}
+ const mp=document.getElementById('mealPlan');if(mp){if(villa){mp.value='RO';mp.disabled=true;}else{mp.disabled=false;if(normalizeMealPlan(mp.value)==='RO')mp.value='BB';}}
+}
 function datesOverlap(a,b,c,d){
     return a<d && c<b;
 }
 
-function isBookingAvailable(type,roomId,checkIn,checkOut,excludeId=null){
-
+function isBookingAvailable(type,roomId,checkIn,checkOut,excludeId=null,requestedRoomIds=null){
+    const requested=(Array.isArray(requestedRoomIds)&&requestedRoomIds.length?requestedRoomIds:[roomId]).map(String);
     return !reservations.some(r=>{
         if(r.id===excludeId) return false;
 
@@ -8231,7 +8275,8 @@ function isBookingAvailable(type,roomId,checkIn,checkOut,excludeId=null){
         if(type==="villa") return true;
         if(r.bookingType==="villa") return true;
 
-        return Number(r.roomId)===Number(roomId);
+        const occupied=(Array.isArray(r.roomIds)&&r.roomIds.length?r.roomIds:[r.roomId]).filter(x=>x!==null&&x!==undefined).map(String);
+        return requested.some(id=>occupied.includes(id));
     });
 }
 
@@ -8239,15 +8284,11 @@ function calculateReservation(){
 
     const type=document.getElementById("bookingType").value;
     const guestType=String(document.getElementById("guestType").value||"foreign").toLowerCase();
-    const selectedRoomId=Number(document.getElementById("roomSelect")?.value||0);
-    const selectedRoom=(settings?.rooms||[]).find(r=>String(r.id)===String(selectedRoomId));
-    let rate=Number(selectedRoom?.rate ?? settings?.roomRate ?? 0);
-
-    if(type!=="villa") {
-        const configuredRate=getConfiguredRate(document.getElementById("mealPlan")?.value,Number(document.getElementById("adults")?.value||1),Number(document.getElementById("children")?.value||0),selectedRoomId);
-        if(configuredRate!==null) rate=configuredRate;
-        rate=getChannelAdjustedRate(rate,document.getElementById("mealPlan")?.value,Number(document.getElementById("adults")?.value||1),Number(document.getElementById("children")?.value||0),selectedRoomId,document.getElementById("bookingType")?.value);
-    }
+    const familyPair=type==='family'?getActiveFamilyPairsForCurrentProperty().find(x=>String(x.id)===String(document.getElementById('familyPairSelect')?.value||'')):null;
+    const selectedRoomId=Number(type==='family'?(familyPair?.roomIds?.[0]||0):(document.getElementById('roomSelect')?.value||0));
+    const selectedRoom=(settings?.rooms||[]).find(r=>String(r.id)===String(selectedRoomId));const familyType=getFamilyRoomType();
+    let rate=Number(selectedRoom?.rate??settings?.roomRate??0);
+    if(type!=='villa'){const adults=Number(document.getElementById('adults')?.value||1),children=Number(document.getElementById('children')?.value||0),plan=document.getElementById('mealPlan')?.value;let configuredRate=null;if(type==='family'&&familyType){const matrix=normalizeRoomRateMatrix(settings?.roomRateMatrix)||{};const row=matrix[String(familyType.id)]?.[String(plan||'BB').toUpperCase()]||{};configuredRate=Number(row[channelRateOccupancy(adults,children)]||0)||null;}else configuredRate=getConfiguredRate(plan,adults,children,selectedRoomId);if(configuredRate!==null)rate=Number(configuredRate);rate=getChannelAdjustedRate(rate,plan,adults,children,selectedRoomId,type,type==='family'?(familyType?.id||null):null);}
 
     if(type==="villa"){
         rate=guestType==="foreign"
@@ -8320,7 +8361,9 @@ function saveReservation(){
     const selectedGuestId=document.getElementById("reservationGuestProfile")?.value || "";
     const bookingType=document.getElementById("bookingType").value;
     const guestType=document.getElementById("guestType").value;
-    const roomId=String(document.getElementById("roomSelect").value||"").trim();
+    const selectedFamilyPair=bookingType==='family'?getActiveFamilyPairsForCurrentProperty().find(x=>String(x.id)===String(document.getElementById('familyPairSelect')?.value||'')):null;
+    const allocatedRoomIds=bookingType==='family'?(selectedFamilyPair?.roomIds||[]):(bookingType==='villa'?[]:[String(document.getElementById('roomSelect').value||'').trim()]);
+    const roomId=bookingType==='family'?String(allocatedRoomIds[0]||''):String(document.getElementById('roomSelect').value||'').trim();
     const checkIn=document.getElementById("checkIn").value;
     const checkOut=document.getElementById("checkOut").value;
     const adults=Math.max(1,Number(document.getElementById("adults").value||1));
@@ -8345,28 +8388,24 @@ function saveReservation(){
         error.textContent="Past-date reservations are not allowed. Check-in cannot be earlier than the current business date ("+_minResDate+").";
         return;
     }
-    if(bookingType!=="villa" && !roomId){ error.textContent="Please select a room."; return; }
+    if(bookingType==="family"&&!selectedFamilyPair){error.textContent="Please select a configured Family Unit.";return;}
+    if(bookingType==="room"&&!roomId){ error.textContent="Please select a room."; return; }
     const maxGuests=Number(settings?.maxGuests||0);
     if(maxGuests>0 && totalGuests>maxGuests){
         error.textContent=`Maximum occupancy for ${settings?.property||"this property"} is ${maxGuests} guests.`;
         return;
     }
 
-    if(!isBookingAvailable(bookingType,roomId,checkIn,checkOut,editingReservationId)){
+    if(!isBookingAvailable(bookingType,roomId,checkIn,checkOut,editingReservationId,allocatedRoomIds)){
         error.textContent="The selected room / villa is already reserved for these dates.";
         return;
     }
 
     const nights=Math.round((new Date(checkOut)-new Date(checkIn))/86400000);
-    const selectedRoom=(settings?.rooms||[]).find(r=>String(r.id)===String(roomId));
-    let rate=Number(selectedRoom?.rate ?? settings?.roomRate ?? 0);
-    if(bookingType!=="villa") {
-        const configuredRate=(typeof window.getConfiguredRate==='function'
-            ? window.getConfiguredRate(mealPlan,adults,children,roomId,guestType)
-            : getConfiguredRate(mealPlan,adults,children,roomId));
-        if(configuredRate!==null && configuredRate!==undefined) rate=Number(configuredRate);
-        rate=getChannelAdjustedRate(rate,mealPlan,adults,children,roomId,bookingType);
-    }
+    const selectedRoom=(settings?.rooms||[]).find(r=>String(r.id)===String(roomId));const familyRoomType=getFamilyRoomType();
+    let rate=Number(selectedRoom?.rate??settings?.roomRate??0);
+    if(bookingType!=="villa") {let configuredRate=null;if(bookingType==='family'&&familyRoomType){const matrix=normalizeRoomRateMatrix(settings?.roomRateMatrix)||{};const row=matrix[String(familyRoomType.id)]?.[String(mealPlan||'BB').toUpperCase()]||{};configuredRate=Number(row[channelRateOccupancy(adults,children)]||0)||null;}else configuredRate=(typeof window.getConfiguredRate==='function'?window.getConfiguredRate(mealPlan,adults,children,roomId,guestType):getConfiguredRate(mealPlan,adults,children,roomId));if(configuredRate!==null&&configuredRate!==undefined)rate=Number(configuredRate);rate=getChannelAdjustedRate(rate,mealPlan,adults,children,roomId,bookingType,bookingType==='family'?(familyRoomType?.id||null):null);}
+
     if(bookingType==="villa"){
         rate=guestType==="foreign" ? Number(settings?.villaForeign||0) : Number(settings?.villaLocal||0);
     }
@@ -8421,6 +8460,9 @@ function saveReservation(){
         reservation.guestType=guestType;
         reservation.bookingType=bookingType;
         reservation.roomId=bookingType==="villa" ? null : roomId;
+        reservation.roomIds=bookingType==="villa"?[]:allocatedRoomIds.slice();
+        reservation.familyPairId=bookingType==="family"?(selectedFamilyPair?.id||null):null;
+        reservation.familyUnitName=bookingType==="family"?(selectedFamilyPair?.displayName||selectedFamilyPair?.name||"Family Unit"):"";
         reservation.checkIn=checkIn;
         reservation.checkOut=checkOut;
         reservation.nights=nights;
@@ -8510,6 +8552,9 @@ function saveReservation(){
         guestType,
         bookingType,
         roomId:bookingType==="villa" ? null : roomId,
+        roomIds:bookingType==="villa"?[]:allocatedRoomIds.slice(),
+        familyPairId:bookingType==="family"?(selectedFamilyPair?.id||null):null,
+        familyUnitName:bookingType==="family"?(selectedFamilyPair?.displayName||selectedFamilyPair?.name||"Family Unit"):"",
         checkIn,
         checkOut,
         nights,
@@ -8519,7 +8564,7 @@ function saveReservation(){
         children,
         childrenAges,
         mealPlan,
-        breakfastIncluded:bookingType==="room",
+        breakfastIncluded:bookingType!=="villa",
         deposit,
         currency:"LKR",
         baseCurrency:"LKR",
@@ -21011,7 +21056,7 @@ async function syncCurrentPropertyRoomsToSupabase(roomSnapshot){
         const rooms=sourceRooms.map(room=>({
             property_id:String(cloudPropertyId),
             room_id:String(room.id),
-            room_data:{...room,propertyId:String(cloudPropertyId)},
+            room_data:{...room,propertyId:String(cloudPropertyId),familyRoomPairs:JSON.parse(JSON.stringify(properties.find(p=>String(p.id)===String(currentPropertyId))?.familyRoomPairs||[])),bookingTypes:JSON.parse(JSON.stringify(properties.find(p=>String(p.id)===String(currentPropertyId))?.bookingTypes||["room"]))},
             active:room.active!==false,
             housekeeping_status:String(room.housekeepingStatus||"clean"),
             updated_at:now
@@ -21078,6 +21123,18 @@ async function forceHydrateSupabaseRooms(){
             .eq("property_id",String(cloudPropertyId));
         if(error) throw error;
         const rows=data||[];
+        // Restore property-scoped Family configuration stored with cloud room records.
+        const familyMetaRow=rows.find(r=>Array.isArray(r?.room_data?.familyRoomPairs)||Array.isArray(r?.room_data?.bookingTypes));
+        if(familyMetaRow){
+            const meta=familyMetaRow.room_data||{};
+            const pi=properties.findIndex(p=>String(p.id)===String(currentPropertyId));
+            if(pi>=0){
+                if(Array.isArray(meta.familyRoomPairs))properties[pi].familyRoomPairs=JSON.parse(JSON.stringify(meta.familyRoomPairs));
+                if(Array.isArray(meta.bookingTypes))properties[pi].bookingTypes=JSON.parse(JSON.stringify(meta.bookingTypes));
+                saveProperties();
+            }
+            if(settings){if(Array.isArray(meta.familyRoomPairs))settings.familyRoomPairs=JSON.parse(JSON.stringify(meta.familyRoomPairs));if(Array.isArray(meta.bookingTypes))settings.bookingTypes=JSON.parse(JSON.stringify(meta.bookingTypes));}
+        }
         const localRoomsBeforeCloud=Array.isArray(settings?.rooms)?settings.rooms.filter(r=>r?.active!==false):[];
         // Safety guard: never let an incomplete cloud property_rooms snapshot
         // shrink a valid local property configuration (for example 13 rooms -> 1).
@@ -21148,6 +21205,18 @@ async function hydrateSupabaseRooms(){
         if(error) throw error;
 
         const rows=data||[];
+        // Restore property-scoped Family configuration stored with cloud room records.
+        const familyMetaRow=rows.find(r=>Array.isArray(r?.room_data?.familyRoomPairs)||Array.isArray(r?.room_data?.bookingTypes));
+        if(familyMetaRow){
+            const meta=familyMetaRow.room_data||{};
+            const pi=properties.findIndex(p=>String(p.id)===String(currentPropertyId));
+            if(pi>=0){
+                if(Array.isArray(meta.familyRoomPairs))properties[pi].familyRoomPairs=JSON.parse(JSON.stringify(meta.familyRoomPairs));
+                if(Array.isArray(meta.bookingTypes))properties[pi].bookingTypes=JSON.parse(JSON.stringify(meta.bookingTypes));
+                saveProperties();
+            }
+            if(settings){if(Array.isArray(meta.familyRoomPairs))settings.familyRoomPairs=JSON.parse(JSON.stringify(meta.familyRoomPairs));if(Array.isArray(meta.bookingTypes))settings.bookingTypes=JSON.parse(JSON.stringify(meta.bookingTypes));}
+        }
         const localRoomsBeforeCloud=Array.isArray(settings?.rooms)?settings.rooms.filter(r=>r?.active!==false):[];
         // Safety guard: never let an incomplete cloud property_rooms snapshot
         // shrink a valid local property configuration (for example 13 rooms -> 1).
