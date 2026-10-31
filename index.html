@@ -10970,6 +10970,70 @@ function renderCheckOut(){
 }
 
 
+function createAgentInvoiceOnCheckout(reservation){
+    if(!reservation || !reservation.folioRoutingSnapshot || typeof window.signatureGetDualFolioPreview!=="function") return null;
+    // Invoice only when the selected property's Travel Agent is explicitly configured for Direct Bill.
+    const sd=typeof normalizeSalesDistribution==="function"
+        ? normalizeSalesDistribution(settings?.salesDistribution)
+        : (settings?.salesDistribution||{});
+    const agentId=String(reservation.reservationTravelAgentId||reservation.travelAgentId||"");
+    const agents=Array.isArray(sd.travelAgents)?sd.travelAgents:[];
+    const agent=agents.find(a=>String(a.id)===agentId);
+    if(!agent || String(agent.paymentMode||"").toLowerCase()!=="direct_bill") return null;
+    // Idempotency: a second checkout click must never create a second invoice.
+    // Refresh the existing invoice terms / due date when the stored credit term is numeric (e.g. "7").
+    if(reservation.agentInvoice && reservation.agentInvoice.invoiceNo){
+        const existing=reservation.agentInvoice;
+        const existingTerms=String(agent.creditTerms||existing.creditTerms||"").trim();
+        const existingMatch=existingTerms.match(/(\d+)/);
+        const existingDays=existingMatch?Math.max(0,Number(existingMatch[1])):0;
+        const existingIssue=String(existing.issueDate||localDateString());
+        const existingDue=new Date(existingIssue+"T12:00:00");
+        existingDue.setDate(existingDue.getDate()+existingDays);
+        existing.dueDate=existingDue.getFullYear()+"-"+String(existingDue.getMonth()+1).padStart(2,"0")+"-"+String(existingDue.getDate()).padStart(2,"0");
+        existing.creditTerms=existingTerms;
+        return existing;
+    }
+    const d=window.signatureGetDualFolioPreview(reservation);
+    const total=Math.max(0,Number(d.agent||0));
+    const paid=Math.max(0,Number(d.agentPaid||0));
+    const balanceDue=Math.max(0,total-paid);
+    if(total<=0) return null;
+    const booking=String(reservation.bookingNo||reservation.id).replace(/[^A-Za-z0-9-]/g,"-");
+    const issueDate=String(localDateString());
+    const terms=String(agent.creditTerms||"").trim();
+    let days=0;
+    const termMatch=terms.match(/(\d+)/);
+    if(termMatch) days=Math.max(0,Number(termMatch[1]));
+    const due=new Date(issueDate+"T12:00:00");
+    due.setDate(due.getDate()+days);
+    const dueDate=due.getFullYear()+"-"+String(due.getMonth()+1).padStart(2,"0")+"-"+String(due.getDate()).padStart(2,"0");
+    reservation.agentInvoice={
+        invoiceNo:"AG-"+booking,
+        propertyId:String(reservation.propertyId||currentPropertyId||""),
+        reservationId:String(reservation.id),
+        bookingNo:String(reservation.bookingNo||""),
+        agentId:String(agent.id),
+        agentName:String(agent.name||reservation.travelAgentName||"Travel Agent"),
+        status:balanceDue>0?"Issued":"Paid",
+        issueDate,dueDate,creditTerms:terms,
+        currency:String(settings?.baseCurrency||"LKR"),
+        total:Number(total.toFixed(2)),
+        paidAtIssue:Number(paid.toFixed(2)),
+        balance:Number(balanceDue.toFixed(2)),
+        createdAt:new Date().toISOString(),
+        createdBy:String(currentUser?.username||"Admin"),
+        source:"Automatic Guest Checkout",
+        lines:[
+            {description:"Agent Folio charges",amount:Number(total.toFixed(2))},
+            {description:"Payments allocated to Agent Folio before invoice",amount:-Number(paid.toFixed(2))}
+        ]
+    };
+    reservation.agentFolioStatus=balanceDue>0?"Invoiced":"Paid";
+    reservation.agentFolioOutstanding=Number(balanceDue.toFixed(2));
+    return reservation.agentInvoice;
+}
+
 function checkOutReservation(id){
     if(!requireActionPermission("reservations.checkout")) return;
     const r=reservations.find(x=>x.id===id);
@@ -10982,6 +11046,16 @@ function checkOutReservation(id){
     if(balance>0){
         const proceed=confirm("There is an outstanding Guest Folio balance of "+money(balance)+".\n\nContinue guest check-out? The Travel Agent Folio will remain open and is not transferred to the guest.");
         if(!proceed) return;
+    }
+    // Direct-bill Agent Folio is invoiced automatically at Guest checkout.
+    // The invoice is stored in reservation_data, so the existing Supabase reservation
+    // sync carries it across devices without creating a second local-only record.
+    try{
+        createAgentInvoiceOnCheckout(r);
+    }catch(invoiceError){
+        console.error("Automatic Agent invoice creation failed:",invoiceError);
+        alert("Guest check-out was not completed because the Agent invoice could not be created. Please retry or contact an administrator.");
+        return;
     }
     r.status="Checked-Out";
     r.actualCheckOut=localDateTime();
@@ -15851,14 +15925,18 @@ function arGuestLedgerRows(asOf){
     if(ci && ci>asOf) return;
     const fp=getFinancialPosition(r.id);
     /* AR folio totals are already normalized to the PMS base currency (LKR).
-       Do not apply the reservation FX rate a second time. */
-    const grossCharges=Number(fp.folioTotal||0);
+       For dual-folio reservations, only the Guest Folio belongs in Guest AR.
+       Agent Folio is tracked separately by the Agent AR subledger below. */
+    const dual=(r.folioRoutingSnapshot && typeof window.signatureGetDualFolioPreview==='function')
+      ? window.signatureGetDualFolioPreview(r) : null;
+    const grossCharges=Number(dual ? dual.guest : (fp.folioTotal||0));
     // Refund-aware AR: a refund linked to a received payment reverses the refunded
     // portion of that charge for receivables purposes. Do not count the refund as
     // a new guest payment, and do not count the refunded portion of its original
     // payment as still collected. This keeps a refunded accommodation invoice from
     // remaining open while preserving unrelated charges/payments (e.g. restaurant POS).
-    const reservationPayments=(payments||[]).filter(p=>String(p.reservationId||'')===String(r.id) && paymentIsReceived(p));
+    const reservationPayments=(payments||[]).filter(p=>String(p.reservationId||'')===String(r.id) && paymentIsReceived(p)
+      && (!dual || !String(p.folioType||p.folio||p.payer||'').toLowerCase().includes('agent')));
     const receivedOriginals=reservationPayments.filter(p=>!paymentIsRefund(p));
     const reservationRefunds=reservationPayments.filter(paymentIsRefund);
     const refundedByOriginal=new Map();
@@ -16568,7 +16646,20 @@ window.printAgentFolio=function(reservationId){
     && paymentIsReceived(p));
   const payRows=agentPays.map(p=>`<tr><td>${datePart(p.date)}</td><td>${escapeHtml(p.reference||"")}</td><td>${escapeHtml(p.method||"")}</td><td class="right">${accMoney(paymentAmountLKR(p,r))}</td></tr>`).join("");
   const bookingRef=r.bookingNo||r.confirmationNumber||r.bookingId||r.id||"";
-  reportShell("Travel Agent Folio Statement",`<h2>${escapeHtml(r.travelAgentName||r.agentName||r.travelAgent||"Travel Agent")}</h2><p>Booking: ${escapeHtml(bookingRef)} &nbsp; Guest: ${escapeHtml(r.guestName||r.guest||"Guest")} &nbsp; Room: ${escapeHtml(r.roomNumber||r.room||"")} &nbsp; Check-in: ${escapeHtml(r.checkIn||"")} &nbsp; Check-out: ${escapeHtml(r.checkOut||"")}</p><table><thead><tr><th>Charge</th><th>Amount</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x[0])}</td><td class="right">${accMoney(x[1])}</td></tr>`).join("")}</tbody><tfoot><tr class="total"><td>Agent Folio Total</td><td class="right">${accMoney(total)}</td></tr><tr><td>Payments Received</td><td class="right">${accMoney(paid)}</td></tr><tr class="total"><td>Outstanding Balance</td><td class="right">${accMoney(balance)}</td></tr></tfoot></table><h2>Agent Payments</h2><table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows||"<tr><td colspan='4'>No Agent Folio payments</td></tr>"}</tbody></table><p><strong>Statement only:</strong> Agent AR invoicing and separate GL receivable posting are not enabled in this PMS version.</p>`);
+  // Refresh an already-issued invoice's due date from the saved property credit terms.
+  // This does not create a second invoice or change its amount / payments.
+  if(r.agentInvoice && typeof createAgentInvoiceOnCheckout==="function"){
+    const oldDue=String(r.agentInvoice.dueDate||"");
+    try{
+      createAgentInvoiceOnCheckout(r);
+      if(String(r.agentInvoice.dueDate||"")!==oldDue){
+        if(typeof saveData==="function") saveData();
+        if(typeof syncReservationToSupabase==="function") Promise.resolve(syncReservationToSupabase(r)).catch(e=>console.warn("Agent invoice due-date sync failed:",e));
+      }
+    }catch(e){console.warn("Agent invoice due-date refresh failed:",e);}
+  }
+  const inv=r.agentInvoice||null;
+  reportShell(inv?"Travel Agent Invoice":"Travel Agent Folio Statement",`${inv?`<h2>Agent Invoice ${escapeHtml(inv.invoiceNo)}</h2><p>Issue Date: ${escapeHtml(inv.issueDate)} · Due Date: ${escapeHtml(inv.dueDate)} · Status: ${escapeHtml(inv.status)}</p>`:''}<h2>${escapeHtml(inv?.agentName||r.travelAgentName||r.agentName||r.travelAgent||"Travel Agent")}</h2><p>Booking: ${escapeHtml(bookingRef)} &nbsp; Guest: ${escapeHtml(r.guestName||r.guest||"Guest")} &nbsp; Room: ${escapeHtml(r.roomNumber||r.room||"")} &nbsp; Check-in: ${escapeHtml(r.checkIn||"")} &nbsp; Check-out: ${escapeHtml(r.checkOut||"")}</p><table><thead><tr><th>Charge</th><th>Amount</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x[0])}</td><td class="right">${accMoney(x[1])}</td></tr>`).join("")}</tbody><tfoot><tr class="total"><td>Agent Folio Total</td><td class="right">${accMoney(total)}</td></tr><tr><td>Payments Received</td><td class="right">${accMoney(paid)}</td></tr><tr class="total"><td>Outstanding Balance</td><td class="right">${accMoney(balance)}</td></tr></tfoot></table><h2>Agent Payments</h2><table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows||"<tr><td colspan='4'>No Agent Folio payments</td></tr>"}</tbody></table>${inv?`<p><strong>Invoice Balance Due:</strong> ${accMoney(inv.balance)}</p><p>Payment terms: ${escapeHtml(inv.creditTerms||'As agreed')}</p>`:''}`);
 };
 
 /* Guest invoice sharing: keep PDF generation in the existing print layout and use a
@@ -29104,8 +29195,52 @@ function agentBalances(){
   });
   return [...map.values()].map(a=>({...a,balance:Math.max(0,Math.round((a.accrued-a.paid)*100)/100)})).filter(a=>a.accrued>0||a.paid>0||a.unassigned>0);
 }
+function agentARRows(){
+  const rows=[];let changed=false;
+  (Array.isArray(reservations)?reservations:[]).filter(r=>String(r.propertyId||currentPropertyId)===String(currentPropertyId)&&r.agentInvoice&&r.agentInvoice.invoiceNo).forEach(r=>{
+    const d=typeof window.signatureGetDualFolioPreview==='function'?window.signatureGetDualFolioPreview(r):null;
+    const total=Number(d?d.agent:(r.agentInvoice.total||0));
+    const paid=Number(d?d.agentPaid:(r.agentInvoice.paidAtIssue||0));
+    const balance=Math.max(0,Math.round((total-paid)*100)/100);
+    const nextStatus=balance<=0.009?'Paid':(paid>0.009?'Part Paid':'Issued');
+    if(Number(r.agentInvoice.total||0)!==Number(total.toFixed(2))||Number(r.agentInvoice.balance||0)!==Number(balance.toFixed(2))||String(r.agentInvoice.status||'')!==nextStatus||String(r.agentFolioStatus||'')!==nextStatus||Number(r.agentFolioOutstanding||0)!==Number(balance.toFixed(2)))changed=true;
+    r.agentInvoice.total=Number(total.toFixed(2));r.agentInvoice.balance=Number(balance.toFixed(2));
+    r.agentInvoice.status=nextStatus;r.agentFolioStatus=nextStatus;r.agentFolioOutstanding=r.agentInvoice.balance;
+    rows.push({r,inv:r.agentInvoice,total,paid,balance});
+  });
+  if(changed&&typeof saveData==='function')saveData();
+  return rows.sort((a,b)=>String(a.inv.dueDate||'').localeCompare(String(b.inv.dueDate||'')));
+}
+function renderAgentAR(){
+  const page=document.getElementById('accounting');if(!page)return;
+  let sec=document.getElementById('agentARSubledgerSection');
+  if(!sec){sec=document.createElement('section');sec.id='agentARSubledgerSection';sec.className='section';sec.style.marginTop='14px';
+    const anchor=document.getElementById('travelAgentPayablesSection')||document.getElementById('journalReviewSection');
+    if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(sec,anchor.nextSibling);else page.appendChild(sec);
+  }
+  const rows=agentARRows();const outstanding=rows.reduce((n,x)=>n+x.balance,0);const invoiced=rows.reduce((n,x)=>n+x.total,0);const received=rows.reduce((n,x)=>n+x.paid,0);
+  const glJournals=(typeof journalEntries==='function'?journalEntries():[]).filter(j=>String(j.propertyId??j.property_id??currentPropertyId)===String(currentPropertyId));
+  const glTraceFor=row=>{const issueDate=String(row.inv.issueDate||'').slice(0,10);const revenueRefs=glJournals.filter(j=>String(j.source||'')==='Daily Revenue'&&String(j.businessDate||j.date||'').slice(0,10)===issueDate).map(j=>String(j.reference||'')).filter(Boolean);const paymentDates=[...new Set((Array.isArray(payments)?payments:[]).filter(p=>String(p.reservationId||'')===String(row.r.id)&&String(p.folioType||p.folio||'').toLowerCase()==='agent').map(p=>String(p.businessDate||p.date||'').slice(0,10)).filter(Boolean))];const paymentRefs=glJournals.filter(j=>String(j.source||'')==='Daily Payments'&&paymentDates.includes(String(j.businessDate||j.date||'').slice(0,10))).map(j=>String(j.reference||'')).filter(Boolean);return {revenue:[...new Set(revenueRefs)],payments:[...new Set(paymentRefs)]};};
+  sec.innerHTML=`<div class="section-header"><div><h3>Travel Agent Accounts Receivable</h3><div style="font-size:12px;color:#6b7280">Direct-bill Agent invoices only · separate from Guest AR and commission payables.</div></div><div class="toolbar"><button type="button" class="btn btn-secondary" id="agentARRefresh">Refresh</button></div></div><div class="grid-3" style="margin-bottom:12px"><div class="card"><div class="card-title">Invoiced</div><div class="card-value">${money(invoiced)}</div></div><div class="card"><div class="card-title">Payments Received</div><div class="card-value">${money(received)}</div></div><div class="card"><div class="card-title">Outstanding Agent AR</div><div class="card-value">${money(outstanding)}</div></div></div><div class="table-wrap"><table><thead><tr><th>Travel Agent</th><th>Invoice</th><th>Booking / Guest</th><th>Issue Date</th><th>Due Date</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>GL Trace</th><th>Action</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.inv.agentName||'Travel Agent')}</td><td>${esc(x.inv.invoiceNo)}</td><td>${esc(x.r.bookingNo||x.r.confirmationNumber||x.r.id)} / ${esc(x.r.guestName||x.r.guest||'Guest')}</td><td>${esc(x.inv.issueDate||'')}</td><td>${esc(x.inv.dueDate||'')}</td><td>${money(x.total)}</td><td>${money(x.paid)}</td><td><strong>${money(x.balance)}</strong></td><td>${esc(x.inv.status||'Issued')}</td><td>${(()=>{const t=glTraceFor(x);return `<small>Revenue: ${esc(t.revenue.join(', ')||'Not posted')}</small><br><small>Payments: ${esc(t.payments.join(', ')||'Not posted')}</small>`})()}</td><td>${x.balance>0.009?`<button type="button" class="btn btn-success btn-small" data-agent-ar-pay="${esc(x.r.id)}">Record Payment</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="11" class="empty">No Agent invoices for this property.</td></tr>'}</tbody></table></div><div style="margin-top:8px;font-size:12px;color:#64748b">Agent AR is a subledger of General Ledger account 1100 — Accounts Receivable. Existing Daily Revenue posting debits the control account; Daily Payments posting credits it. GL Trace links each Agent invoice/payment to the existing date-based Daily Revenue and Daily Payments journals. These are grouped journals, not separate Agent-only journals; no duplicate GL postings are created.</div>`;
+  document.getElementById('agentARRefresh')?.addEventListener('click',()=>{if(typeof saveData==='function')saveData();renderAgentAR();});
+  sec.querySelectorAll('[data-agent-ar-pay]').forEach(btn=>btn.addEventListener('click',()=>{
+    const reservationId=String(btn.getAttribute('data-agent-ar-pay')||'');
+    const row=rows.find(x=>String(x.r.id)===reservationId);
+    if(!row||row.balance<=0.009){alert('This Agent invoice has no outstanding balance.');return;}
+    if(typeof openPaymentModal!=='function'){alert('The existing payment form is unavailable.');return;}
+    openPaymentModal(reservationId);
+    const folioSelect=document.getElementById('paymentFolioType');
+    if(!folioSelect){alert('Agent Folio payment selection is unavailable.');return;}
+    folioSelect.value='agent';
+    updateDualFolioPaymentLimit(reservationId);
+    const typeSelect=document.getElementById('paymentType');
+    if(typeSelect)typeSelect.value='Folio Payment';
+  }));
+}
+
 function render(){
   const page=document.getElementById('accounting');if(!page)return;
+  renderAgentAR();
   let section=document.getElementById('travelAgentPayablesSection');
   if(!section){
     section=document.createElement('div');section.className='section';section.id='travelAgentPayablesSection';section.style.marginTop='14px';
@@ -29420,7 +29555,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         </div>
         <div style="margin-top:10px;font-size:12px;color:#475569">Combined allocated charges: ${moneyFmt(total)} · Service charge split: Guest ${moneyFmt(d.guestSC)} / Agent ${moneyFmt(d.agentSC)} · Tax split: Guest ${moneyFmt(d.guestTax)} / Agent ${moneyFmt(d.agentTax)}</div>
         ${paymentNote}
-        <div style="margin-top:8px;font-size:12px;color:#92400e"><strong>Payment allocation is recorded against the selected folio. Agent AR invoicing and separate GL receivable posting are not yet enabled; verify the accounting workflow before using Agent credit settlement.</div>`;
+        <div style="margin-top:8px;font-size:12px;color:#475569"><strong>Direct Bill agents:</strong> an Agent invoice is generated automatically at Guest checkout. Prepaid and Guest Pays at Hotel bookings are not invoiced to the agent.</div>`;
       host.appendChild(panel);
     }catch(e){console.warn('Dual folio preview could not render:',e);}
     return out;
