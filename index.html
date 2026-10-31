@@ -1550,7 +1550,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
 <div class="section-header"><div><h4>Travel Agents</h4><div style="font-size:12px;color:#6b7280">Manage property-specific travel agents and their commission terms.</div></div><button class="btn btn-secondary" onclick="addTravelAgent()" type="button">+ Add Travel Agent</button></div>
-<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Payment Mode</th><th>Credit Terms</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td class="empty" colspan="8">No travel agents configured.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Contact</th><th>Commission %</th><th>Calculation</th><th>Payment Mode</th><th>Credit Terms</th><th>Credit Limit</th><th>Current Outstanding</th><th>Available Credit</th><th>Active</th><th>Action</th></tr></thead><tbody id="travelAgentsTable"><tr><td class="empty" colspan="11">No travel agents configured.</td></tr></tbody></table></div>
 </div>
 <div class="section" style="margin-top:12px;background:#f8fafc">
 <div class="section-header"><div><h4>Channel Manager</h4><div style="font-size:12px;color:#6b7280">Connect this property to a channel manager. Provider-specific connection tools appear only when that provider is selected.</div></div><span class="badge badge-blue" id="channelManagerConnectionBadge">Not Connected</span></div>
@@ -7495,7 +7495,7 @@ function showReservationAgentPaymentNote(){
     if(!note)return;
     const sd=normalizeSalesDistribution(settings?.salesDistribution);
     const a=sel&&sel.value?sd.travelAgents.find(x=>String(x.id)===String(sel.value)):null;
-    const txt={prepaid:'Payment mode: Agent pays (prepaid). Guest should not be charged the room rate at checkout, only extras.',pay_at_hotel:'Payment mode: Guest pays at hotel. Collect at checkout; commission is payable to the agent.',direct_bill:'Payment mode: Direct bill. Invoice the agent'+(a&&a.creditTerms?' (credit terms: '+a.creditTerms+')':'')+'.'};
+    const txt={prepaid:'Payment mode: Agent pays (prepaid). Guest should not be charged the room rate at checkout, only extras.',pay_at_hotel:'Payment mode: Guest pays at hotel. Collect at checkout; commission is payable to the agent.',direct_bill:'Payment mode: Direct bill. Invoice the agent'+(a&&a.creditTerms?' (credit terms: '+a.creditTerms+', credit limit: '+(Number(a.creditLimit||0)>0?'LKR '+Number(a.creditLimit).toLocaleString():'unlimited')+')':'')+'.'};
     note.textContent=a?(txt[a.paymentMode]||'Payment mode not set for this agent (Settings > Travel Agents).'):'';
 }
 function toggleReservationAgentField(){
@@ -7528,6 +7528,7 @@ function normalizeSalesDistribution(value){
             calculation:x?.calculation==='deduct'?'deduct':'grossup',
             paymentMode:['prepaid','pay_at_hotel','direct_bill'].includes(x?.paymentMode)?x.paymentMode:'',
             creditTerms:String(x?.creditTerms||'').trim(),
+            creditLimit:Math.max(0,Number(x?.creditLimit||0)),
             active:x?.active!==false
         })).filter(x=>x.name),
         channelManager:{
@@ -7573,6 +7574,9 @@ function renderSalesDistribution(){
 <td><select onchange="updateAgentField('${x.id}','calculation',this.value)"><option value="grossup" ${x.calculation==='grossup'?'selected':''}>Gross-up</option><option value="deduct" ${x.calculation==='deduct'?'selected':''}>Deduct</option></select></td>
 <td><select onchange="updateAgentField('${x.id}','paymentMode',this.value)"><option value="" ${!x.paymentMode?'selected':''}>Not set</option><option value="prepaid" ${x.paymentMode==='prepaid'?'selected':''}>Agent pays (prepaid)</option><option value="pay_at_hotel" ${x.paymentMode==='pay_at_hotel'?'selected':''}>Guest pays at hotel</option><option value="direct_bill" ${x.paymentMode==='direct_bill'?'selected':''}>Direct bill to agent</option></select></td>
 <td><input value="${escapeHtml(x.creditTerms)}" onchange="updateAgentField('${x.id}','creditTerms',this.value)" placeholder="e.g. 30 days"/></td>
+<td><input type="number" min="0" step="0.01" value="${Number(x.creditLimit||0)}" onchange="updateAgentField('${x.id}','creditLimit',this.value)" placeholder="0 = no limit" style="width:120px"/></td>
+<td>${Number(travelAgentCreditExposure(x.id, '')).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+<td>${Number(x.creditLimit||0)>0?Math.max(0,Number(x.creditLimit)-travelAgentCreditExposure(x.id,'')).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'Unlimited'}</td>
 <td><input type="checkbox" ${x.active!==false?'checked':''} onchange="updateAgentField('${x.id}','active',this.checked)"/></td>
 <td><button class="btn btn-danger" type="button" onclick="removeTravelAgent('${x.id}')">Remove</button></td></tr>`).join(''):'<tr><td colspan="8" class="empty">No travel agents configured.</td></tr>';
     }
@@ -7600,9 +7604,9 @@ async function persistSalesDistributionToCloud(){
     }catch(e){console.warn('Sales & Distribution cloud save failed:',e?.message||e);return false;}
 }
 async function addOTAChannel(){if(!requireRole('Admin','Manager'))return; if(!settings)return; const name=prompt('OTA / Booking Channel name:','Booking.com');if(name===null||!name.trim())return; const sd=normalizeSalesDistribution(settings.salesDistribution); if(sd.otaChannels.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This OTA channel already exists for this property.');return;} sd.otaChannels.push({id:'ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),commission:15,calculation:'grossup',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
-async function updateOTAField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.otaChannels.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
+async function updateOTAField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.otaChannels.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='creditLimit')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
 async function removeOTAChannel(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this OTA channel from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.otaChannels=settings.salesDistribution.otaChannels.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
-async function addTravelAgent(){if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',paymentMode:'',creditTerms:'',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function addTravelAgent(){if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',paymentMode:'',creditTerms:'',creditLimit:0,active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 async function updateAgentField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.travelAgents.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
 async function removeTravelAgent(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this travel agent from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.travelAgents=settings.salesDistribution.travelAgents.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 
@@ -8279,6 +8283,24 @@ function reservationMinDate(){
     }catch(e){return localDateString();}
 }
 
+function travelAgentCreditExposure(agentId,excludeReservationId){
+    const pid=String(currentPropertyId||'');let total=0;
+    (Array.isArray(reservations)?reservations:[]).forEach(r=>{
+        if(String(r.propertyId||pid)!==pid||String(r.id)===String(excludeReservationId||''))return;
+        const aid=String(r.reservationTravelAgentId||r.travelAgentId||r.agentInvoice?.agentId||'');
+        if(aid!==String(agentId))return;
+        if(r.agentInvoice&&r.agentInvoice.invoiceNo){
+            total+=Math.max(0,Number(r.agentInvoice.balance??r.agentFolioOutstanding??0));
+            return;
+        }
+        if(['Cancelled','Checked-Out'].includes(String(r.status||'')))return;
+        try{
+            const d=typeof window.signatureGetDualFolioPreview==='function'?window.signatureGetDualFolioPreview(r):null;
+            if(d)total+=Math.max(0,Number(d.agent||0)-Number(d.agentPaid||0));
+        }catch(e){}
+    });
+    return Math.round(total*100)/100;
+}
 function saveReservation(){
 
     const requiredPermission=editingReservationId?"reservations.edit":"reservations.create";
@@ -8342,6 +8364,20 @@ function saveReservation(){
         rate=guestType==="foreign" ? Number(settings?.villaForeign||0) : Number(settings?.villaLocal||0);
     }
     const total=rate*nights;
+    const bookingChannel=String(document.getElementById("bookingChannel")?.value||'');
+    const selectedAgentId=String(document.getElementById("reservationTravelAgentId")?.value||'');
+    if(bookingChannel==='Travel Agent' && selectedAgentId){
+        const selectedAgent=normalizeSalesDistribution(settings?.salesDistribution).travelAgents.find(a=>String(a.id)===selectedAgentId);
+        if(selectedAgent && selectedAgent.paymentMode==='direct_bill' && Number(selectedAgent.creditLimit||0)>0){
+            const exposure=travelAgentCreditExposure(selectedAgentId,editingReservationId);
+            const proposed=Math.max(0,Number(total||0));
+            const limit=Number(selectedAgent.creditLimit||0);
+            if(exposure+proposed>limit+0.009){
+                error.textContent='Credit limit exceeded for '+selectedAgent.name+'. Current outstanding: '+exposure.toFixed(2)+', booking amount: '+proposed.toFixed(2)+', credit limit: '+limit.toFixed(2)+'. Reduce the amount or collect payment before creating this Direct Bill booking.';
+                return;
+            }
+        }
+    }
 
     if(deposit>total){
         error.textContent="Deposit cannot be greater than the reservation total.";
@@ -12905,7 +12941,8 @@ function renderDashboard(){
     window.__gmPeriod=window.__gmPeriod||"today";
     const kind=window.__gmPeriod, ps=periodStart(kind), pe=periodEnd(kind);
     const days=[];for(let d=new Date(ps+"T00:00:00");d<=new Date(pe+"T00:00:00");d.setDate(d.getDate()+1))days.push(localDateString(new Date(d)));
-    const periodRooms=days.reduce((s,d)=>s+actualRoomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+occupiedForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0),periodPackageFnb=days.reduce((s,d)=>s+packageFnbRevenueForDate(d)+packageExperienceRevenueForDate(d),0);
+    const actualOccupiedRoomNightsForDate=d=>Math.min(roomCount,recognizedRoomRes.filter(r=>overlaps(r,d)).length+(recognizedVillaRes.some(r=>overlaps(r,d))?roomCount:0));
+    const periodRooms=days.reduce((s,d)=>s+actualRoomRevenueForDate(d),0),periodOccNights=days.reduce((s,d)=>s+actualOccupiedRoomNightsForDate(d),0),periodAvailable=roomCount*days.length,periodOccPct=periodAvailable?Math.round(periodOccNights/periodAvailable*100):0,periodAdr=periodOccNights?periodRooms/periodOccNights:0,periodRevpar=periodAvailable?periodRooms/periodAvailable:0,periodFnb=days.reduce((s,d)=>s+restaurantForDate(d),0),periodPackageFnb=days.reduce((s,d)=>s+packageFnbRevenueForDate(d)+packageExperienceRevenueForDate(d),0);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
     // Dashboard GOP uses only this property's posted Expense-account journal debits
     // for the active dashboard period. Legacy expense-register rows are included
