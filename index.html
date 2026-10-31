@@ -10198,13 +10198,21 @@ function openPaymentModal(reservationId){
         <div style="font-size:12px;color:#6b7280">
 
             ${escapeHtml(r.bookingNo)}
-            · Balance ${money(balance)}
-            · <strong>${accMoney(balance)}</strong> payable in LKR
+            · <span id="paymentSelectedFolioSummary">Guest Folio balance ${accMoney(balance)}</span>
 
         </div>
 
     </div>
 
+
+    <div class="form-group" style="margin-top:12px">
+        <label>Payment To Folio</label>
+        <select id="paymentFolioType" onchange="updateDualFolioPaymentLimit('${reservationId}')">
+            <option value="guest">Guest Folio</option>
+            <option value="agent">Travel Agent Folio</option>
+        </select>
+        <small id="paymentFolioBalanceHint" style="color:#64748b">Select the folio receiving this payment.</small>
+    </div>
 
     <div class="form-grid" style="margin-top:15px">
 
@@ -10267,7 +10275,7 @@ function openPaymentModal(reservationId){
                    oninput="updatePaymentAmountLKRValue()">
             <div id="paymentFxRate" style="font-size:11px;color:#6b7280;margin-top:5px"></div>
             <div id="paymentLkrEquivalent" style="font-size:12px;font-weight:600;margin-top:4px"></div>
-            <div style="font-size:11px;color:#6b7280;margin-top:4px">Folio balance: ${accMoney(balance)} (LKR base value)</div>
+            <div id="paymentSelectedFolioBalance" style="font-size:11px;color:#6b7280;margin-top:4px">Selected Folio balance: ${accMoney(balance)} (LKR base value)</div>
 
         </div>
 
@@ -10394,9 +10402,51 @@ function openPaymentModal(reservationId){
     document.getElementById("paymentModal")
         .classList.add("show");
     updatePaymentCurrencyDisplay();
+    if(r.folioRoutingSnapshot && typeof window.signatureGetDualFolioPreview==='function'){
+        const dual=window.signatureGetDualFolioPreview(r);
+        const guestDue=Math.max(0,dual.guest-dual.guestPaid);
+        const amountInput=document.getElementById('paymentAmount');
+        if(amountInput){
+            const cur=String(document.getElementById('paymentCurrency')?.value||'LKR').toUpperCase();
+            const rate=paymentRateToLKR(cur);
+            amountInput.value=(rate>0?guestDue/rate:guestDue).toFixed(4);
+            amountInput.dataset.lkrValue=guestDue.toFixed(2);
+        }
+        updateDualFolioPaymentLimit(reservationId);
+    } else {
+        const selector=document.getElementById('paymentFolioType'); if(selector) selector.closest('.form-group').style.display='none';
+    }
 
 }
 
+
+function updateDualFolioPaymentLimit(reservationId){
+    const r=reservations.find(x=>String(x.id)===String(reservationId));
+    const sel=document.getElementById('paymentFolioType');
+    const hint=document.getElementById('paymentFolioBalanceHint');
+    const input=document.getElementById('paymentAmount');
+    if(!r||!sel||!hint||!input||!r.folioRoutingSnapshot||typeof window.signatureGetDualFolioPreview!=='function') return;
+    const d=window.signatureGetDualFolioPreview(r);
+    const agent=sel.value==='agent';
+    const folioName=agent?'Agent':'Guest';
+    const due=Math.max(0,(agent?d.agent-d.agentPaid:d.guest-d.guestPaid));
+    const cur=String(document.getElementById('paymentCurrency')?.value||'LKR').toUpperCase();
+    const rate=paymentRateToLKR(cur);
+    const payable=rate>0?due/rate:due;
+    hint.textContent=folioName+' Folio outstanding: '+money(due)+' (LKR base).';
+    input.max=payable.toFixed(4);
+    // Changing the target folio resets the default amount to that folio's own
+    // outstanding balance; never carry the whole-reservation balance across.
+    input.value=payable.toFixed(4);
+    input.dataset.lkrValue=due.toFixed(2);
+    input.dataset.lastRate=String(rate);
+    const summary=document.getElementById('paymentSelectedFolioSummary');
+    if(summary) summary.textContent=folioName+' Folio balance '+accMoney(due)+' payable in LKR';
+    const balanceLine=document.getElementById('paymentSelectedFolioBalance');
+    if(balanceLine) balanceLine.textContent='Selected '+folioName+' Folio balance: '+accMoney(due)+' (LKR base value)';
+    const eq=document.getElementById('paymentLkrEquivalent');
+    if(eq) eq.textContent='LKR Equivalent: '+accMoney(due);
+}
 
 function toggleCardFields(){
 
@@ -10456,9 +10506,14 @@ function savePayment(reservationId){
     const reservationRate=reservationSettlementRate(reservation);
     const amount=reservationRate>0 ? settlementAmountLKR/reservationRate : settlementAmountLKR;
     const balance=getBalance(reservationId);
-    // getBalance() is the folio outstanding balance in the PMS base currency (LKR).
-    // Do not convert it again using the reservation's guest-currency rate.
-    const balanceLKR=Number(balance||0);
+    // Dual-folio reservations validate a payment against its selected billing window.
+    // Legacy reservations retain the original single-folio balance validation.
+    const selectedFolio=String(document.getElementById('paymentFolioType')?.value||'guest').toLowerCase()==='agent'?'agent':'guest';
+    let balanceLKR=Number(balance||0);
+    if(reservation?.folioRoutingSnapshot && typeof window.signatureGetDualFolioPreview==='function'){
+        const dual=window.signatureGetDualFolioPreview(reservation);
+        balanceLKR=Math.max(0,(selectedFolio==='agent'?dual.agent-dual.agentPaid:dual.guest-dual.guestPaid));
+    }
 
     if(foreignAmount<=0){
         error.textContent="Enter a valid payment amount.";
@@ -10541,6 +10596,7 @@ function savePayment(reservationId){
             .toString(36).slice(2,6),
 
         reservationId,
+        folioType:reservation?.folioRoutingSnapshot?selectedFolio:null,
 
         date:localDateTime(),
 
@@ -10915,63 +10971,34 @@ function renderCheckOut(){
 
 
 function checkOutReservation(id){
-
     if(!requireActionPermission("reservations.checkout")) return;
-
-
-    const r=
-        reservations.find(
-            x=>x.id===id
-        );
-
-    if(!r)
-        return;
-
-
-    const balance=
-        getBalance(id);
-
-
-    if(balance>0){
-
-        const proceed=confirm(
-            "There is an outstanding balance of "+
-            money(balance)+
-            ".\n\nContinue check-out?"
-        );
-
-        if(!proceed)
-            return;
-
+    const r=reservations.find(x=>x.id===id);
+    if(!r) return;
+    let balance=getBalance(id);
+    if(r.folioRoutingSnapshot && typeof window.signatureGetDualFolioPreview==='function'){
+        const dual=window.signatureGetDualFolioPreview(r);
+        balance=Math.max(0,dual.guest-dual.guestPaid);
     }
-
-
+    if(balance>0){
+        const proceed=confirm("There is an outstanding Guest Folio balance of "+money(balance)+".\n\nContinue guest check-out? The Travel Agent Folio will remain open and is not transferred to the guest.");
+        if(!proceed) return;
+    }
     r.status="Checked-Out";
     r.actualCheckOut=localDateTime();
-
-    // A checked-out guest room must return to Dirty so Housekeeping can clean
-    // and inspect it before the room becomes available again.
     if(r.roomId!==undefined && r.roomId!==null && String(r.roomId)!==""){
         const room=getRoomOperationalConfig(r.roomId);
         if(room && room.housekeepingStatus!=="oos") room.housekeepingStatus="dirty";
     }
-
+    if(r.folioRoutingSnapshot){
+        r.agentFolioStatus="Open";
+        r.agentFolioOutstanding=Math.max(0,(window.signatureGetDualFolioPreview(r).agent||0)-window.signatureGetDualFolioPreview(r).agentPaid);
+    }
     saveData();
-    // Front Office state is derived from the reservation lifecycle.
-    // Persist the status change to the existing Supabase reservation record.
     syncReservationToSupabase(r);
-
     renderAll();
-
-
     logAudit("CHECK_OUT",r.bookingNo,"Guest checked out: "+r.guestName,r.propertyId||currentPropertyId);
-    alert(
-        r.guestName+
-        " checked out successfully."
-    );
-
+    alert(r.guestName+" checked out successfully."+(r.folioRoutingSnapshot?"\nTravel Agent Folio remains open for separate settlement.":""));
 }
-
 
 /* =========================================================
    CANCEL
@@ -15813,10 +15840,12 @@ function arGuestLedgerRows(asOf){
   const out=[];
   accProp(reservations||[]).forEach(r=>{
     const status=String(r.status||'').trim().toLowerCase().replace(/[ _]+/g,'-');
-    // AR represents posted/earned guest folio balances, not the value of a future
-    // or unoccupied reservation. Reservation accommodation is prefilled in the
-    // folio for quoting, so only checked-in/out stays qualify as guest receivables.
-    if(!['checked-in','checked-out'].includes(status)) return;
+    // In-house balances remain operational Guest Folio balances. Guest AR is
+    // reserved for checked-out stays only; this prevents an occupied guest's
+    // running folio from appearing as an overdue receivable before departure.
+    // Travel Agent Direct Bill balances are handled separately by the Agent
+    // Folio / Agent AR workflow and must not be mixed into this Guest AR ledger.
+    if(status!=='checked-out') return;
     if(r.cityLedgerAccountId) return;
     const ci=String(r.checkIn||r.date||'').slice(0,10), co=String(r.checkOut||'').slice(0,10);
     if(ci && ci>asOf) return;
@@ -16461,21 +16490,85 @@ window.printARAgeingReport=printARAgeingReport;
 
 /* Folio printing */
 window.printGuestFolio=function(reservationId){
-  const r=reservations.find(x=>x.id===reservationId); if(!r){alert("Folio not found.");return;}
+  const r=reservations.find(x=>String(x.id)===String(reservationId)); if(!r){alert("Folio not found.");return;}
   const f=getFolio(reservationId)||{};
-  const pays=payments.filter(p=>p.reservationId===reservationId);
-  const total=getFolioTotal(reservationId), paid=getPaymentsTotal(reservationId), bal=Math.max(0,total-paid);
+  const allPays=payments.filter(p=>String(p.reservationId)===String(reservationId));
   const guest=r.guestName||r.guest||"Guest";
+  let total=getFolioTotal(reservationId), paid=getPaymentsTotal(reservationId), bal=Math.max(0,total-paid);
+  let rows, pays=allPays;
+  // Dual-folio bookings must print only the Guest Folio, never the combined
+  // Guest + Travel Agent balance. Legacy single-folio printing is unchanged.
+  if(r.folioRoutingSnapshot && typeof window.signatureGetDualFolioPreview==="function"){
+    const d=window.signatureGetDualFolioPreview(r);
+    const snap=r.folioRoutingSnapshot||{}, payer=snap.payer||{};
+    const isGuest=k=>String(payer[k]||"guest").toLowerCase()!=="agent";
+    const accommodation=typeof reservationAmountLKR==="function"?Number(reservationAmountLKR(r,Number(r.total||0))):Number(r.total||0);
+    const restaurant=typeof folioRestaurantLKR==="function"?Number(folioRestaurantLKR(r.id)):Number(f.restaurant||0);
+    const extras=Number(f.extras||0), discount=Number(f.discounts||0);
+    const baseGuest=(isGuest("room")?accommodation:0)+(isGuest("restaurant")?restaurant:0)+(isGuest("otherPos")?extras:0);
+    const baseTotal=accommodation+restaurant+extras;
+    const guestShare=baseTotal>0?baseGuest/baseTotal:1;
+    rows=[
+      ["Accommodation",isGuest("room")?accommodation:0],
+      ["Restaurant",isGuest("restaurant")?restaurant:0],
+      ["Extras",isGuest("otherPos")?extras:0],
+      ["Service Charges",Number(d.guestSC||0)],
+      ["Taxes",Number(d.guestTax||0)],
+      ["Discounts",-discount*guestShare]
+    ].filter(x=>Math.abs(x[1])>0.0001);
+    total=Number(d.guest||0);
+    paid=Number(d.guestPaid||0);
+    bal=Math.max(0,total-paid);
+    pays=allPays.filter(p=>String(p.folioType||p.folio||p.payer||"").toLowerCase().includes("guest") && paymentIsReceived(p));
+  } else {
+    rows=[
+      ["Accommodation",Number(r.total||r.totalAmount||0)],
+      ["Restaurant",Number(f.restaurant||0)],
+      ["Extras",Number(f.extras||0)],
+      ["Service Charges",Number(f.serviceCharges||0)],
+      ["Taxes",Number(f.taxes||0)],
+      ["Discounts",-Number(f.discounts||0)]
+    ].filter(x=>x[1]!==0);
+  }
+  const payRows=pays.map(p=>`<tr><td>${datePart(p.date)}</td><td>${escapeHtml(p.reference||"")}</td><td>${escapeHtml(p.method||"")}</td><td class="right">${accMoney(paymentAmountLKR(p,r))}</td></tr>`).join("");
+  const bookingRef=r.bookingNo||r.confirmationNumber||r.bookingId||r.id||"";
+  reportShell("Guest Folio",`<h2>${escapeHtml(guest)}</h2><p>Booking: ${escapeHtml(bookingRef)} &nbsp; Room: ${escapeHtml(r.roomNumber||r.room||"")} &nbsp; Check-in: ${escapeHtml(r.checkIn||"")} &nbsp; Check-out: ${escapeHtml(r.checkOut||"")}</p><table><thead><tr><th>Charge</th><th>Amount</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x[0])}</td><td class="right">${accMoney(x[1])}</td></tr>`).join("")}</tbody><tfoot><tr class="total"><td>Total</td><td class="right">${accMoney(total)}</td></tr><tr><td>Paid</td><td class="right">${accMoney(paid)}</td></tr><tr class="total"><td>Balance</td><td class="right">${accMoney(bal)}</td></tr></tfoot></table><h2>Payments</h2><table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows||"<tr><td colspan='4'>No Guest Folio payments</td></tr>"}</tbody></table>`);
+};
+
+/* Travel Agent folio statement — separate from the Guest Folio.
+   This is a statement only; Agent AR invoicing / GL receivable posting are not enabled. */
+window.printAgentFolio=function(reservationId){
+  const r=(reservations||[]).find(x=>String(x.id)===String(reservationId));
+  if(!r){alert("Folio not found.");return;}
+  if(!r.folioRoutingSnapshot || typeof window.signatureGetDualFolioPreview!=="function"){
+    alert("This reservation does not have Guest / Travel Agent folio routing.");
+    return;
+  }
+  const d=window.signatureGetDualFolioPreview(r);
+  const f=getFolio(reservationId)||{};
+  const snap=r.folioRoutingSnapshot||{}, payer=snap.payer||{};
+  const isAgent=k=>String(payer[k]||"guest").toLowerCase()==="agent";
+  const accommodation=typeof reservationAmountLKR==="function"?Number(reservationAmountLKR(r,Number(r.total||0))):Number(r.total||0);
+  const restaurant=typeof folioRestaurantLKR==="function"?Number(folioRestaurantLKR(r.id)):Number(f.restaurant||0);
+  const extras=Number(f.extras||0), discount=Number(f.discounts||0);
+  const baseAgent=(isAgent("room")?accommodation:0)+(isAgent("restaurant")?restaurant:0)+(isAgent("otherPos")?extras:0);
+  const baseTotal=accommodation+restaurant+extras;
+  const agentShare=baseTotal>0?baseAgent/baseTotal:0;
   const rows=[
-    ["Accommodation",Number(r.total||r.totalAmount||0)],
-    ["Restaurant",Number(f.restaurant||0)],
-    ["Extras",Number(f.extras||0)],
-    ["Service Charges",Number(f.serviceCharges||0)],
-    ["Taxes",Number(f.taxes||0)],
-    ["Discounts",-Number(f.discounts||0)]
-  ].filter(x=>x[1]!==0);
-  const payRows=pays.map(p=>`<tr><td>${datePart(p.date)}</td><td>${escapeHtml(p.reference||"")}</td><td>${escapeHtml(p.method||"")}</td><td class="right">${accMoney(p.amount)}</td></tr>`).join("");
-  reportShell("Guest Folio",`<h2>${escapeHtml(guest)}</h2><p>Booking: ${escapeHtml(r.bookingId||r.id||"")} &nbsp; Room: ${escapeHtml(r.roomNumber||r.room||"")} &nbsp; Check-in: ${escapeHtml(r.checkIn||"")} &nbsp; Check-out: ${escapeHtml(r.checkOut||"")}</p><table><thead><tr><th>Charge</th><th>Amount</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x[0])}</td><td class="right">${accMoney(x[1])}</td></tr>`).join("")}</tbody><tfoot><tr class="total"><td>Total</td><td class="right">${accMoney(total)}</td></tr><tr><td>Paid</td><td class="right">${accMoney(paid)}</td></tr><tr class="total"><td>Balance</td><td class="right">${accMoney(bal)}</td></tr></tfoot></table><h2>Payments</h2><table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows||"<tr><td colspan='4'>No payments</td></tr>"}</tbody></table>`);
+    ["Accommodation",isAgent("room")?accommodation:0],
+    ["Restaurant",isAgent("restaurant")?restaurant:0],
+    ["Extras",isAgent("otherPos")?extras:0],
+    ["Service Charges",Number(d.agentSC||0)],
+    ["Taxes",Number(d.agentTax||0)],
+    ["Discounts",-discount*agentShare]
+  ].filter(x=>Math.abs(x[1])>0.0001);
+  const total=Number(d.agent||0), paid=Number(d.agentPaid||0), balance=Math.max(0,total-paid);
+  const agentPays=(payments||[]).filter(p=>String(p.reservationId)===String(reservationId)
+    && String(p.folioType||p.folio||p.payer||"").toLowerCase().includes("agent")
+    && paymentIsReceived(p));
+  const payRows=agentPays.map(p=>`<tr><td>${datePart(p.date)}</td><td>${escapeHtml(p.reference||"")}</td><td>${escapeHtml(p.method||"")}</td><td class="right">${accMoney(paymentAmountLKR(p,r))}</td></tr>`).join("");
+  const bookingRef=r.bookingNo||r.confirmationNumber||r.bookingId||r.id||"";
+  reportShell("Travel Agent Folio Statement",`<h2>${escapeHtml(r.travelAgentName||r.agentName||r.travelAgent||"Travel Agent")}</h2><p>Booking: ${escapeHtml(bookingRef)} &nbsp; Guest: ${escapeHtml(r.guestName||r.guest||"Guest")} &nbsp; Room: ${escapeHtml(r.roomNumber||r.room||"")} &nbsp; Check-in: ${escapeHtml(r.checkIn||"")} &nbsp; Check-out: ${escapeHtml(r.checkOut||"")}</p><table><thead><tr><th>Charge</th><th>Amount</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x[0])}</td><td class="right">${accMoney(x[1])}</td></tr>`).join("")}</tbody><tfoot><tr class="total"><td>Agent Folio Total</td><td class="right">${accMoney(total)}</td></tr><tr><td>Payments Received</td><td class="right">${accMoney(paid)}</td></tr><tr class="total"><td>Outstanding Balance</td><td class="right">${accMoney(balance)}</td></tr></tfoot></table><h2>Agent Payments</h2><table><thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows||"<tr><td colspan='4'>No Agent Folio payments</td></tr>"}</tbody></table><p><strong>Statement only:</strong> Agent AR invoicing and separate GL receivable posting are not enabled in this PMS version.</p>`);
 };
 
 /* Guest invoice sharing: keep PDF generation in the existing print layout and use a
@@ -16528,7 +16621,9 @@ document.addEventListener("click",function(ev){
       const onclick=btn.getAttribute("onclick")||"";
       const m=onclick.match(/viewFolio\(['"]([^'"]+)['"]\)/);
       if(!m) return;
-      content.insertAdjacentHTML("afterbegin",`<div class="folio-print-extension no-print" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn btn-primary btn-small" onclick="printGuestFolio('${m[1]}')">Print / Save Folio PDF</button><button class="btn btn-secondary btn-small" onclick="shareGuestInvoiceWhatsApp('${m[1]}')">Send Invoice on WhatsApp</button><button class="btn btn-secondary btn-small" onclick="emailGuestInvoiceDirect('${m[1]}')">Email Invoice (PDF)</button></div>`);
+      const rr=(reservations||[]).find(x=>String(x.id)===String(m[1]));
+      const agentPrint=rr?.folioRoutingSnapshot?`<button class="btn btn-secondary btn-small" onclick="printAgentFolio('${m[1]}')">Print Agent Folio Statement</button>`:"";
+      content.insertAdjacentHTML("afterbegin",`<div class="folio-print-extension no-print" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn btn-primary btn-small" onclick="printGuestFolio('${m[1]}')">Print Guest Folio PDF</button>${agentPrint}<button class="btn btn-secondary btn-small" onclick="shareGuestInvoiceWhatsApp('${m[1]}')">Send Invoice on WhatsApp</button><button class="btn btn-secondary btn-small" onclick="emailGuestInvoiceDirect('${m[1]}')">Email Invoice (PDF)</button></div>`);
     },50);
   }
 });
@@ -29110,4 +29205,226 @@ function boot(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
+<script>
 
+/* Signature PMS — Reservation Folio Routing UI (Phase 1)
+   Adds booking-level payer routing snapshots without changing legacy folio posting. */
+(function(){
+  const ROUTE_FIELDS = [
+    ["room","Room / Accommodation"],
+    ["breakfast","Breakfast"],
+    ["restaurant","Restaurant / Meals"],
+    ["otherPos","Other POS / Extras"]
+  ];
+  const esc = v => (typeof escapeHtml==="function" ? escapeHtml(String(v??"")) : String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])));
+  function getSelectedAgent(){
+    const id=document.getElementById("reservationTravelAgentId")?.value||"";
+    const sd=typeof normalizeSalesDistribution==="function" ? normalizeSalesDistribution(settings?.salesDistribution) : {travelAgents:[]};
+    return (sd.travelAgents||[]).find(a=>String(a.id)===String(id))||null;
+  }
+  function defaultRouting(){
+    const channel=document.getElementById("bookingChannel")?.value||"Direct";
+    const meal=(document.getElementById("mealPlan")?.value||"RO").toUpperCase();
+    const agent=getSelectedAgent();
+    const mode=agent?.paymentMode||"";
+    const agentPaysRoom=channel==="Travel Agent" && (mode==="prepaid"||mode==="direct_bill");
+    const includedMeals={RO:[],BB:["breakfast"],HB:["breakfast","dinner"],FB:["breakfast","lunch","dinner"],AI:["breakfast","lunch","dinner","other"]}[meal]||[];
+    const agentPaysMeals=channel==="Travel Agent" && meal!=="RO" && (mode==="prepaid"||mode==="direct_bill");
+    return {
+      room:agentPaysRoom?"agent":"guest",
+      breakfast:agentPaysMeals && includedMeals.includes("breakfast")?"agent":"guest",
+      restaurant:agentPaysMeals && (includedMeals.includes("lunch")||includedMeals.includes("dinner"))?"agent":"guest",
+      otherPos:"guest"
+    };
+  }
+  function ensurePanel(){
+    const modal=document.getElementById("reservationModal");
+    const summary=modal?.querySelector(".summary-box");
+    if(!summary || document.getElementById("reservationFolioRoutingPanel")) return;
+    const panel=document.createElement("section");
+    panel.id="reservationFolioRoutingPanel";
+    panel.style.cssText="margin-top:16px;padding:14px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc";
+    panel.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h4 style="margin:0 0 4px">Billing & Folio Routing</h4><small style="color:#64748b">Set who is responsible for each charge. These rules are saved with this reservation.</small></div>
+        <span id="reservationRoutingStatus" style="font-size:11px;color:#475569">Booking-level rules</span>
+      </div>
+      <div class="form-grid" style="margin-top:12px">
+        <div class="form-group"><label>Voucher / Agent Reference</label><input id="reservationVoucherNumber" placeholder="Voucher number (if applicable)"></div>
+        <div class="form-group"><label>Agent Billing Reference</label><input id="reservationAgentBillingReference" placeholder="Agent invoice / billing reference"></div>
+      </div>
+      <div style="overflow-x:auto;margin-top:8px">
+        <table style="width:100%;border-collapse:collapse;background:#fff">
+          <thead><tr style="text-align:left;border-bottom:1px solid #cbd5e1"><th style="padding:9px">Charge Type</th><th style="padding:9px">Responsible Folio</th><th style="padding:9px">Voucher Included</th></tr></thead>
+          <tbody>
+            ${ROUTE_FIELDS.map(([key,label])=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px;font-weight:600">${label}</td><td style="padding:8px"><select id="route_${key}" style="min-width:145px" onchange="refreshReservationFolioRoutingPreview()"><option value="guest">Guest Folio</option><option value="agent">Agent Folio</option></select></td><td style="padding:8px"><input id="included_${key}" type="checkbox" onchange="refreshReservationFolioRoutingPreview()"></td></tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div id="reservationFolioRoutingPreview" style="margin-top:10px;padding:10px;border-radius:7px;background:#fff;font-size:12px;color:#334155"></div>
+      <small style="display:block;margin-top:8px;color:#64748b">This Phase 1 change stores routing instructions on the booking. Existing folio posting, tax and accounting workflows are not altered by this form update.</small>`;
+    summary.before(panel);
+  }
+  window.refreshReservationFolioRoutingPreview=function(){
+    const rows=ROUTE_FIELDS.map(([k,label])=>{
+      const payer=document.getElementById("route_"+k)?.value==="agent"?"Agent Folio":"Guest Folio";
+      const included=document.getElementById("included_"+k)?.checked;
+      return `<div style="display:flex;justify-content:space-between;gap:12px;margin:3px 0"><span>${label}${included?" · Voucher included":""}</span><strong>${payer}</strong></div>`;
+    }).join("");
+    const el=document.getElementById("reservationFolioRoutingPreview");
+    if(el) el.innerHTML=rows;
+  };
+  function setRoutingFromReservation(r){
+    ensurePanel();
+    const defaults=defaultRouting();
+    const saved=r?.folioRoutingSnapshot||r?.folioRouting||null;
+    const payer=saved?.payer||saved||defaults;
+    const included=saved?.voucherIncluded||{};
+    for(const [key] of ROUTE_FIELDS){
+      const sel=document.getElementById("route_"+key), chk=document.getElementById("included_"+key);
+      if(sel) sel.value=(payer[key]==="agent"?"agent":"guest");
+      if(chk) chk.checked=!!included[key];
+    }
+    const voucher=document.getElementById("reservationVoucherNumber");
+    const ref=document.getElementById("reservationAgentBillingReference");
+    if(voucher) voucher.value=r?.voucherNumber||saved?.voucherNumber||"";
+    if(ref) ref.value=r?.agentBillingReference||saved?.agentBillingReference||"";
+    refreshReservationFolioRoutingPreview();
+  }
+  function makeSnapshot(r){
+    const payer={}, voucherIncluded={};
+    for(const [key] of ROUTE_FIELDS){
+      payer[key]=document.getElementById("route_"+key)?.value==="agent"?"agent":"guest";
+      voucherIncluded[key]=!!document.getElementById("included_"+key)?.checked;
+    }
+    const agent=getSelectedAgent();
+    return {
+      schemaVersion:1,
+      capturedAt:typeof localDateTime==="function"?localDateTime():new Date().toISOString(),
+      propertyId:r.propertyId||currentPropertyId||null,
+      bookingSource:document.getElementById("bookingSource")?.value||r.bookingSource||"Direct",
+      bookingChannel:document.getElementById("bookingChannel")?.value||r.bookingChannel||"Direct",
+      travelAgentId:agent?.id||r.travelAgentId||"",
+      travelAgentName:agent?.name||r.travelAgentName||"",
+      agentPaymentMode:agent?.paymentMode||"",
+      mealPlan:r.mealPlan||document.getElementById("mealPlan")?.value||"RO",
+      voucherNumber:document.getElementById("reservationVoucherNumber")?.value?.trim()||"",
+      agentBillingReference:document.getElementById("reservationAgentBillingReference")?.value?.trim()||"",
+      payer,
+      voucherIncluded
+    };
+  }
+  const priorOpen=window.openReservationModal;
+  if(typeof priorOpen==="function"){
+    window.openReservationModal=function(...args){
+      const result=priorOpen.apply(this,args);
+      const id=args.length>=3?args[2]:(args[0]&&reservations.some(x=>String(x.id)===String(args[0]))?args[0]:null);
+      const r=id?reservations.find(x=>String(x.id)===String(id)):null;
+      ensurePanel();
+      setRoutingFromReservation(r);
+      return result;
+    };
+  }
+  const priorSave=window.saveReservation;
+  if(typeof priorSave==="function"){
+    window.saveReservation=function(...args){
+      const editId=typeof editingReservationId!=="undefined"?editingReservationId:null;
+      const count=reservations.length;
+      const result=priorSave.apply(this,args);
+      const savedId=editId||(reservations.length>count?reservations[reservations.length-1]?.id:null);
+      const modal=document.getElementById("reservationModal");
+      const r=savedId?reservations.find(x=>String(x.id)===String(savedId)):null;
+      if(r && modal && !modal.classList.contains("show")){
+        r.folioRoutingSnapshot=makeSnapshot(r);
+        r.voucherNumber=r.folioRoutingSnapshot.voucherNumber;
+        r.agentBillingReference=r.folioRoutingSnapshot.agentBillingReference;
+        if(typeof saveData==="function") saveData();
+        if(typeof syncReservationToSupabase==="function"){
+          Promise.resolve().then(()=>syncReservationToSupabase(r)).catch(err=>console.warn("Reservation folio-routing snapshot sync failed:",err));
+        }
+      }
+      return result;
+    };
+  }
+  document.addEventListener("change",function(ev){
+    if(["bookingChannel","mealPlan","reservationTravelAgentId"].includes(ev.target?.id)){
+      const r=typeof editingReservationId!=="undefined"&&editingReservationId?reservations.find(x=>String(x.id)===String(editingReservationId)):null;
+      if(!r?.folioRoutingSnapshot) setRoutingFromReservation(r);
+      else refreshReservationFolioRoutingPreview();
+    }
+  });
+  // Re-apply once the original reservation UI has been constructed.
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",ensurePanel);
+  else ensurePanel();
+})();
+
+</script>
+
+
+
+<script>
+/* OPERA-style dual-folio allocation with tagged payment capture and guest-only checkout.
+   Revenue recognition and GL posting remain on the existing PMS accounting workflow. */
+(function(){
+  if(window.__signatureFolioSplitPreviewInstalled) return;
+  window.__signatureFolioSplitPreviewInstalled=true;
+  const num=v=>Number(v||0)||0;
+  const moneyFmt=v=>typeof money==='function'?money(v):('LKR '+num(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}));
+  function splitFor(r){
+    const f=typeof getFolio==='function'?(getFolio(r.id)||{}):{};
+    const snap=r.folioRoutingSnapshot||{};
+    const payer=snap.payer||{};
+    const route=(k,def='guest')=>String(payer[k]||def).toLowerCase()==='agent'?'agent':'guest';
+    const accommodation=typeof reservationAmountLKR==='function'?num(reservationAmountLKR(r,num(r.total))):num(r.total);
+    const restaurant=typeof folioRestaurantLKR==='function'?num(folioRestaurantLKR(r.id)):num(f.restaurant);
+    const extras=num(f.extras);
+    const discount=num(f.discounts);
+    const sc=num(f.serviceCharges), tax=num(f.taxes);
+    // Reservation routing snapshot keys are: room, breakfast, restaurant, otherPos.
+    // In this PMS the BB breakfast is already included in the accommodation amount,
+    // so route the combined accommodation amount using the room payer exactly once.
+    const baseGuest=(route('room')==='guest'?accommodation:0)+(route('restaurant')==='guest'?restaurant:0)+(route('otherPos')==='guest'?extras:0);
+    const baseAgent=(route('room')==='agent'?accommodation:0)+(route('restaurant')==='agent'?restaurant:0)+(route('otherPos')==='agent'?extras:0);
+    const base=baseGuest+baseAgent;
+    const share=base>0?baseGuest/base:1;
+    const guestSC=sc*share, agentSC=sc-guestSC, guestTax=tax*share, agentTax=tax-guestTax;
+    const guestDiscount=discount*share, agentDiscount=discount-guestDiscount;
+    const guest=baseGuest+guestSC+guestTax-guestDiscount;
+    const agent=baseAgent+agentSC+agentTax-agentDiscount;
+    const assigned=(payments||[]).filter(x=>String(x.reservationId)===String(r.id)&&paymentIsReceived(x));
+    const guestPaid=assigned.filter(x=>String(x.folioType||x.folio||x.payer||'').toLowerCase().includes('guest')).reduce((a,x)=>a+num(paymentAmountLKR(x,r)),0);
+    const agentPaid=assigned.filter(x=>String(x.folioType||x.folio||x.payer||'').toLowerCase().includes('agent')).reduce((a,x)=>a+num(paymentAmountLKR(x,r)),0);
+    const unallocated=assigned.filter(x=>!/(guest|agent)/i.test(String(x.folioType||x.folio||x.payer||''))).reduce((a,x)=>a+num(paymentAmountLKR(x,r)),0);
+    return {guest,agent,guestPaid,agentPaid,unallocated,guestSC,agentSC,guestTax,agentTax,route};
+  }
+  const original=window.viewFolio;
+  if(typeof original!=='function') return;
+  window.viewFolio=function(id){
+    const out=original.apply(this,arguments);
+    try{
+      const r=(reservations||[]).find(x=>String(x.id)===String(id));
+      const host=document.getElementById('folioModalContent');
+      if(!r||!host) return out;
+      const d=splitFor(r);
+      const total=d.guest+d.agent;
+      const paymentNote=d.unallocated>0
+        ? `<div style="margin-top:8px;color:#92400e">Existing payments not tagged to a folio: <strong>${moneyFmt(d.unallocated)}</strong>. They are deliberately not assigned automatically.</div>`
+        : '';
+      const panel=document.createElement('section');
+      panel.className='signature-dual-folio-preview';
+      panel.style.cssText='margin:14px 0;padding:14px;border:1px solid #94a3b8;border-radius:10px;background:#f8fafc;color:#0f172a';
+      panel.innerHTML=`<h3 style="margin:0 0 10px">Folio Routing — Guest / Travel Agent</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+          <div style="padding:12px;background:white;border:1px solid #cbd5e1;border-radius:8px"><strong>Guest Folio</strong><div style="font-size:20px;font-weight:700;margin:6px 0">${moneyFmt(d.guest)}</div><div>Tagged payments: ${moneyFmt(d.guestPaid)}</div><div>Indicative balance: ${moneyFmt(Math.max(0,d.guest-d.guestPaid))}</div></div>
+          <div style="padding:12px;background:white;border:1px solid #cbd5e1;border-radius:8px"><strong>Agent Folio</strong><div style="font-size:20px;font-weight:700;margin:6px 0">${moneyFmt(d.agent)}</div><div>Tagged payments: ${moneyFmt(d.agentPaid)}</div><div>Indicative balance: ${moneyFmt(Math.max(0,d.agent-d.agentPaid))}</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#475569">Combined allocated charges: ${moneyFmt(total)} · Service charge split: Guest ${moneyFmt(d.guestSC)} / Agent ${moneyFmt(d.agentSC)} · Tax split: Guest ${moneyFmt(d.guestTax)} / Agent ${moneyFmt(d.agentTax)}</div>
+        ${paymentNote}
+        <div style="margin-top:8px;font-size:12px;color:#92400e"><strong>Payment allocation is recorded against the selected folio. Agent AR invoicing and separate GL receivable posting are not yet enabled; verify the accounting workflow before using Agent credit settlement.</div>`;
+      host.appendChild(panel);
+    }catch(e){console.warn('Dual folio preview could not render:',e);}
+    return out;
+  };
+  window.signatureGetDualFolioPreview=splitFor;
+})();
+</script>
