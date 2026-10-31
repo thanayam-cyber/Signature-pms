@@ -4497,9 +4497,10 @@ const USER_MODULE_ACTION_GROUPS={
   settings:{title:"Settings Action Rights",items:[
     ["settings.property","Property Settings"],["settings.currency","Currency / FX Rate"],["settings.rateplans","Rate Plans"],
     ["settings.mealplan","Meal Plan Revenue Allocation"],["settings.roomtypes","Room Type Management"],["settings.rooms","Room / Unit Configuration"],
-    ["settings.pos","Restaurant / POS Settings"],["settings.sales","Sales & Distribution"],["settings.backup","Backup / Restore / Data Export"],
+    ["settings.pos","Restaurant / POS Settings"],["settings.sales","Sales & Distribution"],["settings.travel_agents","Travel Agents — Agent Details / Credit Terms / Credit Limit"],["settings.backup","Backup / Restore / Data Export"],
     ["settings.migration","Data Migration / Import Center"],["settings.system","System Settings / Integrations"]
   ]},
+  accounting:{title:"Accounting Action Rights",items:[["accounting.travel_agents","Travel Agent AR & Commission Payables"]]},
   reservations:{title:"Reservations Action Rights",items:ACTION_PERMISSION_GROUPS["Front Office / Reservations"]||[]},
   pos:{title:"Restaurant POS Action Rights",items:ACTION_PERMISSION_GROUPS["POS / Outlet"]||[]},
   experiences:{title:"Experiences Action Rights",items:ACTION_PERMISSION_GROUPS["Experiences"]||[]},
@@ -7567,6 +7568,11 @@ function renderSalesDistribution(){
     }
     const at=document.getElementById('travelAgentsTable');
     if(at){
+        const agentSection=at.closest('.section');
+        const canManageTA=typeof hasModuleAction==='function'&&hasModuleAction('settings.travel_agents');
+        if(agentSection)agentSection.style.display=canManageTA?'':'none';
+        if(!canManageTA){at.innerHTML='<tr><td colspan="11" class="empty">Travel Agent settings access is not assigned to your user account.</td></tr>';}
+        else {
         at.innerHTML=sd.travelAgents.length?sd.travelAgents.map(x=>`<tr>
 <td><input value="${escapeHtml(x.name)}" onchange="updateAgentField('${x.id}','name',this.value)" style="min-width:140px"/></td>
 <td><input value="${escapeHtml(x.contact)}" onchange="updateAgentField('${x.id}','contact',this.value)" placeholder="Phone / Email"/></td>
@@ -7579,6 +7585,7 @@ function renderSalesDistribution(){
 <td>${Number(x.creditLimit||0)>0?Math.max(0,Number(x.creditLimit)-travelAgentCreditExposure(x.id,'')).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'Unlimited'}</td>
 <td><input type="checkbox" ${x.active!==false?'checked':''} onchange="updateAgentField('${x.id}','active',this.checked)"/></td>
 <td><button class="btn btn-danger" type="button" onclick="removeTravelAgent('${x.id}')">Remove</button></td></tr>`).join(''):'<tr><td colspan="8" class="empty">No travel agents configured.</td></tr>';
+        }
     }
     const cm=sd.channelManager||{};
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v??'';};
@@ -7606,9 +7613,9 @@ async function persistSalesDistributionToCloud(){
 async function addOTAChannel(){if(!requireRole('Admin','Manager'))return; if(!settings)return; const name=prompt('OTA / Booking Channel name:','Booking.com');if(name===null||!name.trim())return; const sd=normalizeSalesDistribution(settings.salesDistribution); if(sd.otaChannels.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This OTA channel already exists for this property.');return;} sd.otaChannels.push({id:'ota_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),commission:15,calculation:'grossup',active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 async function updateOTAField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.otaChannels.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='creditLimit')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
 async function removeOTAChannel(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this OTA channel from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.otaChannels=settings.salesDistribution.otaChannels.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
-async function addTravelAgent(){if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',paymentMode:'',creditTerms:'',creditLimit:0,active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
-async function updateAgentField(id,key,value){const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.travelAgents.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
-async function removeTravelAgent(id){if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this travel agent from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.travelAgents=settings.salesDistribution.travelAgents.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function addTravelAgent(){if(!requireModuleAction('settings.travel_agents'))return;if(!requireRole('Admin','Manager'))return;if(!settings)return;const name=prompt('Travel Agent name:');if(name===null||!name.trim())return;const sd=normalizeSalesDistribution(settings.salesDistribution);if(sd.travelAgents.some(x=>x.name.toLowerCase()===name.trim().toLowerCase())){alert('This travel agent already exists for this property.');return;}sd.travelAgents.push({id:'agent_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),name:name.trim(),contact:'',commission:10,calculation:'deduct',paymentMode:'',creditTerms:'',creditLimit:0,active:true});settings.salesDistribution=sd;saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
+async function updateAgentField(id,key,value){if(!requireModuleAction('settings.travel_agents'))return;const sd=normalizeSalesDistribution(settings?.salesDistribution);const x=sd.travelAgents.find(v=>String(v.id)===String(id));if(!x)return;if(key==='commission')x[key]=Math.max(0,Number(value||0));else if(key==='active')x[key]=!!value;else x[key]=String(value||'').trim();settings.salesDistribution=sd;saveData();await persistSalesDistributionToCloud();}
+async function removeTravelAgent(id){if(!requireModuleAction('settings.travel_agents'))return;if(!requireRole('Admin','Manager'))return;if(!confirm('Remove this travel agent from the current property?'))return;settings.salesDistribution=normalizeSalesDistribution(settings.salesDistribution);settings.salesDistribution.travelAgents=settings.salesDistribution.travelAgents.filter(x=>String(x.id)!==String(id));saveData();renderSalesDistribution();await persistSalesDistributionToCloud();}
 
 /* =========================================================
    NOBEDS CHANNEL MANAGER INTEGRATION v1.0
@@ -12000,7 +12007,7 @@ function printPOSInvoice(saleId){
       +"<div class='tot'><span>TOTAL</span><span>"+posSaleMoney(sale,Number(sale.total||0))+"</span></div>"
       +"<div class='m' style='margin-top:6px'>"+payLine+(method==="Room Charge"?" — Service Charge and VAT will be calculated on the final guest folio":"")+"</div>"
       +"<div class='ft'>Thank you for dining with us.</div>"
-      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script>window.onload=function(){window.print();}<\/script></body></html>";
+      +"<div class='np c' style='margin-top:16px'><button onclick='window.print()'>Print</button></div><script>window.onload=function(){window.print();}<\/script><!-- v2.1.475 TA access rights: settings.travel_agents and accounting.travel_agents -->\n</body></html>";
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
@@ -29250,6 +29257,7 @@ function agentARRows(){
 }
 function renderAgentAR(){
   const page=document.getElementById('accounting');if(!page)return;
+  if(typeof hasModuleAction==='function'&&!hasModuleAction('accounting.travel_agents')){document.getElementById('agentARSubledgerSection')?.remove();return;}
   let sec=document.getElementById('agentARSubledgerSection');
   if(!sec){sec=document.createElement('section');sec.id='agentARSubledgerSection';sec.className='section';sec.style.marginTop='14px';
     const anchor=document.getElementById('travelAgentPayablesSection')||document.getElementById('journalReviewSection');
@@ -29277,6 +29285,7 @@ function renderAgentAR(){
 
 function render(){
   const page=document.getElementById('accounting');if(!page)return;
+  if(typeof hasModuleAction==='function'&&!hasModuleAction('accounting.travel_agents')){document.getElementById('travelAgentPayablesSection')?.remove();return;}
   renderAgentAR();
   let section=document.getElementById('travelAgentPayablesSection');
   if(!section){
@@ -29299,6 +29308,7 @@ function render(){
   tb?.querySelectorAll('[data-ta-assign]').forEach(b=>b.addEventListener('click',()=>assignUnassignedCommission(b.dataset.taAssign)));
 }
 function assignUnassignedCommission(unassignedId){
+  if(!requireModuleAction('accounting.travel_agents'))return;
   const select=document.querySelector(`[data-ta-assign-select="${CSS.escape(String(unassignedId))}"]`);
   const agentId=String(select?.value||'');
   const agent=(sales().travelAgents||[]).find(x=>x.active!==false&&String(x.id)===agentId);
