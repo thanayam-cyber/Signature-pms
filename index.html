@@ -16839,12 +16839,22 @@ function shape(p){if(!p)return;p.baseCurrency=p.baseCurrency||'LKR';p.guestCurre
 try{if(typeof settings!=='undefined')shape(settings);if(typeof properties!=='undefined'&&Array.isArray(properties))properties.forEach(shape);}catch(e){}
 
 window.recalculateFolioTaxesAndService=function(id){
- const r=(typeof reservations!=='undefined'?reservations:[]).find(x=>x.id===id),f=typeof getFolio==='function'?getFolio(id):null;if(!r||!f)return null;
+ const r=(typeof reservations!=='undefined'?reservations:[]).find(x=>String(x.id)===String(id)),f=typeof getFolio==='function'?getFolio(id):null;if(!r||!f)return null;
  const p=prop(),tc=(typeof signatureGetTaxConfig==='function'?signatureGetTaxConfig():null),scEnabled=tc?tc.serviceChargeEnabled:(p.serviceChargeEnabled===true||cfg().serviceChargeEnabled===true),vatEnabled=tc?tc.vatEnabled:(p.vatEnabled===true||cfg().vatEnabled===true);
  const sr=scEnabled?Math.max(0,n(tc?tc.serviceChargeRate:(p.serviceChargeRate!=null&&Number(p.serviceChargeRate)>0?p.serviceChargeRate:cfg().serviceChargeRate),10)):0;
  const tr=vatEnabled?Math.max(0,n(tc?tc.vatRate:(p.vatRate!=null&&Number(p.vatRate)>0?p.vatRate:cfg().vatRate),18)):0;
- const subtotal=Math.max(0,n(r.total)+n(f.restaurant)+n(f.extras)-n(f.discounts));
- f.serviceChargeRate=sr;f.taxRate=tr;f.serviceCharges=Number((subtotal*sr/100).toFixed(2));f.taxes=Number(((subtotal+f.serviceCharges)*tr/100).toFixed(2));f.currency=f.currency||guest();f.baseCurrency=f.baseCurrency||'LKR';f.postingRateAtCalculation=postRate();f.total=n(r.total)+n(f.restaurant)+n(f.extras)+n(f.serviceCharges)+n(f.taxes)-n(f.discounts);f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();return f;
+ /* Folio charges and accounting totals are LKR. Convert foreign accommodation
+    using the reservation's locked booking FX rate before calculating percentages.
+    Restaurant, extras and discounts are already stored in LKR. */
+ const accommodationLKR=typeof reservationAmountLKR==='function'?reservationAmountLKR(r,n(r.total)):n(r.total);
+ const restaurantLKR=typeof folioRestaurantLKR==='function'?folioRestaurantLKR(id):n(f.restaurant);
+ const subtotalLKR=Math.max(0,accommodationLKR+restaurantLKR+n(f.extras)-n(f.discounts));
+ f.serviceChargeRate=sr;f.taxRate=tr;
+ f.serviceCharges=Number((subtotalLKR*sr/100).toFixed(2));
+ f.taxes=Number(((subtotalLKR+f.serviceCharges)*tr/100).toFixed(2));
+ f.currency='LKR';f.baseCurrency='LKR';f.postingRateAtCalculation=reservationSettlementRate(r);
+ f.total=Number((subtotalLKR+f.serviceCharges+f.taxes).toFixed(2));
+ f.updatedAt=typeof localDateTime==='function'?localDateTime():new Date().toISOString();return f;
 };
 window.setFolioServiceCharge=function(id){recalculateFolioTaxesAndService(id);if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
 window.setFolioTax=function(id){recalculateFolioTaxesAndService(id);if(typeof saveData==='function')saveData();if(typeof renderAll==='function')renderAll();if(typeof viewFolio==='function')viewFolio(id);};
