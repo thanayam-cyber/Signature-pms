@@ -2268,7 +2268,7 @@ function renderMealPlanRevenuePercentages(){
         return `<tr><td><strong>${code}</strong> — ${labels[code]}</td><td><input id="mealAlloc_${code}" type="number" min="0" max="100" step="0.01" value="${food}" style="width:110px"> %</td><td><strong>${room.toFixed(2)}%</strong></td><td>Food $${(170*food/100).toFixed(2)} + Room $${(170*room/100).toFixed(2)}</td></tr>`;
     }).join("");
 }
-function saveMealPlanRevenuePercentages(){
+async function saveMealPlanRevenuePercentages(){
     if(!hasActionPermission("settings.mealplan")) return;
     if(!settings || !currentPropertyId){alert("Please select a property first.");return;}
     const next={...DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES};
@@ -2276,12 +2276,31 @@ function saveMealPlanRevenuePercentages(){
         const value=Number(document.getElementById("mealAlloc_"+code)?.value);
         next[code]=Math.max(0,Math.min(100,Number.isFinite(value)?value:DEFAULT_MEAL_PLAN_FOOD_PERCENTAGES[code]));
     });
+
+    // Keep the existing property-scoped local save, then explicitly sync
+    // this configuration field to Supabase and verify the cloud write.
     settings.mealPlanFoodPercentages=next;
     saveData();
     renderMealPlanRevenuePercentages();
     renderAll();
     setTimeout(renderMealPlanRevenuePercentages,0);
-    alert("Meal plan food percentages saved successfully.");
+
+    try{
+        const cloudSaver=window.__signatureSavePropertyConfigToCloud;
+        if(typeof cloudSaver!=="function") throw new Error("Property configuration cloud saver is unavailable.");
+        const saved=await cloudSaver();
+        if(saved!==true) throw new Error("Supabase did not confirm the property configuration save.");
+        if(typeof setSupabaseCloudMessage==="function"){
+            setSupabaseCloudMessage("Meal plan percentages saved and verified in the cloud.","success");
+        }
+        alert("Meal plan food percentages saved successfully and synchronized to the cloud.");
+    }catch(e){
+        console.error("Meal plan percentages cloud save failed:",e);
+        if(typeof setSupabaseCloudMessage==="function"){
+            setSupabaseCloudMessage("Meal plan percentages were saved locally, but cloud verification failed: "+(e?.message||e),"error");
+        }
+        alert("Meal plan percentages were saved locally, but the cloud update was NOT verified.\n\n"+(e?.message||e));
+    }
 }
 function getReservationRevenueAllocation(r){
     /* Meal-plan food percentage is defined against the guest-facing booking total,
