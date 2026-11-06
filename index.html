@@ -4297,7 +4297,7 @@ function canAccessPage(page){
     // This keeps User Management action-level rights and navigation in sync.
     const actions=Array.isArray(perms.actions)?perms.actions:[];
     const actionModuleMap={
-        cashiershift:["cashier.","pos."],
+        cashiershift:["cashier."],
         purchasing:["purchasing."],
         stores:["stores."],
         hr:["hr."],
