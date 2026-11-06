@@ -413,6 +413,74 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 }
 </style>
 
+
+<style id="signature-fnb-open-table-mobile-alignment">
+@media (max-width: 700px) {
+  /* When a table is open, use the full phone width for its order panel.
+     Keep the table picker out of the way until the user closes the selection. */
+  #fnbTableServiceSection .grid-2:has(#fnbActiveTablePanel > div[style*="border:1px solid"]) {
+    display: block !important;
+    width: 100% !important;
+  }
+  #fnbTableServiceSection .grid-2:has(#fnbActiveTablePanel > div[style*="border:1px solid"]) > div:first-child {
+    display: none !important;
+  }
+  #fnbTableServiceSection .grid-2:has(#fnbActiveTablePanel > div[style*="border:1px solid"]) > div:last-child,
+  #fnbActiveTablePanel {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  #fnbActiveTablePanel > div {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 10px !important;
+  }
+  #fnbActiveTablePanel > div > div:first-child,
+  #fnbActiveTablePanel .toolbar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  #fnbActiveTablePanel .toolbar > button {
+    flex: 1 1 145px !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+  #fnbActiveTablePanel .form-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  #fnbActiveTablePanel .form-group,
+  #fnbActiveTablePanel select,
+  #fnbActiveTablePanel input {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    font-size: 16px !important;
+  }
+  #fnbActiveTablePanel .table-wrap {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  #fnbActiveTablePanel .table-wrap table {
+    min-width: 520px !important;
+  }
+}
+</style>
+
 </head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
@@ -29121,100 +29189,7 @@ const photoPages=photoChunks.map((chunk,ci)=>`<article class="page photopage"><h
 const w=window.open('','_blank');if(!w)return alert('Your browser blocked the PDF review window. Allow pop-ups for Signature PMS and try again.');
 w.document.open();w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(run.templateName||'Checklist')} - PDF Report</title><style>*{box-sizing:border-box}body{font:9px Arial,sans-serif;color:#111;margin:0;background:#eee}.toolbar{position:sticky;top:0;background:#fff;padding:10px;display:flex;gap:8px;z-index:5}.toolbar button{padding:9px 14px}.page{width:186mm;min-height:273mm;margin:8mm auto;background:#fff;padding:8mm 9mm;position:relative;page-break-after:always;break-after:page}header{border-bottom:1px solid #999;padding-bottom:5px;margin-bottom:6px}h1{font-size:15px;margin:0 0 3px}.brand{font-size:8px;color:#555;font-weight:bold}.meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;padding:6px;border:1px solid #ddd;margin:6px 0;font-size:8px}.summary{font-weight:bold;margin:5px 0}.range{font-weight:bold;background:#eef2f7;padding:4px;margin:4px 0}.item{border-bottom:1px solid #ddd;padding:3px 2px;break-inside:avoid}.itemtop{display:flex;justify-content:space-between;gap:8px;align-items:start;font-size:9px}.itemtop b{flex:1}.status{font-size:8px;font-weight:bold;white-space:nowrap}.fail,.missing,.req{color:#b91c1c}.sectionname{font-size:7px;color:#555;margin-top:1px}.detail{font-size:8px;margin-top:1px;overflow-wrap:anywhere}.photogrid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,1fr);gap:5mm;height:235mm}.photocard{border:1px solid #ddd;padding:4px;min-height:0;display:flex;flex-direction:column;overflow:hidden}.photocard img{width:100%;height:35mm;object-fit:contain;flex:0 0 auto}.photocard b{font-size:8px;margin-top:3px;overflow-wrap:anywhere}.photocard div{font-size:7px;color:#555;margin-top:2px;overflow-wrap:anywhere}footer{position:absolute;bottom:4mm;left:9mm;right:9mm;border-top:1px solid #ddd;padding-top:3px;font-size:7px;color:#666}@page{size:A4;margin:0}@media(max-width:700px){body{background:#fff}.page{width:100%;min-height:0;margin:0;padding:12px;box-shadow:none}.meta{grid-template-columns:1fr}.photogrid{height:auto;grid-template-rows:none}.photocard img{height:30vw}footer{position:static;margin-top:20px}.toolbar{position:static}}@media print{body{background:#fff}.toolbar{display:none!important}.page{width:auto;height:297mm;min-height:297mm;margin:0;padding:8mm 9mm;box-shadow:none;overflow:hidden}.photogrid{height:235mm}.photocard img{height:35mm}footer{position:absolute;bottom:4mm}}
 </style>
-<style id="signature-restaurant-mobile-access-visibility-fix">
-/* Targeted mobile-only repair:
-   1) Keep permission-hidden navigation buttons hidden despite older mobile !important rules.
-   2) Prevent Restaurant POS controls and panels from exceeding narrow phone screens.
-   No JavaScript, data, permission rules, or transaction logic changed. */
-@media (max-width: 900px) {
-  .nav-btn[data-page][style*="display: none"] {
-    display: none !important;
-  }
-}
-@media (max-width: 700px) {
-  #pos,
-  #pos .section,
-  #pos .section-header,
-  #pos .toolbar,
-  #pos .form-group,
-  #pos #posOrder,
-  #pos #fnbActiveTablePanel {
-    min-width: 0 !important;
-    max-width: 100% !important;
-  }
-  #pos .grid-2 {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-    width: 100% !important;
-  }
-  #pos .section-header {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-  }
-  #pos .section-header > * {
-    min-width: 0 !important;
-    max-width: 100% !important;
-  }
-  #pos .toolbar {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    width: 100% !important;
-    gap: 7px !important;
-  }
-  #pos .toolbar > * {
-    min-width: 0 !important;
-    max-width: 100% !important;
-    flex: 1 1 135px !important;
-  }
-  #pos input,
-  #pos select,
-  #pos textarea {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    font-size: 16px !important;
-  }
-  #pos .pos-menu {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 8px !important;
-    width: 100% !important;
-  }
-  #pos .pos-item {
-    min-width: 0 !important;
-    width: 100% !important;
-    padding: 10px !important;
-    overflow-wrap: anywhere !important;
-  }
-  #pos .pos-item h4,
-  #pos .pos-price {
-    overflow-wrap: anywhere !important;
-  }
-  #pos #fnbTableGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    width: 100% !important;
-  }
-  #pos #fnbActiveTablePanel,
-  #pos #posOrder,
-  #pos .table-wrap {
-    width: 100% !important;
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-  #pos .table-wrap table {
-    min-width: 620px;
-  }
-}
-@media (max-width: 380px) {
-  #pos .pos-menu {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-  #pos .pos-item {
-    min-height: 125px !important;
-  }
-}
-</style>
+
 
 </head><body><div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button><button onclick="window.close()">Close</button><span>Compact report: up to 20 checklist items per page. All photos are on separate final pages, up to 10 per page.</span></div>${reportPages}${photoPages}<script>window.addEventListener('load',()=>Promise.all([...document.images].map(i=>i.decode?i.decode().catch(()=>{}):Promise.resolve())));<\/script>
 
