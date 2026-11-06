@@ -3760,7 +3760,10 @@ function showPMS(){
         "nightaudit","accounting","purchasing","stores","hr","users","settings"
     ];
     const firstPage=landingPages.find(p=>{
-        try{return requireAccess(p)===true;}catch(e){return false;}
+        // During landing-page selection, check permission silently.
+        // requireAccess() displays an alert, so calling it for every denied
+        // page caused a stack of Access denied popups at each login.
+        return canAccessPage(p)===true;
     }) || "settings";
 
     showPage(firstPage);
