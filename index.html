@@ -30000,3 +30000,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   window.signatureGetDualFolioPreview=splitFor;
 })();
 </script>
+
+
+<!-- Signature PMS PWA service worker registration -->
+<script>
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .catch(function (error) { console.warn('Signature PMS service worker registration failed:', error); });
+  });
+})();
+</script>
