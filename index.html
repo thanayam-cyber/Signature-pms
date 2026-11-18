@@ -23838,10 +23838,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 })();
 </script>
 <script id="v2-1-350-purchasing-pr-cloud-race-fix">
-/* v2.1.350 — PURCHASE REQUEST CLOUD RACE FIX
-   PR only. Restaurant POS and PO logic untouched.
-   Keeps newly-created local PRs pending until their cloud write succeeds,
-   so a background pull can never make a fresh PR disappear.
+/* v2.1.350 — PURCHASE REQUEST CLOUD SYNC PROPERTY-ID FIX
+   Purchasing Purchase Requests only. Use the resolved Supabase property UUID
+   for pms_cloud_records while retaining the PMS local property ID in each row.
+   Other modules and existing Purchase Request records are preserved.
 */
 (function(){
   'use strict';
@@ -23851,94 +23851,87 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const KEY='signature_pms_purchase_requests';
   const pending=new Map();
   let syncBusy=false;
-  const pid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
+  const localPid=()=>{try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}catch(e){return ''}};
   const client=()=>{try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}};
+  async function cloudPid(localId){
+    if(!localId||typeof resolveSupabasePropertyId!=='function')return '';
+    try{return String(await resolveSupabasePropertyId(localId)||'')}
+    catch(e){console.warn('Purchase Request property resolution failed:',e?.message||e);return ''}
+  }
   async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
-  function localMine(){const p=pid();return localAll().filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}))}
+  function localMine(){const p=localPid();return localAll().filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}))}
   function putLocal(v){try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(v)?v:[]));return true}catch(e){return false}}
   function merge(...lists){
     const m=new Map();
     lists.flat().forEach(x=>{if(x?.id)m.set(String(x.id),x)});
     return [...m.values()];
   }
-  function pendingRows(){return [...pending.values()].filter(x=>String(x?.propertyId||pid())===pid())}
+  function pendingRows(){const p=localPid();return [...pending.values()].filter(x=>String(x?.propertyId||p)===p)}
   async function sync(){
     if(syncBusy)return false;
-    const c=client(),p=pid(); if(!c||!p)return false;
-    const u=await uid(c); if(!u)return false;
+    const c=client(),localP=localPid();if(!c||!localP)return false;
+    const p=await cloudPid(localP);if(!p)return false;
+    const u=await uid(c);if(!u)return false;
     syncBusy=true;
     try{
       const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
       if(error)throw error;
-      const cloud=Array.isArray(data?.data)?data.data:[];
-      const merged=merge(cloud,localMine(),pendingRows());
+      const cloud=Array.isArray(data?.data)?data.data.map(x=>({...x,propertyId:localP})):[];
+      const merged=merge(cloud,localMine(),pendingRows()).map(x=>({...x,propertyId:localP}));
       const {error:upErr}=await c.from(TABLE).upsert({
         property_id:p,storage_key:KEY,data:merged,updated_by:u,updated_at:new Date().toISOString()
       },{onConflict:'property_id,storage_key'});
       if(upErr)throw upErr;
-      const all=localAll().filter(x=>String(x?.propertyId||p)!==p);
+      const all=localAll().filter(x=>String(x?.propertyId||localP)!==localP);
       putLocal(all.concat(merged));
       merged.forEach(x=>{if(pending.has(String(x.id)))pending.delete(String(x.id))});
       try{if(typeof window.renderPurchasingModule==='function')window.renderPurchasingModule()}catch(e){}
       return true;
     }catch(e){
-      console.warn('PR cloud sync 350 failed:',e?.message||e);
+      console.warn('Purchase Request cloud sync failed:',e?.message||e);
       return false;
     }finally{syncBusy=false}
   }
   async function pull(){
-    const c=client(),p=pid(); if(!c||!p)return false;
+    const c=client(),localP=localPid();if(!c||!localP)return false;
+    const p=await cloudPid(localP);if(!p)return false;
     try{
       const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
       if(error)throw error;
       if(!data)return true;
-      const cloud=Array.isArray(data.data)?data.data:[];
-      // IMPORTANT: pending PRs stay visible while their cloud write is in progress.
-      const merged=merge(cloud,pendingRows());
-      const all=localAll().filter(x=>String(x?.propertyId||p)!==p);
-      putLocal(all.concat(merged.map(x=>({...x,propertyId:p}))));
+      const cloud=Array.isArray(data.data)?data.data.map(x=>({...x,propertyId:localP})):[];
+      const merged=merge(cloud,pendingRows()).map(x=>({...x,propertyId:localP}));
+      const all=localAll().filter(x=>String(x?.propertyId||localP)!==localP);
+      putLocal(all.concat(merged));
       try{if(typeof window.renderPurchasingModule==='function')window.renderPurchasingModule()}catch(e){}
-      // If anything is pending, immediately retry the cloud write after the pull.
-      if(pending.size) setTimeout(sync,50);
+      if(pending.size)setTimeout(sync,50);
       return true;
-    }catch(e){console.warn('PR cloud pull 350 failed:',e?.message||e);return false}
+    }catch(e){console.warn('Purchase Request cloud pull failed:',e?.message||e);return false}
   }
   window.syncSupabasePurchaseRequests=sync;
   window.hydrateSupabasePurchaseRequests=pull;
-  function markPendingFromLocal(){
-    const mine=localMine();
-    mine.forEach(x=>{
-      if(!x?.id)return;
-      const created=Date.parse(x.createdAt||'');
-      // Only mark the newest locally-created PRs; existing cloud rows are not requeued.
-      if(pending.has(String(x.id))) pending.set(String(x.id),x);
-    });
-  }
   function wrapSave(){
     const fn=window.savePurchaseRequest;
     if(typeof fn!=='function'||fn.__pr350)return;
     const wrapped=function(){
       const before=new Set(localMine().map(x=>String(x.id)));
       const r=fn.apply(this,arguments);
-      const after=localMine();
-      after.filter(x=>!before.has(String(x.id))).forEach(x=>pending.set(String(x.id),x));
-      // Immediate + retry. Do not wait for the 5-second polling cycle.
+      localMine().filter(x=>!before.has(String(x.id))).forEach(x=>pending.set(String(x.id),x));
       [0,100,300,700,1500,3000].forEach(ms=>setTimeout(sync,ms));
       return r;
     };
-    wrapped.__pr350=true; window.savePurchaseRequest=wrapped;
+    wrapped.__pr350=true;window.savePurchaseRequest=wrapped;
   }
   function wrapApprove(){
     const fn=window.approvePurchaseRequest;
     if(typeof fn!=='function'||fn.__pr350approve)return;
     const wrapped=function(){
       const r=fn.apply(this,arguments);
-      // Approval changes the PR record, so force the full current PR array to cloud.
       [0,150,500,1200].forEach(ms=>setTimeout(sync,ms));
       return r;
     };
-    wrapped.__pr350approve=true; window.approvePurchaseRequest=wrapped;
+    wrapped.__pr350approve=true;window.approvePurchaseRequest=wrapped;
   }
   function wrapNav(name){
     const fn=window[name];
@@ -23948,17 +23941,16 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       [300,900,1800].forEach(ms=>setTimeout(pull,ms));
       return r;
     };
-    wrapped.__pr350nav=true; window[name]=wrapped;
+    wrapped.__pr350nav=true;window[name]=wrapped;
   }
   function boot(){
     wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin');
     [300,800,1500,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin')},ms));
     [700,1800,3500].forEach(ms=>setTimeout(pull,ms));
-    setInterval(()=>{if(pid()&&!document.hidden)pull()},5000);
+    setInterval(()=>{if(localPid()&&!document.hidden)pull()},5000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-})();
-</script>
+})();</script>
 <script id="v2-1-354-purchasing-po-direct-cloud-open">
 /* v2.1.355 — PO OPEN FINAL CLOUD FALLBACK
    Purchasing only. If the PR is visible but the PO is not in localStorage,
