@@ -3794,11 +3794,22 @@ function showPMS(){
         "pos","experiences","eventbookings","payments","reports",
         "nightaudit","accounting","purchasing","stores","hr","users","settings"
     ];
+    // Check permissions silently while choosing the landing page.
+    // requireAccess() displays an alert, so calling it for every candidate
+    // page caused a popup for every module not assigned to this user.
     const firstPage=landingPages.find(p=>{
-        try{return requireAccess(p)===true;}catch(e){return false;}
-    }) || "settings";
+        try{return canAccessPage(p)===true;}catch(e){return false;}
+    });
 
-    showPage(firstPage);
+    if(firstPage){
+        showPage(firstPage);
+    }else{
+        // Keep the authenticated session active without opening a restricted
+        // module or displaying repeated permission alerts.
+        document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+        const title=document.getElementById("pageTitle");
+        if(title) title.textContent="No Modules Assigned";
+    }
 
 }
 
