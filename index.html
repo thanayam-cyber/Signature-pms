@@ -29000,7 +29000,8 @@ const isGM=()=>pos()==='general manager'||has('purchasing.approve_po_gm')||has('
 const isDeptHead=record=>((pos().includes('department head')||pos().includes('hod')||pos().includes('department manager')||has('purchasing.approve_pr_department')||has('hr.approve_leave_department')||has('stores.approve')) && (!dept()||dept()===norm(record?.department)));
 const isPurchasing=()=>pos().includes('purchasing manager')||has('purchasing.approve_pr_purchasing')||has('purchasing.send_po');
 const isHR=()=>pos()==='hr manager'||pos().includes('human resources manager')||has('hr.approve_leave_hr');
-const canStage=(key,positionCheck,record)=>!!(positionCheck()&&has(key));
+/* Explicit PR Department Head permission is a direct grant from User Creation; it must not be blocked by the user's job title or department mismatch. Other approval stages retain their existing role/permission checks. */
+const canStage=(key,positionCheck,record)=>!!(has(key)&&(key==='purchasing.approve_pr_department'||positionCheck()));
 const esc=x=>typeof window.escapeHtml==='function'?window.escapeHtml(x):String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const currentProp=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
 function syncPR(){try{window.syncSupabasePurchaseRequests?.()}catch(e){}}
