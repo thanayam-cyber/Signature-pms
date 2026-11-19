@@ -22045,7 +22045,7 @@ window.storesCloudRefreshClick = async function(btn){
           const row=payload?.new||payload?.old||{};
           if(String(row.property_id||'')===String(propertyId))scheduleRefresh('realtime');
         }).subscribe(status=>console.log('Signature PMS reservation realtime:',status));
-      clearInterval(pollTimer);pollTimer=setInterval(()=>{if(started)safeRefresh('poll');},5000);
+      clearInterval(pollTimer);pollTimer=setInterval(()=>{if(started)safeRefresh('poll');},30000);
       if(!window.__signaturePMSAutoSyncFocusBound){
         window.__signaturePMSAutoSyncFocusBound=true;
         window.addEventListener('focus',()=>scheduleRefresh('window-focus'));
