@@ -21637,6 +21637,7 @@ async function hydrateSupabaseRooms(){
 }
 </script>
 <script>
+/* FIX17 — Stores/Recipes background cloud hydration reduced from 12s to 30s; explicit save and navigation hydration preserved. */
 /* v2.1.400 — STORES + RECIPES CLOUD SOURCE OF TRUTH
    Uses the existing pms_cloud_records table (same cloud pattern as the
    working Purchasing supplier/article modules). Purchasing itself is not
@@ -21746,7 +21747,7 @@ async function hydrateSupabaseRooms(){
     bind();
     [700,1800,3500].forEach(ms=>setTimeout(bind,ms));
     [1200,3000,6000].forEach(ms=>setTimeout(hydrate,ms));
-    setInterval(()=>{if(document.hidden)return;hydrate();},12000);
+    setInterval(()=>{if(document.hidden)return;hydrate();},30000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
