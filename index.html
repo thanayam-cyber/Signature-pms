@@ -8276,6 +8276,7 @@ async function clearRevenueHistory(){
            updated_at:new Date().toISOString()
          },{onConflict:'property_id,storage_key'});
          if(lockError)throw new Error('Could not activate the property cleanup lock for '+lockPropertyId+'. No cloud cleanup was attempted: '+(lockError.message||String(lockError)));
+         try{window.signaturePMSInvalidateCleanupLockCache?.(lockPropertyId)}catch(_e){}
          const {data:lockCheck,error:lockCheckError}=await client.from('pms_cloud_records')
            .select('data').eq('property_id',lockPropertyId).eq('storage_key',cleanupLockKey).maybeSingle();
          if(lockCheckError)throw lockCheckError;
@@ -8383,6 +8384,7 @@ async function clearRevenueHistory(){
        const {error:unlockError}=await client.from('pms_cloud_records')
          .delete().in('property_id',unlockAliases).eq('storage_key','signature_pms_revenue_cleanup_lock');
        if(unlockError)throw unlockError;
+       try{window.signaturePMSInvalidateCleanupLockCache?.(unlockAliases)}catch(_e){}
        const {data:lockStillThere,error:lockVerifyError}=await client.from('pms_cloud_records')
          .select('storage_key').in('property_id',unlockAliases).eq('storage_key','signature_pms_revenue_cleanup_lock');
        if(lockVerifyError)throw lockVerifyError;
@@ -16130,6 +16132,38 @@ window.postDailyRevenue=function(){
   setTimeout(run,2500);
   setInterval(run,60000);
 })();
+/* FIX21 — share cleanup-lock reads between journal/OTA/payroll repair loops.
+   Short cache + in-flight request coalescing; cleanup writes invalidate immediately.
+   Fail closed: an unavailable lock read is never treated as an unlocked property. */
+(function signaturePMSCleanupLockReadCache(){
+  'use strict';
+  if(window.__signaturePMSCleanupLockReadCache)return;
+  window.__signaturePMSCleanupLockReadCache=true;
+  const cache=new Map(),pending=new Map(),TTL=5000;
+  window.signaturePMSReadCleanupLock=async function(client,propertyId){
+    const p=String(propertyId||'');
+    if(!client||!p)return {verified:false,active:true,startedAt:0};
+    const now=Date.now(),old=cache.get(p);
+    if(old&&now-old.at<TTL)return old.state;
+    if(pending.has(p))return pending.get(p);
+    const task=(async()=>{
+      const q=await client.from('pms_cloud_records').select('data,updated_at')
+        .eq('property_id',p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
+      if(q.error)throw q.error;
+      const d=q.data?.data||{};
+      const state={verified:true,active:d.active===true,startedAt:Date.parse(d.startedAt||q.data?.updated_at||'')||0};
+      cache.set(p,{at:Date.now(),state});
+      return state;
+    })();
+    pending.set(p,task);
+    try{return await task;}finally{pending.delete(p);}
+  };
+  window.signaturePMSInvalidateCleanupLockCache=function(propertyIds){
+    const ids=Array.isArray(propertyIds)?propertyIds:[propertyIds];
+    ids.map(x=>String(x||'')).filter(Boolean).forEach(p=>cache.delete(p));
+  };
+})();
+
 /* v2.1.467 — safely split legacy combined OTA commission lines into their own journal.
    When a cleanup lock is active, only repair a journal created after that lock began;
    pre-lock journals remain untouched until cleanup is confirmed complete. */
@@ -16151,11 +16185,10 @@ window.postDailyRevenue=function(){
     try{
       const c=initSupabaseClient();if(!c)return;
       const session=await c.auth.getSession();if(!session?.data?.session?.user)return;
-      const lock=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',LOCK_KEY).maybeSingle();
-      if(lock.error)return;
-      const lockData=lock.data?.data||{};
-      const cleanupLocked=lockData.active===true;
-      const lockStarted=Date.parse(lockData.startedAt||lock.data?.updated_at||'')||0;
+      const lockState=await window.signaturePMSReadCleanupLock(c,p);
+      if(!lockState?.verified)return;
+      const cleanupLocked=lockState.active===true;
+      const lockStarted=lockState.startedAt||0;
       const all=read();let changed=false;const additions=[];
       const propertyRows=all.filter(j=>String(j?.propertyId||p)===p);
       const createdAt=j=>{const m=String(j?.id||'').match(/^je_(\d{13})_/i);return m?Number(m[1]):Date.parse(j?.updatedAt||j?.postedAt||'')||0;};
@@ -21086,7 +21119,7 @@ async function resolveSupabasePropertyId(localPropertyId){
       if(byName.data?.length===1&&byName.data[0]?.id) return String(byName.data[0].id);
       if(byName.data?.length>1) throw new Error('Duplicate cloud property name "'+name+'"; refusing an ambiguous save.');
     }
-    const {data:ups,error:upErr}=await client.from("user_properties").select("property_id,is_primary").eq("user_id",(await client.auth.getUser()).data.user?.id||"");
+    const {data:ups,error:upErr}=await client.from("user_properties").select("property_id,is_primary").eq("user_id",(await client.auth.getSession()).data.session?.user?.id||"");
     if(upErr) throw upErr;
     const assigned=[...(ups||[])].filter(x=>x.property_id).map(x=>String(x.property_id));
     if(assigned.length===1) return assigned[0];
@@ -23727,7 +23760,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   let lastProperty='';
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
-  async function userId(){try{const c=client();if(!c)return '';const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  async function userId(){try{const c=client();if(!c)return '';const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function same(x){return x&&String(x.propertyId||'')===pid()}
   async function put(key,data){
     const c=client(), p=pid(), u=await userId();
@@ -23878,7 +23911,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     try{return String(await resolveSupabasePropertyId(localId)||'')}
     catch(e){console.warn('Purchase Request property resolution failed:',e?.message||e);return ''}
   }
-  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  async function uid(c){try{const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
   function localMine(){const p=localPid();return localAll().filter(x=>String(x?.propertyId||'')===p).map(x=>({...x}))}
   function putLocal(v){try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(v)?v:[]));return true}catch(e){return false}}
@@ -24167,7 +24200,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
-  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  async function uid(c){try{const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
   function writeLocal(rows){try{localStorage.setItem('signature_pms_accounting_journals',JSON.stringify(rows));return true}catch(e){return false}}
   function localMine(p){return localAll().filter(j=>String(j?.propertyId||p)===p)}
@@ -24245,11 +24278,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       const u=await uid(c); if(!u)return;
       if(window.__signaturePropertyCleanupInProgress)return;
       if(lastProperty!==p)lastProperty=p;
-      const lockQ=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',CLEANUP_LOCK_KEY).maybeSingle();
-      if(lockQ.error)throw lockQ.error;
-      const lockData=lockQ.data?.data||{};
-      const cleanupLocked=lockData.active===true;
-      const lockStarted=Date.parse(lockData.startedAt||lockQ.data?.updated_at||'');
+      const lockState=await window.signaturePMSReadCleanupLock(c,p);
+      if(!lockState?.verified)throw new Error('Revenue cleanup lock could not be verified; accounting sync paused for safety.');
+      const cleanupLocked=lockState.active===true;
+      const lockStarted=lockState.startedAt||0;
       /* A completed cleanup lock is also a watermark. Old operational journals
          left in a mobile browser's localStorage must not be merged back into the
          cleaned property or republished to cloud. Journal IDs carry creation time
@@ -28114,9 +28146,9 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   }
   async function cleanupLockActive(z){
     try{
-      const q=await z.c.from(TABLE).select('data').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
-      if(q.error)throw q.error;
-      return q.data?.data?.active===true;
+      const q=await window.signaturePMSReadCleanupLock(z.c,z.p);
+      if(!q?.verified)return true;
+      return q.active===true;
     }catch(e){console.warn('Revenue cleanup lock check failed:',e?.message||e);return true;}
   }
   function storageKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()));}
@@ -28223,12 +28255,10 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
       const z=await session();
       let payrollLockState={verified:false,active:true};
       if(z){
-        const lock=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
-        if(!lock.error){
-          const d=lock.data?.data||{};
-          const t=Date.parse(d.startedAt||lock.data?.updated_at||'');
-          if(t>0)window.__signatureAccountingCleanupWatermark=t;
-          payrollLockState={verified:true,active:d.active===true};
+        const lock=await window.signaturePMSReadCleanupLock(z.c,z.p);
+        if(lock?.verified){
+          if(lock.startedAt>0)window.__signatureAccountingCleanupWatermark=lock.startedAt;
+          payrollLockState={verified:true,active:lock.active===true};
         }
       }
       /* Repair only a missing accounting journal for payroll that is already
