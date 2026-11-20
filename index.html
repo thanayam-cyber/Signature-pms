@@ -23977,7 +23977,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin');
     [300,800,1500,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin')},ms));
     [700,1800,3500].forEach(ms=>setTimeout(pull,ms));
-    setInterval(()=>{if(localPid()&&!document.hidden)pull()},15000);
+    setInterval(()=>{if(localPid()&&!document.hidden)pull()},30000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();</script>
@@ -24475,7 +24475,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.__signatureHRPayrollCloudKeys=KEYS.slice();
   async function boot(){
     await hydrate();
-    setInterval(()=>{if(!document.hidden&&!hydrating)hydrate();},15000);
+    setInterval(()=>{if(!document.hidden&&!hydrating)hydrate();},30000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -24708,7 +24708,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 })();
 </script>
 <!-- FIX15: F&B background hydration interval reduced from 5s to 30s; action/focus/visibility sync retained. -->
-<!-- FIX18: canonical Accounting journal publisher deduplicates unchanged payloads; removed redundant Employee Advances 20s full-sync trigger and duplicate Payroll journal publishing. -->\n<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
+<!-- FIX18: canonical Accounting journal publisher deduplicates unchanged payloads; removed redundant Employee Advances 20s full-sync trigger and duplicate Payroll journal publishing. -->
+<!-- FIX19: consolidate background GET polling: HR and Purchasing PR 15s -> 30s; remove duplicate v411/v414 F&B cashier-shift background refreshers while retaining v409 closing sync, v415 canonical shift refresh, initial hydration and explicit actions. -->\n<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
 <script id="v2-1-409-fnb-closing-cashier-cloud-sync-fix">
 /* v2.1.409 — F&B Daily Closing + F&B Cashier Shift cloud source of truth.
    Admin/Reception must see the same Closed/Open state for the same property,
@@ -24917,9 +24918,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bind();
     [600,1600,3000].forEach(ms=>setTimeout(bind,ms));
     [1200,3000,6000].forEach(ms=>setTimeout(hydrateShift,ms));
-    setInterval(()=>{if(!document.hidden)hydrateShift();},30000);
-    window.addEventListener('focus',hydrateShift);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrateShift();});
+    // FIX19: v409/v415 own background cashier-shift refresh. Keep this
+    // script's initial hydration and explicit open-shift publish/hydrate path,
+    // but avoid a second 30s timer plus focus/visibility duplicate GETs.
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -25083,9 +25084,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bindOpen();bindClose();
     [300,1000,2500,4500].forEach(ms=>setTimeout(()=>{bindOpen();bindClose();},ms));
     [1200,3500].forEach(ms=>setTimeout(ensure,ms));
-    setInterval(()=>{if(!document.hidden)ensure()},30000);
-    window.addEventListener('focus',ensure);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensure()});
+    // FIX19: v415 is the canonical background shift hydrator. Keep the
+    // initial key-repair checks and v414 open/close wrappers, but remove this
+    // duplicate 30s/focus/visibility polling path.
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
