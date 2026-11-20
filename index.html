@@ -24351,12 +24351,11 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const TABLE='pms_cloud_records';
   const KEYS=[
     'signature_pms_hr_employees',
-    // Attendance and Payroll have dedicated sync handlers below; keep them
-    // out of this broad hydrator to prevent competing refresh/save races.
-    'signature_pms_hr_leave',
+    // Attendance, Leave, Roster and Payroll have dedicated sync handlers;
+    // keep them out of this broad hydrator to prevent duplicate polling and
+    // cloud-pull -> localStorage -> cloud-publish echo cycles.
     'signature_pms_hr_overtime',
     'signature_pms_hr_shifts',
-    'signature_pms_hr_roster',
     'signature_pms_hr_documents',
     'signature_pms_hr_performance',
     'signature_pms_hr_benefits',
@@ -24601,13 +24600,14 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     }catch(e){window.__signatureRosterEditing=false;throw e;}
   };
 
-  // Background refresh: never overwrite active roster editing. Refresh core HR data every 10s.
+  // FIX16: dedicated HR core keys poll every 30s; explicit saves still sync immediately.
+  // Never overwrite active roster editing during background refresh.
   async function tick(){
     if(document.hidden||window.__signatureRosterEditing)return;
     for(const k of Object.values(KEYS))await refresh(k);
   }
   setTimeout(tick,2500);
-  setInterval(tick,10000);
+  setInterval(tick,30000);
 })();
 </script>
 <script id="v2-1-406-hr-payroll-explicit-cloud">
@@ -24694,12 +24694,13 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   wrap('postPayroll','Payroll posting status synchronized to Supabase cloud.');
   wrap('payPayroll','Payroll payment status synchronized to Supabase cloud.');
 
-  // Initial cloud load plus a short polling cycle for Admin/Reception cross-window visibility.
+  // FIX16: retain initial load and explicit payroll saves; poll cross-window changes every 30s.
   setTimeout(refresh,1800);
-  setInterval(()=>{if(!document.hidden)refresh();},7000);
+  setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();
 </script>
 <!-- FIX15: F&B background hydration interval reduced from 5s to 30s; action/focus/visibility sync retained. -->
+<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
 <script id="v2-1-409-fnb-closing-cashier-cloud-sync-fix">
 /* v2.1.409 — F&B Daily Closing + F&B Cashier Shift cloud source of truth.
    Admin/Reception must see the same Closed/Open state for the same property,
