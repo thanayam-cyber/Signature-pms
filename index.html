@@ -21899,7 +21899,7 @@ async function hydrateSupabaseRooms(){
         .eq('property_id',propertyId)
         .eq('record_type','purchase_orders');
       if(error)throw error;
-      const cloud=data||[];
+      const cloud=(data||[]).filter(r=>{const d=r?.record_data||{};return !d.propertyId||String(d.propertyId)===String(propertyId);});
       const local=readPOs();
       const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
       const localMine=local.filter(x=>String(x?.propertyId||'')===propertyId);
@@ -22045,7 +22045,7 @@ window.storesCloudRefreshClick = async function(btn){
           const row=payload?.new||payload?.old||{};
           if(String(row.property_id||'')===String(propertyId))scheduleRefresh('realtime');
         }).subscribe(status=>console.log('Signature PMS reservation realtime:',status));
-      clearInterval(pollTimer);pollTimer=setInterval(()=>{if(started)safeRefresh('poll');},5000);
+      clearInterval(pollTimer);pollTimer=setInterval(()=>{if(started)safeRefresh('poll');},30000);
       if(!window.__signaturePMSAutoSyncFocusBound){
         window.__signaturePMSAutoSyncFocusBound=true;
         window.addEventListener('focus',()=>scheduleRefresh('window-focus'));
@@ -25487,7 +25487,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(q.error)throw q.error;
       if(q.data && Array.isArray(q.data.data)){
         const other=read(key).filter(x=>String(x?.propertyId||'')!==z.p);
-        const mine=q.data.data.map(x=>({...x,propertyId:z.p}));
+        const mine=q.data.data.filter(x=>!x?.propertyId||String(x.propertyId)===z.p).map(x=>({...x,propertyId:z.p}));
         write(key,other.concat(mine));
         return true;
       }
@@ -25534,10 +25534,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',PO_KEY).maybeSingle();
       if(q.error)throw q.error;
       const arr=Array.isArray(q.data?.data)?q.data.data:[];
-      const po=arr.find(x=>String(x?.number||'').trim().toLowerCase()===String(poNumber).trim().toLowerCase());
+      const scoped=arr.filter(x=>!x?.propertyId||String(x.propertyId)===z.p);
+      const po=scoped.find(x=>String(x?.number||'').trim().toLowerCase()===String(poNumber).trim().toLowerCase());
       if(po){
         const other=read(PO_KEY).filter(x=>String(x?.propertyId||'')!==z.p);
-        write(PO_KEY,other.concat(arr.map(x=>({...x,propertyId:z.p}))));
+        write(PO_KEY,other.concat(scoped.map(x=>({...x,propertyId:z.p}))));
         return {...po,propertyId:z.p};
       }
     }catch(e){console.warn('Shared PO number lookup failed:',e)}
@@ -27770,7 +27771,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     try{
       const {data:old,error:rerr}=await c.from('pms_cloud_records').select('data').eq('property_id',propertyId).eq('storage_key',KEY).maybeSingle();
       if(rerr)throw rerr;
-      const existing=Array.isArray(old?.data)?old.data:[];
+      const existing=(Array.isArray(old?.data)?old.data:[]).filter(x=>!x?.propertyId||String(x.propertyId)===propertyId);
       const mine=localPOs().filter(x=>String(x?.propertyId||'')===propertyId);
       if(!mine.length)return;
       const map=new Map();
@@ -27841,7 +27842,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
         .eq('storage_key',PO_KEY)
         .maybeSingle();
       if(rerr)throw rerr;
-      const existing=Array.isArray(old?.data)?old.data:[];
+      const existing=(Array.isArray(old?.data)?old.data:[]).filter(x=>!x?.propertyId||String(x.propertyId)===pid);
       const map=new Map();
       existing.forEach(x=>{if(x?.id)map.set(String(x.id),x)});
       map.set(String(record.id),record);
@@ -27871,7 +27872,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
         const {data:old,error:rerr}=await c.from('pms_cloud_records').select('data')
           .eq('property_id',pid).eq('storage_key',PR_KEY).maybeSingle();
         if(!rerr){
-          const existing=Array.isArray(old?.data)?old.data:[];
+          const existing=(Array.isArray(old?.data)?old.data:[]).filter(x=>!x?.propertyId||String(x.propertyId)===pid);
           const map=new Map();
           existing.forEach(x=>{if(x?.id)map.set(String(x.id),x)});
           map.set(String(target.id),{...target,propertyId:pid});
