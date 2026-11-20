@@ -25487,7 +25487,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if(q.error)throw q.error;
       if(q.data && Array.isArray(q.data.data)){
         const other=read(key).filter(x=>String(x?.propertyId||'')!==z.p);
-        const mine=q.data.data.map(x=>({...x,propertyId:z.p}));
+        // IMPORTANT: the cloud row is property-scoped, but its JSON payload may
+        // contain legacy/mixed-property records. Never overwrite an explicit
+        // different propertyId with the currently selected propertyId.
+        // Untagged legacy records are retained under this row's property scope.
+        const mine=q.data.data
+          .filter(x=>!String(x?.propertyId||'').trim() || String(x.propertyId)===z.p)
+          .map(x=>({...x,propertyId:z.p}));
         write(key,other.concat(mine));
         return true;
       }
