@@ -24434,8 +24434,26 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     const z=await ready();if(!z)return false;
     hydrating=true;
     try{
+      // FIX20: fetch the complete HR key group in one request instead of
+      // issuing one GET per key. Property filter and employee-empty safety stay intact.
+      const q=await z.c.from(TABLE).select('storage_key,data,updated_at')
+        .eq('property_id',z.p).in('storage_key',KEYS);
+      if(q.error)throw q.error;
+      const rows=new Map((q.data||[]).map(row=>[String(row.storage_key||''),row]));
       let found=0;
-      for(const key of KEYS){if(await pullKey(z,key))found++;}
+      for(const key of KEYS){
+        const row=rows.get(key);if(!row)continue;
+        const cloud=Array.isArray(row.data)?row.data:[];
+        const localAll=localRead(key),localMine=localAll.filter(mine);
+        if(key==='signature_pms_hr_employees'&&cloud.length===0&&localMine.length>0){
+          console.warn('HR employee cloud hydration skipped: cloud employee list is empty while local property records exist.');
+          if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Employee cloud list is empty; local employee records were protected. Please verify cloud data before retrying.','error');
+          continue;
+        }
+        const other=localAll.filter(x=>!mine(x));
+        localWrite(key,other.concat(cloud.map(x=>({...x,propertyId:z.p}))));
+        found++;
+      }
       render();
       if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('HR & Payroll cloud refreshed. '+found+'/'+KEYS.length+' shared records loaded.','success');
       return true;
@@ -24612,7 +24630,28 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   // Never overwrite active roster editing during background refresh.
   async function tick(){
     if(document.hidden||window.__signatureRosterEditing)return;
-    for(const k of Object.values(KEYS))await refresh(k);
+    try{
+      // FIX20: one property-scoped GET for Attendance, Leave and Roster.
+      // Per-key dirty/version checks still prevent an in-flight read overwriting a save.
+      const z=await session();if(!z)return;
+      const names=Object.values(KEYS);
+      const starts=new Map(names.map(k=>[k,versions.get(k)||0]));
+      const q=await z.c.from('pms_cloud_records').select('storage_key,data,updated_at')
+        .eq('property_id',z.p).in('storage_key',names);
+      if(q.error)throw q.error;
+      const rows=new Map((q.data||[]).map(row=>[String(row.storage_key||''),row]));
+      let changed=false;
+      for(const k of names){
+        if(dirty.has(k)||(versions.get(k)||0)!==starts.get(k))continue;
+        const row=rows.get(k);if(!row)continue;
+        const all=local(k),other=all.filter(x=>String(x.propertyId||'')!==z.p),mineRows=all.filter(x=>String(x.propertyId||'')===z.p);
+        const cloudRows=Array.isArray(row.data)?row.data:[];
+        if(cloudRows.length===0&&mineRows.length>0)continue;
+        localStorage.setItem(k,JSON.stringify(other.concat(cloudRows.map(x=>({...x,propertyId:z.p})))));
+        changed=true;
+      }
+      if(changed&&typeof renderHR==='function')renderHR();
+    }catch(e){console.warn('HR grouped cloud refresh failed',e);}
   }
   setTimeout(tick,2500);
   setInterval(tick,30000);
@@ -24709,6 +24748,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 </script>
 <!-- FIX15: F&B background hydration interval reduced from 5s to 30s; action/focus/visibility sync retained. -->
 <!-- FIX18: canonical Accounting journal publisher deduplicates unchanged payloads; removed redundant Employee Advances 20s full-sync trigger and duplicate Payroll journal publishing. -->
+<!-- FIX20: batch HR core (8 keys), HR attendance/leave/roster (3 keys), and F&B closing/legacy-shift reads into property-scoped PostgREST requests. Explicit per-key refresh and save paths remain. -->
 <!-- FIX19: consolidate background GET polling: HR and Purchasing PR 15s -> 30s; remove duplicate v411/v414 F&B cashier-shift background refreshers while retaining v409 closing sync, v415 canonical shift refresh, initial hydration and explicit actions. -->\n<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
 <script id="v2-1-409-fnb-closing-cashier-cloud-sync-fix">
 /* v2.1.409 — F&B Daily Closing + F&B Cashier Shift cloud source of truth.
@@ -24764,12 +24804,28 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function hydrate(render=true){
     try{
-      const a=await pull(DAILY_KEY),b=await pull(SHIFT_KEY);
+      // FIX20: batch Daily Closing + legacy cashier-shift reads into one request.
+      const z=await ready();if(!z)return false;
+      const keys=[DAILY_KEY,SHIFT_KEY];
+      const q=await z.c.from(TABLE).select('storage_key,data,updated_at')
+        .eq('property_id',z.p).in('storage_key',keys);
+      if(q.error)throw q.error;
+      const rows=new Map((q.data||[]).map(row=>[String(row.storage_key||''),row]));
+      let found=0;
+      for(const key of keys){
+        const row=rows.get(key);if(!row)continue;
+        const cloud=Array.isArray(row.data)?row.data:[];
+        const all=read(key),localOther=all.filter(x=>String(x?.propertyId||'')!==z.p),localMine=all.filter(x=>String(x?.propertyId||'')===z.p);
+        const byId=new Map();
+        cloud.forEach(x=>{const item={...x,propertyId:z.p};byId.set(String(item.id||JSON.stringify(item)),item);});
+        localMine.forEach(x=>{const item={...x,propertyId:z.p};byId.set(String(item.id||JSON.stringify(item)),item);});
+        write(key,localOther.concat(Array.from(byId.values())));found++;
+      }
       if(render){
         try{if(typeof renderReports==='function')renderReports();}catch(e){}
         try{if(typeof fnbRefreshCashierShift==='function')fnbRefreshCashierShift();}catch(e){}
       }
-      return !!(a||b);
+      return found>0;
     }catch(e){
       console.warn('F&B closing cloud refresh failed:',e);
       return false;
