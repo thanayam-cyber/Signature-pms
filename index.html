@@ -30005,6 +30005,120 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   });
 })();
 </script>
+<script id="v2-1-477-purchasing-property-isolation-final-hardening">
+/* v2.1.477 — Purchasing-only final property isolation hardening.
+   - Clears only the confirmed old Purchasing test cache once per browser.
+   - Never touches suppliers, articles, stock setup, or other PMS modules.
+   - Publishes supplier payments only when a new payment is explicitly saved.
+   - Uses the selected property's resolved Supabase UUID and explicit row ownership.
+*/
+(function(){
+  'use strict';
+  if(window.__signatureV477PurchasingIsolation)return;
+  window.__signatureV477PurchasingIsolation=true;
+
+  const CLEANUP_FLAG='signature_pms_purchasing_test_cache_cleanup_v477';
+  const PROPERTY_IDS=new Set([
+    '6d189bea-0fb1-4267-a15b-f7bf99df539b',
+    'd775899b-4671-44ab-b108-342a884755af',
+    '89fbb04a-1a9f-459e-b9b0-b0321638575e',
+    '3b964a43-3502-4772-89fd-08faaab5eb20',
+    'a192e839-0fb8-48d8-b9a9-a4d81b2a117e'
+  ]);
+  const TX_KEYS=[
+    'signature_pms_purchase_orders',
+    'signature_pms_purchase_requests',
+    'signature_pms_grns',
+    'signature_pms_supplier_payments'
+  ];
+  const localProperty=()=>{
+    try{return String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'')}
+    catch(e){return ''}
+  };
+
+  // The five properties' Purchasing transactions were confirmed as test data
+  // and the corresponding cloud snapshots have now been reset. Clear only
+  // those four transaction caches once on each browser/device.
+  try{
+    if(localStorage.getItem(CLEANUP_FLAG)!=='1'){
+      TX_KEYS.forEach(key=>{
+        let rows=[];
+        try{const v=JSON.parse(localStorage.getItem(key)||'[]');rows=Array.isArray(v)?v:[];}catch(e){}
+        const keep=rows.filter(row=>!PROPERTY_IDS.has(String(row?.propertyId||row?.property_id||'')));
+        localStorage.setItem(key,JSON.stringify(keep));
+      });
+      localStorage.setItem(CLEANUP_FLAG,'1');
+      console.info('Purchasing FIX7: old test transaction cache cleared for the five registered properties.');
+    }
+  }catch(e){console.warn('Purchasing FIX7 local transaction cleanup skipped:',e)}
+
+  // Supplier Payments were stored locally by the accounting extension but did
+  // not have a matching property-scoped cloud publisher. Publish only the
+  // newly saved payment; never bulk-upload a browser cache on boot/navigation.
+  const PAYMENT_KEY='signature_pms_supplier_payments';
+  const TABLE='pms_cloud_records';
+  function readPayments(){
+    try{const v=JSON.parse(localStorage.getItem(PAYMENT_KEY)||'[]');return Array.isArray(v)?v:[];}
+    catch(e){return []}
+  }
+  async function publishNewPayment(payment){
+    const p=localProperty();
+    if(!p||!payment||String(payment.propertyId||'')!==p||!payment.id)return false;
+    try{
+      const c=typeof initSupabaseClient==='function'?initSupabaseClient():null;
+      if(!c)return false;
+      const auth=await c.auth.getSession();
+      const user=auth?.data?.session?.user;
+      if(!user)return false;
+      if(typeof resolveSupabasePropertyId!=='function')return false;
+      const cloudPropertyId=String(await resolveSupabasePropertyId(p)||'');
+      if(!cloudPropertyId)return false;
+      const q=await c.from(TABLE).select('data')
+        .eq('property_id',cloudPropertyId)
+        .eq('storage_key',PAYMENT_KEY)
+        .maybeSingle();
+      if(q.error)throw q.error;
+      const existing=Array.isArray(q.data?.data)?q.data.data:[];
+      const map=new Map();
+      existing.forEach(row=>{if(row&&row.id!=null)map.set(String(row.id),row)});
+      map.set(String(payment.id),{...payment});
+      const saved=await c.from(TABLE).upsert({
+        property_id:cloudPropertyId,
+        storage_key:PAYMENT_KEY,
+        data:[...map.values()],
+        updated_by:user.id,
+        updated_at:new Date().toISOString()
+      },{onConflict:'property_id,storage_key'});
+      if(saved.error)throw saved.error;
+      return true;
+    }catch(e){
+      console.warn('Purchasing supplier payment cloud publish failed:',e?.message||e);
+      return false;
+    }
+  }
+  function wrapSupplierPaymentSave(){
+    const fn=window.saveSupplierPayment;
+    if(typeof fn!=='function'||fn.__v477PaymentWrapped)return;
+    const wrapped=function(){
+      const before=new Set(readPayments().map(x=>String(x?.id||'')));
+      const p=localProperty();
+      const result=fn.apply(this,arguments);
+      const created=readPayments().filter(x=>String(x?.propertyId||'')===p&&x?.id&&!before.has(String(x.id)));
+      created.forEach(payment=>{
+        // A few short retries handle transient network/auth readiness only for
+        // this explicit user-created payment; no local history is bulk-pushed.
+        [250,1000,2500].forEach(ms=>setTimeout(()=>publishNewPayment(payment),ms));
+      });
+      return result;
+    };
+    wrapped.__v477PaymentWrapped=true;
+    window.saveSupplierPayment=wrapped;
+  }
+  wrapSupplierPaymentSave();
+  [500,1500,3000].forEach(ms=>setTimeout(wrapSupplierPaymentSave,ms));
+})();
+</script>
+
 </body>
 </html>
 <!-- v2.1.476 PURCHASING PROPERTY ISOLATION HARDENING
