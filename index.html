@@ -24699,6 +24699,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   setInterval(()=>{if(!document.hidden)refresh();},7000);
 })();
 </script>
+<!-- FIX15: F&B background hydration interval reduced from 5s to 30s; action/focus/visibility sync retained. -->
 <script id="v2-1-409-fnb-closing-cashier-cloud-sync-fix">
 /* v2.1.409 — F&B Daily Closing + F&B Cashier Shift cloud source of truth.
    Admin/Reception must see the same Closed/Open state for the same property,
@@ -24796,7 +24797,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bind();
     [500,1500,3000].forEach(ms=>setTimeout(bind,ms));
     [800,2200,4500].forEach(ms=>setTimeout(()=>hydrate(true),ms));
-    setInterval(()=>{if(!document.hidden)hydrate(true);},5000);
+    setInterval(()=>{if(!document.hidden)hydrate(true);},30000);
     window.addEventListener('focus',()=>hydrate(true));
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrate(true);});
   }
@@ -24907,7 +24908,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bind();
     [600,1600,3000].forEach(ms=>setTimeout(bind,ms));
     [1200,3000,6000].forEach(ms=>setTimeout(hydrateShift,ms));
-    setInterval(()=>{if(!document.hidden)hydrateShift();},5000);
+    setInterval(()=>{if(!document.hidden)hydrateShift();},30000);
     window.addEventListener('focus',hydrateShift);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrateShift();});
   }
