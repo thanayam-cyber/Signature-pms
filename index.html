@@ -24161,10 +24161,12 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const CLEANUP_LOCK_KEY='signature_pms_revenue_cleanup_lock';
   let lastProperty='';
   let busy=false;
+  let cleanupLockNoticeShown=false;
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
-  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  // Read the established session locally; avoid an Auth /user request on every 30s journal poll.
+  async function uid(c){try{const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
   function writeLocal(rows){try{localStorage.setItem('signature_pms_accounting_journals',JSON.stringify(rows));return true}catch(e){return false}}
   function localMine(p){return localAll().filter(j=>String(j?.propertyId||p)===p)}
@@ -24285,7 +24287,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
         }else if(JSON.stringify(safeLocal)!==JSON.stringify(localBefore)){
           writeLocal(localAll().filter(j=>String(j?.propertyId||p)!==p).concat(safeLocal));
         }
-        console.warn('Accounting journal sync is restricted by the active cleanup lock; stale pre-cleanup operational journals were excluded.');
+        if(!cleanupLockNoticeShown){
+          console.info('Accounting journal sync is restricted by the active cleanup lock; stale pre-cleanup operational journals were excluded.');
+          cleanupLockNoticeShown=true;
+        }
         return;
       }
       const localBefore=localMine(p);
