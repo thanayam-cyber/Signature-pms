@@ -21833,11 +21833,11 @@ async function hydrateSupabaseRooms(){
 })();
 </script>
 <script id="v2-1-341-purchasing-po-cloud-source-of-truth">
-/* =========================================================
-   v2.1.341 — PURCHASING PO CLOUD SOURCE OF TRUTH (SAFE)
-   IMPORTANT: Purchase Orders are owned ONLY by this block.
-   The generic Stores sync deliberately excludes purchase_orders so a user
-   with an old/empty local cache can NEVER delete another user's cloud POs.
+/*
+   v2.1.341 — PURCHASING PO CLOUD SOURCE OF TRUTH (pms_cloud_records)
+   Purchasing POs use the existing property-scoped keyed storage table.
+   Only records explicitly tagged with the selected property are hydrated or published.
+   No automatic boot-time publishing and no cloud deletion.
 ========================================================= */
 (function(){
   'use strict';
@@ -21845,41 +21845,35 @@ async function hydrateSupabaseRooms(){
   window.__signatureV341PurchasingPOCloud=true;
 
   const PO_KEY='signature_pms_purchase_orders';
-  const TABLE='property_store_records';
-
+  const TABLE='pms_cloud_records';
   const prop=()=>String(typeof currentPropertyId!=='undefined'&&currentPropertyId?currentPropertyId:'');
   const readPOs=()=>{try{const v=JSON.parse(localStorage.getItem(PO_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return[];}};
   const writePOs=v=>{try{localStorage.setItem(PO_KEY,JSON.stringify(Array.isArray(v)?v:[]));return true;}catch(e){console.warn('PO local write failed:',e);return false;}};
   const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
   async function session(c){const {data:{session},error}=await c.auth.getSession();if(error)throw error;return session?.user||null;}
 
-  /* ADDITIVE ONLY. Never delete cloud POs from a local snapshot. */
   window.syncSupabasePurchaseOrders=async function(){
     try{
       const c=client(), propertyId=prop();
       if(!c||!propertyId)return false;
-      if(!await session(c))return false;
+      const user=await session(c); if(!user)return false;
       const localMine=readPOs().filter(x=>String(x?.propertyId||'')===propertyId);
       if(!localMine.length)return true;
-      const now=new Date().toISOString();
-      const rows=localMine.map((record,i)=>({
-        property_id:propertyId,
-        record_type:'purchase_orders',
-        record_id:String(record?.id||('purchase_orders_'+i)),
-        record_data:{...record,propertyId},
-        updated_at:record?.updatedAt||record?.createdAt||now
-      }));
-      const {error}=await c.from(TABLE).upsert(rows,{onConflict:'property_id,record_type,record_id'});
+      const {data:old,error:readError}=await c.from(TABLE).select('data').eq('property_id',propertyId).eq('storage_key',PO_KEY).maybeSingle();
+      if(readError)throw readError;
+      const existing=Array.isArray(old?.data)?old.data:[];
+      const byId=new Map();
+      existing.forEach(x=>{if(x&&x.id!=null)byId.set(String(x.id),x)});
+      localMine.forEach(x=>{
+        if(!x||x.id==null)return;
+        const id=String(x.id), cloudRecord=byId.get(id);
+        const lt=Date.parse(String(x.updatedAt||x.createdAt||''));
+        const ct=Date.parse(String(cloudRecord?.updatedAt||cloudRecord?.createdAt||''));
+        if(!cloudRecord || (Number.isFinite(lt)&&Number.isFinite(ct)&&lt>ct))byId.set(id,{...x});
+      });
+      const {error}=await c.from(TABLE).upsert({property_id:propertyId,storage_key:PO_KEY,data:[...byId.values()],updated_by:user.id,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
       if(error)throw error;
-      const verifyIds=rows.map(r=>String(r.record_id));
-      if(verifyIds.length){
-        const {data:verify,error:verifyError}=await c.from(TABLE).select('record_id,property_id,record_type').eq('property_id',propertyId).eq('record_type','purchase_orders').in('record_id',verifyIds);
-        if(verifyError)throw verifyError;
-        const found=new Set((verify||[]).map(r=>String(r.record_id)));
-        const missing=verifyIds.filter(id=>!found.has(id));
-        if(missing.length)throw new Error('PO saved but cloud verification failed. Missing record(s): '+missing.join(', '));
-      }
-      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders synchronized and verified in cloud.','success');
+      if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders synchronized in cloud.','success');
       return true;
     }catch(e){
       console.warn('PO cloud sync failed:',e);
@@ -21888,37 +21882,29 @@ async function hydrateSupabaseRooms(){
     }
   };
 
-  /* Cloud is authoritative for POs. Local-only POs are retained until published. */
   window.hydrateSupabasePurchaseOrders=async function(){
     try{
       const c=client(), propertyId=prop();
       if(!c||!propertyId)return false;
       if(!await session(c))return false;
-      const {data,error}=await c.from(TABLE)
-        .select('record_id,record_data,updated_at')
-        .eq('property_id',propertyId)
-        .eq('record_type','purchase_orders');
+      const {data,error}=await c.from(TABLE).select('data').eq('property_id',propertyId).eq('storage_key',PO_KEY).maybeSingle();
       if(error)throw error;
-      const cloud=data||[];
+      const cloud=Array.isArray(data?.data)?data.data:[];
       const local=readPOs();
       const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
       const localMine=local.filter(x=>String(x?.propertyId||'')===propertyId);
-      const cmap=new Map(cloud.map(r=>[String(r.record_id),r]));
-      const merged=[];
-
-      cloud.forEach(r=>{
-        const cr=r.record_data||{};
-        // property_store_records rows are not trusted to define payload ownership.
-        if(String(cr?.propertyId||'')!==propertyId)return;
-        const lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
-        const lu=Date.parse(String(lr?.updatedAt||lr?.createdAt||''));
-        const cu=Date.parse(String(r.updated_at||''));
-        /* If local is newer, keep it and let the next sync publish it. */
-        merged.push(lr && Number.isFinite(lu) && Number.isFinite(cu) && lu>cu ? lr : {...cr,propertyId});
+      const cloudMine=cloud.filter(x=>String(x?.propertyId||'')===propertyId);
+      const byId=new Map();
+      cloudMine.forEach(x=>{if(x&&x.id!=null)byId.set(String(x.id),x)});
+      localMine.forEach(x=>{
+        const id=String(x?.id||'');
+        if(!id)return;
+        const cr=byId.get(id);
+        const localTime=Date.parse(String(x.updatedAt||x.createdAt||''));
+        const cloudTime=Date.parse(String(cr?.updatedAt||cr?.createdAt||''));
+        if(!cr || (Number.isFinite(localTime)&&Number.isFinite(cloudTime)&&localTime>cloudTime))byId.set(id,x);
       });
-      localMine.forEach(l=>{if(!cmap.has(String(l?.id||'')))merged.push(l);});
-      writePOs(other.concat(merged));
-
+      writePOs(other.concat([...byId.values()]));
       try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
       try{if(typeof renderPurchaseRegister==='function')renderPurchaseRegister();}catch(e){}
       if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders refreshed from cloud.','success');
@@ -21933,35 +21919,17 @@ async function hydrateSupabaseRooms(){
   function wrapSave(){
     const name='savePOFromPR',fn=window[name];
     if(typeof fn!=='function'||fn.__v341POWrapped)return;
-    const wrapped=function(){
-      const result=fn.apply(this,arguments);
-      /* Retry because the original PO function is synchronous. */
-      [150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseOrders(),ms));
-      return result;
-    };
-    wrapped.__v341POWrapped=true;
-    window[name]=wrapped;
+    const wrapped=function(){const result=fn.apply(this,arguments);[150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseOrders(),ms));return result;};
+    wrapped.__v341POWrapped=true;window[name]=wrapped;
   }
-
   function wrapNavigation(){
     ['switchProperty','hydrateCloudAfterLocalLogin'].forEach(name=>{
-      const fn=window[name];
-      if(typeof fn!=='function'||fn.__v341PONavWrapped)return;
-      const wrapped=function(){
-        const result=fn.apply(this,arguments);
-        [300,1000,2500].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));
-        return result;
-      };
-      wrapped.__v341PONavWrapped=true;
-      window[name]=wrapped;
+      const fn=window[name];if(typeof fn!=='function'||fn.__v341PONavWrapped)return;
+      const wrapped=function(){const result=fn.apply(this,arguments);[300,1000,2500].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));return result;};
+      wrapped.__v341PONavWrapped=true;window[name]=wrapped;
     });
   }
-
-  function boot(){
-    wrapSave();wrapNavigation();
-    [500,1200,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapNavigation();},ms));
-    [1200,2500,4000].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));
-  }
+  function boot(){wrapSave();wrapNavigation();[500,1200,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapNavigation();},ms));[1200,2500,4000].forEach(ms=>setTimeout(()=>window.hydrateSupabasePurchaseOrders(),ms));}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
@@ -24026,16 +23994,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     const c=client(), propertyId=prop();
     if(!c||!propertyId)return null;
     try{
-      // Primary Purchasing cloud store.
-      const {data,error}=await c.from('property_store_records')
-        .select('record_id,record_data,updated_at')
-        .eq('property_id',propertyId)
-        .eq('record_type','purchase_orders');
-      if(error)throw error;
-      for(const row of (Array.isArray(data)?data:[])){
-        const po=row?.record_data||{};
-        if(String(po?.propertyId||'')===propertyId&&matchesPO(po,prId,poNo))return await cachePO(po,propertyId);
-      }
+      // Purchase Orders are stored in the property-scoped pms_cloud_records array.
     }catch(e){console.warn('Primary PO cloud lookup failed:',e)}
     try{
       // Legacy/general cloud store fallback. Some older PO records may be stored as a keyed array.
@@ -25408,10 +25367,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     try{
       const c=typeof initSupabaseClient==='function'?initSupabaseClient():null, propertyId=prop();
       if(!c||!propertyId)return null;
-      const a=await c.from('property_store_records').select('record_data').eq('property_id',propertyId).eq('record_type','purchase_orders');
-      if(!a.error){for(const r of (Array.isArray(a.data)?a.data:[])){const x=r?.record_data||{};if(String(x?.propertyId||'')!==propertyId)continue;if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
       const b=await c.from('pms_cloud_records').select('data').eq('property_id',propertyId).eq('storage_key','signature_pms_purchase_orders').maybeSingle();
-      if(!b.error){for(const x of (Array.isArray(b.data?.data)?b.data.data:[])){if(String(x?.propertyId||'')!==propertyId)continue;if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
+      if(b.error)throw b.error;
+      for(const x of (Array.isArray(b.data?.data)?b.data.data:[])){if(String(x?.propertyId||'')!==propertyId)continue;if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}
     }catch(e){console.warn('PO open cloud lookup:',e)}
     return null;
   }
@@ -27815,21 +27773,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     const record={...po};
     let published=false;
 
-    // Primary transaction-level Purchasing store.
-    try{
-      const rid=String(record.id||('po_'+Date.now()));
-      const {error}=await c.from('property_store_records').upsert({
-        property_id:pid,
-        record_type:'purchase_orders',
-        record_id:rid,
-        record_data:record,
-        updated_at:new Date().toISOString()
-      },{onConflict:'property_id,record_type,record_id'});
-      if(!error)published=true;
-      else console.warn('PO property_store_records publish:',error);
-    }catch(e){console.warn('PO property_store_records publish exception:',e)}
-
-    // Shared keyed storage used by cross-user PR/PO lookup.
+    // Canonical property-scoped keyed storage used by cross-user PR/PO lookup.
     try{
       const {data:old,error:rerr}=await c.from('pms_cloud_records')
         .select('data')
