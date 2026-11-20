@@ -24162,6 +24162,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const CLEANUP_LOCK_KEY='signature_pms_revenue_cleanup_lock';
   let lastProperty='';
   let busy=false;
+  // FIX18: cache successful journal payloads per property/storage key.
+  const publishedJournalSignatures=new Map();
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
@@ -24213,9 +24215,14 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function publishOne(c,p,u,j){
     if(!j || String(j.propertyId||p)!==p)return false;
-    const payload={property_id:p,storage_key:journalKey(j),data:{...j,propertyId:p},updated_by:u,updated_at:new Date().toISOString()};
+    const storageKey=journalKey(j);
+    const signature=JSON.stringify({...j,propertyId:p});
+    const cacheKey=p+'::'+storageKey;
+    if(publishedJournalSignatures.get(cacheKey)===signature)return false;
+    const payload={property_id:p,storage_key:storageKey,data:{...j,propertyId:p},updated_by:u,updated_at:new Date().toISOString()};
     const r=await c.from(TABLE).upsert(payload,{onConflict:'property_id,storage_key'});
     if(r.error)throw r.error;
+    publishedJournalSignatures.set(cacheKey,signature);
     return true;
   }
   function isOperationalResetJournal(j){
@@ -24701,7 +24708,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
 })();
 </script>
 <!-- FIX15: F&B background hydration interval reduced from 5s to 30s; action/focus/visibility sync retained. -->
-<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
+<!-- FIX18: canonical Accounting journal publisher deduplicates unchanged payloads; removed redundant Employee Advances 20s full-sync trigger and duplicate Payroll journal publishing. -->\n<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
 <script id="v2-1-409-fnb-closing-cashier-cloud-sync-fix">
 /* v2.1.409 — F&B Daily Closing + F&B Cashier Shift cloud source of truth.
    Admin/Reception must see the same Closed/Open state for the same property,
@@ -28170,13 +28177,15 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
       /* Repair only a missing accounting journal for payroll that is already
          Posted/Paid and was created after the cleanup watermark. This NEVER changes payroll status. */
       const repaired=ensureExistingPostedPayrollJournals();
-      await publishPayrollJournals(payrollLockState);
+      // FIX18: canonical Accounting Journal sync is the sole journal publisher.
+      // Repaired local payroll journals are picked up by that 30s owner; avoid
+      // a second UPSERT of the same payroll journals from this 60s repair loop.
       // The general accounting journal cloud sync (v2-1-397) is the sole
       // reader/merger of all accounting journals. Do not pull and rewrite the
       // same local journal array from this payroll-only loop: concurrent
       // merges can race and make Accounting totals flicker between snapshots.
-      // Payroll journals are still repaired above and published to their
-      // individual cloud records; the general sync hydrates them locally.
+      // Payroll journals are repaired locally above; the canonical sync
+      // publishes and hydrates them without a second writer.
       const cloudChanged=false;
       if(repaired&&!cloudChanged){
         try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
@@ -28857,8 +28866,11 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   }
   function boot(){
     ensureAccounts();ensureUI();
-    setTimeout(()=>{ensureUI();syncJournalCloud();},800);
-    setInterval(()=>{if(!document.hidden){ensureUI();syncJournalCloud();}},20000);
+    setTimeout(()=>{ensureUI();},800);
+    // FIX18: the canonical Accounting owner handles background sync; do not
+    // re-trigger the full journal pull/publish cycle from this 20s UI timer.
+    // Explicit advance actions and the focus handler still request immediate sync.
+    setInterval(()=>{if(!document.hidden)ensureUI();},20000);
     window.addEventListener('focus',()=>{ensureUI();syncJournalCloud();});
     try{const oldRender=window.renderAll;if(typeof oldRender==='function'&&!oldRender.__v422AdvancesWrapped){const w=function(){const r=oldRender.apply(this,arguments);setTimeout(()=>{ensureUI();},100);return r;};w.__v422AdvancesWrapped=true;window.renderAll=w;}}catch(e){}
   }
