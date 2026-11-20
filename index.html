@@ -24438,10 +24438,13 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       return false;
     }finally{hydrating=false;}
   }
-  async function publish(){
+  async function publish(onlyKey){
     const z=await ready();if(!z||hydrating)return false;
     try{
-      for(const key of KEYS)await pushKey(z,key);
+      // Egress optimization: a local edit publishes only its changed HR key.
+      // Calls without a key (e.g. explicit employee save) retain the full sync.
+      const targets=onlyKey&&KEYS.includes(onlyKey)?[onlyKey]:KEYS;
+      for(const key of targets)await pushKey(z,key);
       return true;
     }catch(e){
       console.warn('HR/Payroll cloud save failed:',e);
@@ -24452,7 +24455,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   function schedule(key){
     if(!KEYS.includes(key)||hydrating)return;
     clearTimeout(timers[key]);
-    timers[key]=setTimeout(()=>publish(),350);
+    timers[key]=setTimeout(()=>publish(key),350);
   }
   const originalSet=Storage.prototype.setItem;
   Storage.prototype.setItem=function(key,value){
