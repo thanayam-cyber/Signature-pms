@@ -21908,6 +21908,8 @@ async function hydrateSupabaseRooms(){
 
       cloud.forEach(r=>{
         const cr=r.record_data||{};
+        // property_store_records rows are not trusted to define payload ownership.
+        if(String(cr?.propertyId||'')!==propertyId)return;
         const lr=localMine.find(x=>String(x?.id||'')===String(r.record_id));
         const lu=Date.parse(String(lr?.updatedAt||lr?.createdAt||''));
         const cu=Date.parse(String(r.updated_at||''));
@@ -23894,14 +23896,14 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
-  function localMine(){const p=localPid();return localAll().filter(x=>String(x?.propertyId||p)===p).map(x=>({...x,propertyId:p}))}
+  function localMine(){const p=localPid();return localAll().filter(x=>String(x?.propertyId||'')===p).map(x=>({...x}))}
   function putLocal(v){try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(v)?v:[]));return true}catch(e){return false}}
   function merge(...lists){
     const m=new Map();
     lists.flat().forEach(x=>{if(x?.id)m.set(String(x.id),x)});
     return [...m.values()];
   }
-  function pendingRows(){const p=localPid();return [...pending.values()].filter(x=>String(x?.propertyId||p)===p)}
+  function pendingRows(){const p=localPid();return [...pending.values()].filter(x=>String(x?.propertyId||'')===p)}
   async function sync(){
     if(syncBusy)return false;
     const c=client(),localP=localPid();if(!c||!localP)return false;
@@ -23911,13 +23913,19 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     try{
       const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
       if(error)throw error;
-      const cloud=Array.isArray(data?.data)?data.data.map(x=>({...x,propertyId:localP})):[];
-      const merged=merge(cloud,localMine(),pendingRows()).map(x=>({...x,propertyId:localP}));
+      // A row's property_id is not permission to relabel its payload. Keep only
+      // records whose own propertyId explicitly matches this PMS property.
+      const cloudAll=Array.isArray(data?.data)?data.data:[];
+      const cloud=cloudAll.filter(x=>String(x?.propertyId||'')===localP).map(x=>({...x}));
+      const merged=merge(cloud,localMine(),pendingRows()).filter(x=>String(x?.propertyId||'')===localP);
+      // Preserve any legacy foreign/untagged payload entries untouched in cloud;
+      // they are excluded from this property's UI but are not deleted by refresh.
+      const safePayload=cloudAll.filter(x=>String(x?.propertyId||'')!==localP).concat(merged);
       const {error:upErr}=await c.from(TABLE).upsert({
-        property_id:p,storage_key:KEY,data:merged,updated_by:u,updated_at:new Date().toISOString()
+        property_id:p,storage_key:KEY,data:safePayload,updated_by:u,updated_at:new Date().toISOString()
       },{onConflict:'property_id,storage_key'});
       if(upErr)throw upErr;
-      const all=localAll().filter(x=>String(x?.propertyId||localP)!==localP);
+      const all=localAll().filter(x=>String(x?.propertyId||'')!==localP);
       putLocal(all.concat(merged));
       merged.forEach(x=>{if(pending.has(String(x.id)))pending.delete(String(x.id))});
       try{if(typeof window.renderPurchasingModule==='function')window.renderPurchasingModule()}catch(e){}
@@ -23934,9 +23942,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       const {data,error}=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',KEY).maybeSingle();
       if(error)throw error;
       if(!data)return true;
-      const cloud=Array.isArray(data.data)?data.data.map(x=>({...x,propertyId:localP})):[];
-      const merged=merge(cloud,pendingRows()).map(x=>({...x,propertyId:localP}));
-      const all=localAll().filter(x=>String(x?.propertyId||localP)!==localP);
+      const cloud=Array.isArray(data.data)?data.data.filter(x=>String(x?.propertyId||'')===localP).map(x=>({...x})):[];
+      const merged=merge(cloud,pendingRows()).filter(x=>String(x?.propertyId||'')===localP);
+      const all=localAll().filter(x=>String(x?.propertyId||'')!==localP);
       putLocal(all.concat(merged));
       try{if(typeof window.renderPurchasingModule==='function')window.renderPurchasingModule()}catch(e){}
       if(pending.size)setTimeout(sync,50);
@@ -24002,8 +24010,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const write=x=>{try{localStorage.setItem(PO_KEY,JSON.stringify(Array.isArray(x)?x:[]));}catch(e){console.warn('PO local cache write failed',e)}};
 
   async function cachePO(po,propertyId){
-    if(!po)return null;
-    const merged={...po,propertyId};
+    if(!po||String(po?.propertyId||'')!==String(propertyId||''))return null;
+    const merged={...po};
     const all=read();
     const other=all.filter(x=>String(x?.propertyId||'')!==propertyId);
     const mine=all.filter(x=>String(x?.propertyId||'')===propertyId && String(x?.id||'')!==String(merged.id||'') && String(x?.number||'')!==String(merged.number||''));
@@ -24026,7 +24034,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       if(error)throw error;
       for(const row of (Array.isArray(data)?data:[])){
         const po=row?.record_data||{};
-        if(matchesPO(po,prId,poNo))return await cachePO(po,propertyId);
+        if(String(po?.propertyId||'')===propertyId&&matchesPO(po,prId,poNo))return await cachePO(po,propertyId);
       }
     }catch(e){console.warn('Primary PO cloud lookup failed:',e)}
     try{
@@ -24038,7 +24046,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
         .maybeSingle();
       if(!error && data){
         const arr=Array.isArray(data.data)?data.data:[];
-        const po=arr.find(x=>matchesPO(x,prId,poNo));
+        const po=arr.find(x=>String(x?.propertyId||'')===propertyId&&matchesPO(x,prId,poNo));
         if(po)return await cachePO(po,propertyId);
       }
     }catch(e){console.warn('Legacy PO cloud lookup failed:',e)}
@@ -25401,9 +25409,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const c=typeof initSupabaseClient==='function'?initSupabaseClient():null, propertyId=prop();
       if(!c||!propertyId)return null;
       const a=await c.from('property_store_records').select('record_data').eq('property_id',propertyId).eq('record_type','purchase_orders');
-      if(!a.error){for(const r of (Array.isArray(a.data)?a.data:[])){const x=r?.record_data||{};if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
+      if(!a.error){for(const r of (Array.isArray(a.data)?a.data:[])){const x=r?.record_data||{};if(String(x?.propertyId||'')!==propertyId)continue;if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
       const b=await c.from('pms_cloud_records').select('data').eq('property_id',propertyId).eq('storage_key','signature_pms_purchase_orders').maybeSingle();
-      if(!b.error){for(const x of (Array.isArray(b.data?.data)?b.data.data:[])){if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
+      if(!b.error){for(const x of (Array.isArray(b.data?.data)?b.data.data:[])){if(String(x?.propertyId||'')!==propertyId)continue;if((prId&&String(x.prId||'')===String(prId))||(poNo&&String(x.number||'')===String(poNo)))return x;}}
     }catch(e){console.warn('PO open cloud lookup:',e)}
     return null;
   }
@@ -25454,7 +25462,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 </script>
 <script id="v2-1-367-purchasing-register-blink-fix">
-/* v2.1.367 — Purchasing Register blink fix.
+/* v2.1.367 — Purchasing Register blink fix + strict property ownership.
    Purchasing only. Restaurant POS untouched. Login/Auth untouched.
    Cloud sync must not continuously re-render the Purchase Register. */
 (function(){
@@ -30065,3 +30073,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 </script>
 </body>
 </html>
+<!-- v2.1.476 PURCHASING PROPERTY ISOLATION HARDENING
+     Changes limited to Purchasing PO/PR cloud ownership checks:
+     - PR cloud pull/sync no longer assigns the selected propertyId to foreign/untagged records.
+     - PO cloud lookup/cache no longer relabels a PO as belonging to the selected property.
+     - Legacy PO hydration rejects record_data whose propertyId does not match the selected property.
+     - Existing stored records are not deleted or rewritten by this patch.
+-->
