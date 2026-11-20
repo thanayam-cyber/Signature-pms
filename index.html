@@ -28959,7 +28959,7 @@ const isHR=()=>pos()==='hr manager'||pos().includes('human resources manager')||
 const canStage=(key,positionCheck,record)=>!!(has(key)&&(key==='purchasing.approve_pr_department'||positionCheck()));
 const esc=x=>typeof window.escapeHtml==='function'?window.escapeHtml(x):String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const currentProp=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
-function syncPR(){try{window.syncSupabasePurchaseRequests?.()}catch(e){}}
+function syncPR(record){try{window.syncSupabasePurchaseRequests?.(record?[record]:undefined)}catch(e){}}
 function syncPO(){try{window.syncSupabasePurchaseOrders?.()}catch(e){}}
 function syncStores(){try{window.syncSupabaseStores?.()}catch(e){}}
 function syncHR(){try{window.syncSupabaseHRPayroll?.()}catch(e){}}
@@ -28985,7 +28985,7 @@ window.sigUpdatePositionRightsHint=function(){const p=document.getElementById('u
 
 /* PR chain: Department Head -> Purchasing Manager -> approved for PO creation. */
 function getPR(id){const pid=currentProp();return pid?read(KPR).find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null}
-function savePRRecord(r){const pid=currentProp();if(!pid||String(r?.propertyId||'')!==pid)return false;const all=read(KPR),i=all.findIndex(x=>String(x.id)===String(r.id)&&String(x.propertyId||'')===pid);if(i<0)return false;all[i]=r;write(KPR,all);syncPR();return true}
+function savePRRecord(r){const pid=currentProp();if(!pid||String(r?.propertyId||'')!==pid)return false;const all=read(KPR),i=all.findIndex(x=>String(x.id)===String(r.id)&&String(x.propertyId||'')===pid);if(i<0)return false;all[i]=r;write(KPR,all);syncPR(r);return true}
 window.sigApprovePRStage=function(id){const r=getPR(id);if(!r)return alert('Purchase Request not found.');const stage=String(r.approvalStage||'Department Head');
  if(stage==='Department Head'){if(!canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r))return alert('Only the assigned Department Head can approve this PR stage.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');r.departmentHeadApprovedBy=uname();r.departmentHeadApprovedAt=new Date().toISOString();r.approvalStage='Purchasing Manager';r.status='Pending Purchasing Manager Approval';}
  else if(stage==='Purchasing Manager'){if(!canStage('purchasing.approve_pr_purchasing',isPurchasing,r))return alert('Only the Purchasing Manager can approve this PR stage.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');r.purchasingManagerApprovedBy=uname();r.purchasingManagerApprovedAt=new Date().toISOString();r.approvalStage='Complete';r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();}
