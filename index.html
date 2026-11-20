@@ -16128,7 +16128,7 @@ window.postDailyRevenue=function(){
     finally{busy=false;}
   }
   setTimeout(run,2500);
-  setInterval(run,8000);
+  setInterval(run,60000);
 })();
 /* v2.1.467 — safely split legacy combined OTA commission lines into their own journal.
    When a cleanup lock is active, only repair a journal created after that lock began;
@@ -16186,7 +16186,7 @@ window.postDailyRevenue=function(){
     }catch(e){console.warn('OTA commission journal separation repair paused:',e?.message||e)}
     finally{busy=false}
   }
-  setTimeout(run,6500);setInterval(run,15000);
+  setTimeout(run,6500);setInterval(run,60000);
 })();
 let dailyPaymentSelectedDateOverride='';
 function dailyPaymentSelectedDate(){
@@ -23721,7 +23721,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const TABLE='pms_cloud_records';
   const SALE_PREFIX='signature_pms_fnb_sale_';
   const PAYMENT_PREFIX='signature_pms_fnb_payment_';
-  const POLL_MS=5000;
+  const POLL_MS=30000; // Realtime is primary; 30s polling is fallback only.
   let channel=null;
   let lastProperty='';
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
@@ -23976,7 +23976,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin');
     [300,800,1500,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin')},ms));
     [700,1800,3500].forEach(ms=>setTimeout(pull,ms));
-    setInterval(()=>{if(localPid()&&!document.hidden)pull()},5000);
+    setInterval(()=>{if(localPid()&&!document.hidden)pull()},15000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();</script>
@@ -24157,7 +24157,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.__signatureAccountingJournalCloud397=true;
   const TABLE='pms_cloud_records';
   const PREFIX='signature_pms_accounting_journal_';
-  const POLL_MS=5000;
+  const POLL_MS=30000; // Reduce repeated full journal reads; explicit writes remain immediate.
   const CLEANUP_LOCK_KEY='signature_pms_revenue_cleanup_lock';
   let lastProperty='';
   let busy=false;
@@ -25074,7 +25074,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bindOpen();bindClose();
     [300,1000,2500,4500].forEach(ms=>setTimeout(()=>{bindOpen();bindClose();},ms));
     [1200,3500].forEach(ms=>setTimeout(ensure,ms));
-    setInterval(()=>{if(!document.hidden)ensure()},5000);
+    setInterval(()=>{if(!document.hidden)ensure()},30000);
     window.addEventListener('focus',ensure);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensure()});
   }
@@ -28197,7 +28197,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     try{await syncPayrollJournal();}catch(e){console.warn('Accounting journal initial payroll sync failed:',e);}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  setInterval(()=>{if(!document.hidden)syncPayrollJournal().catch(()=>{});},8000);
+  setInterval(()=>{if(!document.hidden)syncPayrollJournal().catch(()=>{});},60000);
 })();
 </script>
 
@@ -28364,7 +28364,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     bind();
     [500,1500,3000,5000].forEach(ms=>setTimeout(bind,ms));
     [1200,3500].forEach(ms=>setTimeout(hydrateCanonical,ms));
-    setInterval(()=>{if(!document.hidden)hydrateCanonical()},5000);
+    setInterval(()=>{if(!document.hidden)hydrateCanonical()},30000);
     window.addEventListener('focus',hydrateCanonical);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrateCanonical()});
   }
