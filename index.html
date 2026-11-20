@@ -25486,14 +25486,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',key).maybeSingle();
       if(q.error)throw q.error;
       if(q.data && Array.isArray(q.data.data)){
+        // A cloud row is property-scoped, but never use that row's property_id
+        // to relabel records. Accept only records explicitly owned by this property.
+        // This prevents a stale/mixed payload from turning another property's PO
+        // into a local PO for the currently selected property.
         const other=read(key).filter(x=>String(x?.propertyId||'')!==z.p);
-        // IMPORTANT: the cloud row is property-scoped, but its JSON payload may
-        // contain legacy/mixed-property records. Never overwrite an explicit
-        // different propertyId with the currently selected propertyId.
-        // Untagged legacy records are retained under this row's property scope.
-        const mine=q.data.data
-          .filter(x=>!String(x?.propertyId||'').trim() || String(x.propertyId)===z.p)
-          .map(x=>({...x,propertyId:z.p}));
+        const mine=q.data.data.filter(x=>String(x?.propertyId||'')===z.p);
         write(key,other.concat(mine));
         return true;
       }
@@ -25504,9 +25502,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   async function publish(key,list){
     const z=await auth(); if(!z)return false;
     try{
+      // Never infer ownership for an untagged record. Explicit propertyId is required.
       const arr=(Array.isArray(list)?list:[])
-        .filter(x=>String(x?.propertyId||z.p)===z.p)
-        .map(x=>({...x,propertyId:z.p}));
+        .filter(x=>String(x?.propertyId||'')===z.p)
+        .map(x=>({...x}));
+      // A filtered-empty PO list must never replace the cloud snapshot.
+      if(key===PO_KEY && arr.length===0)return false;
       const q=await z.c.from(CLOUD).upsert({
         property_id:z.p,storage_key:key,data:arr,
         updated_by:z.u,updated_at:new Date().toISOString()
@@ -25540,11 +25541,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const q=await z.c.from(CLOUD).select('data').eq('property_id',z.p).eq('storage_key',PO_KEY).maybeSingle();
       if(q.error)throw q.error;
       const arr=Array.isArray(q.data?.data)?q.data.data:[];
-      const po=arr.find(x=>String(x?.number||'').trim().toLowerCase()===String(poNumber).trim().toLowerCase());
+      const mine=arr.filter(x=>String(x?.propertyId||'')===z.p);
+      const po=mine.find(x=>String(x?.number||'').trim().toLowerCase()===String(poNumber).trim().toLowerCase());
       if(po){
         const other=read(PO_KEY).filter(x=>String(x?.propertyId||'')!==z.p);
-        write(PO_KEY,other.concat(arr.map(x=>({...x,propertyId:z.p}))));
-        return {...po,propertyId:z.p};
+        write(PO_KEY,other.concat(mine));
+        return po;
       }
     }catch(e){console.warn('Shared PO number lookup failed:',e)}
     return null;
@@ -27822,7 +27824,12 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   async function publishPO(po){
     const c=client(), pid=propertyId();
     if(!c||!pid||!po)return false;
-    const record={...po,propertyId:pid};
+    // Do not relabel a cached PO as belonging to whichever property is selected.
+    if(String(po.propertyId||'')!==pid){
+      console.warn('PO publish blocked: record property does not match selected property.',po?.number||po?.id);
+      return false;
+    }
+    const record={...po};
     let published=false;
 
     // Primary transaction-level Purchasing store.
