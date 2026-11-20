@@ -4,6 +4,7 @@
 <!-- SIGNATURE PMS PATCH VERSION: 2.1.467 OTA COMMISSION JOURNAL REPAIR -->
 
 
+<!-- Purchasing property isolation hardening FIX6 -->
 <html lang="en"><head>\n<!-- Daily Revenue tax preview v7: merges current property and active config to avoid stale disabled flags masking enabled tax settings. Preview only; does not post accounting. -->\n<!-- Daily Revenue tax preview v6: uses global getProperty(currentPropertyId), normalizes boolean settings, and falls back to loaded tax controls only when saved fields are absent. -->\n<!-- Daily Revenue tax preview v5: selected property config with active settings fallback. Preview only. -->\n<!-- Daily Revenue tax preview v4: reads saved tax settings from selected property record. Preview only. -->\n<!-- Daily Revenue tax preview v3: reads loaded tax controls. Preview only; not full POS/Folio/GL integration. -->
 <!-- Daily Revenue tax preview v2: use central tax configuration for selected property. Preview only; does not mutate source transactions. -->
 <meta charset="utf-8"/>
@@ -21832,6 +21833,27 @@ async function hydrateSupabaseRooms(){
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>
+<script id="v2-1-475-purchasing-test-data-local-cleanup-fix6">
+/* One-time cleanup of confirmed test transactions for the five registered properties.
+   Preserves suppliers, articles, stock setup and every non-Purchasing module. */
+(function(){
+  'use strict';
+  const FLAG='signature_pms_purchasing_test_cleanup_fix6';
+  const PROPERTY_IDS=['6d189bea-0fb1-4267-a15b-f7bf99df539b','d775899b-4671-44ab-b108-342a884755af','3b964a43-3502-4772-89fd-08faaab5eb20','a192e839-0fb8-48d8-b9a9-a4d81b2a117e','89fbb04a-1a9f-459e-b9b0-b0321638575e'];
+  const KEYS=['signature_pms_purchase_orders','signature_pms_purchase_requests','signature_pms_grns','signature_pms_supplier_payments'];
+  try{
+    if(localStorage.getItem(FLAG)==='1')return;
+    KEYS.forEach(key=>{
+      let rows=[];try{rows=JSON.parse(localStorage.getItem(key)||'[]')}catch(e){}
+      if(!Array.isArray(rows))return;
+      const kept=rows.filter(row=>!PROPERTY_IDS.includes(String(row?.propertyId||'')));
+      localStorage.setItem(key,JSON.stringify(kept));
+    });
+    localStorage.setItem(FLAG,'1');
+    console.info('Purchasing FIX6: one-time test transaction cache cleanup completed.');
+  }catch(e){console.warn('Purchasing FIX6 local cleanup skipped:',e)}
+})();
+</script>
 <script id="v2-1-341-purchasing-po-cloud-source-of-truth">
 /*
    v2.1.341 — PURCHASING PO CLOUD SOURCE OF TRUTH (pms_cloud_records)
@@ -21852,26 +21874,23 @@ async function hydrateSupabaseRooms(){
   const client=()=>typeof initSupabaseClient==='function'?initSupabaseClient():null;
   async function session(c){const {data:{session},error}=await c.auth.getSession();if(error)throw error;return session?.user||null;}
 
-  window.syncSupabasePurchaseOrders=async function(){
+  window.syncSupabasePurchaseOrders=async function(records){
     try{
       const c=client(), propertyId=prop();
       if(!c||!propertyId)return false;
       const user=await session(c); if(!user)return false;
-      const localMine=readPOs().filter(x=>String(x?.propertyId||'')===propertyId);
-      if(!localMine.length)return true;
+      // IMPORTANT: never bulk-publish local cache. Only explicitly changed PO rows
+      // may be written, otherwise old test records can resurrect after cloud cleanup.
+      const changed=(Array.isArray(records)?records:[]).filter(x=>x&&x.id!=null&&String(x.propertyId||'')===propertyId);
+      if(!changed.length)return false;
       const {data:old,error:readError}=await c.from(TABLE).select('data').eq('property_id',propertyId).eq('storage_key',PO_KEY).maybeSingle();
       if(readError)throw readError;
       const existing=Array.isArray(old?.data)?old.data:[];
       const byId=new Map();
-      existing.forEach(x=>{if(x&&x.id!=null)byId.set(String(x.id),x)});
-      localMine.forEach(x=>{
-        if(!x||x.id==null)return;
-        const id=String(x.id), cloudRecord=byId.get(id);
-        const lt=Date.parse(String(x.updatedAt||x.createdAt||''));
-        const ct=Date.parse(String(cloudRecord?.updatedAt||cloudRecord?.createdAt||''));
-        if(!cloudRecord || (Number.isFinite(lt)&&Number.isFinite(ct)&&lt>ct))byId.set(id,{...x});
-      });
-      const {error}=await c.from(TABLE).upsert({property_id:propertyId,storage_key:PO_KEY,data:[...byId.values()],updated_by:user.id,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
+      existing.filter(x=>String(x?.propertyId||'')===propertyId).forEach(x=>{if(x&&x.id!=null)byId.set(String(x.id),x)});
+      changed.forEach(x=>byId.set(String(x.id),{...x}));
+      const foreign=existing.filter(x=>String(x?.propertyId||'')!==propertyId);
+      const {error}=await c.from(TABLE).upsert({property_id:propertyId,storage_key:PO_KEY,data:foreign.concat([...byId.values()]),updated_by:user.id,updated_at:new Date().toISOString()},{onConflict:'property_id,storage_key'});
       if(error)throw error;
       if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders synchronized in cloud.','success');
       return true;
@@ -21889,22 +21908,12 @@ async function hydrateSupabaseRooms(){
       if(!await session(c))return false;
       const {data,error}=await c.from(TABLE).select('data').eq('property_id',propertyId).eq('storage_key',PO_KEY).maybeSingle();
       if(error)throw error;
-      const cloud=Array.isArray(data?.data)?data.data:[];
-      const local=readPOs();
-      const other=local.filter(x=>String(x?.propertyId||'')!==propertyId);
-      const localMine=local.filter(x=>String(x?.propertyId||'')===propertyId);
+      // Missing row means no cloud snapshot yet; do not publish or relabel local cache.
+      if(!data)return true;
+      const cloud=Array.isArray(data.data)?data.data:[];
+      const other=readPOs().filter(x=>String(x?.propertyId||'')!==propertyId);
       const cloudMine=cloud.filter(x=>String(x?.propertyId||'')===propertyId);
-      const byId=new Map();
-      cloudMine.forEach(x=>{if(x&&x.id!=null)byId.set(String(x.id),x)});
-      localMine.forEach(x=>{
-        const id=String(x?.id||'');
-        if(!id)return;
-        const cr=byId.get(id);
-        const localTime=Date.parse(String(x.updatedAt||x.createdAt||''));
-        const cloudTime=Date.parse(String(cr?.updatedAt||cr?.createdAt||''));
-        if(!cr || (Number.isFinite(localTime)&&Number.isFinite(cloudTime)&&localTime>cloudTime))byId.set(id,x);
-      });
-      writePOs(other.concat([...byId.values()]));
+      writePOs(other.concat(cloudMine));
       try{if(typeof renderPurchasingModule==='function')renderPurchasingModule();}catch(e){}
       try{if(typeof renderPurchaseRegister==='function')renderPurchaseRegister();}catch(e){}
       if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Purchase Orders refreshed from cloud.','success');
@@ -21919,7 +21928,13 @@ async function hydrateSupabaseRooms(){
   function wrapSave(){
     const name='savePOFromPR',fn=window[name];
     if(typeof fn!=='function'||fn.__v341POWrapped)return;
-    const wrapped=function(){const result=fn.apply(this,arguments);[150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseOrders(),ms));return result;};
+    const wrapped=function(){
+      const before=new Map(readPOs().filter(x=>String(x?.propertyId||'')===prop()).map(x=>[String(x.id),JSON.stringify(x)]));
+      const result=fn.apply(this,arguments);
+      const changed=readPOs().filter(x=>String(x?.propertyId||'')===prop()&&x?.id!=null&&before.get(String(x.id))!==JSON.stringify(x));
+      changed.forEach(record=>[150,600,1500,3000].forEach(ms=>setTimeout(()=>window.syncSupabasePurchaseOrders([record]),ms)));
+      return result;
+    };
     wrapped.__v341POWrapped=true;window[name]=wrapped;
   }
   function wrapNavigation(){
@@ -23872,7 +23887,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     return [...m.values()];
   }
   function pendingRows(){const p=localPid();return [...pending.values()].filter(x=>String(x?.propertyId||'')===p)}
-  async function sync(){
+  async function sync(explicitRecords){
     if(syncBusy)return false;
     const c=client(),localP=localPid();if(!c||!localP)return false;
     const p=await cloudPid(localP);if(!p)return false;
@@ -23885,7 +23900,8 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       // records whose own propertyId explicitly matches this PMS property.
       const cloudAll=Array.isArray(data?.data)?data.data:[];
       const cloud=cloudAll.filter(x=>String(x?.propertyId||'')===localP).map(x=>({...x}));
-      const merged=merge(cloud,localMine(),pendingRows()).filter(x=>String(x?.propertyId||'')===localP);
+      const changed=(Array.isArray(explicitRecords)?explicitRecords:[]).filter(x=>String(x?.propertyId||'')===localP);
+      const merged=merge(cloud,changed,pendingRows()).filter(x=>String(x?.propertyId||'')===localP);
       // Preserve any legacy foreign/untagged payload entries untouched in cloud;
       // they are excluded from this property's UI but are not deleted by refresh.
       const safePayload=cloudAll.filter(x=>String(x?.propertyId||'')!==localP).concat(merged);
@@ -23925,10 +23941,11 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     const fn=window.savePurchaseRequest;
     if(typeof fn!=='function'||fn.__pr350)return;
     const wrapped=function(){
-      const before=new Set(localMine().map(x=>String(x.id)));
+      const before=new Map(localMine().map(x=>[String(x.id),JSON.stringify(x)]));
       const r=fn.apply(this,arguments);
-      localMine().filter(x=>!before.has(String(x.id))).forEach(x=>pending.set(String(x.id),x));
-      [0,100,300,700,1500,3000].forEach(ms=>setTimeout(sync,ms));
+      const changed=localMine().filter(x=>before.get(String(x.id))!==JSON.stringify(x));
+      changed.filter(x=>!before.has(String(x.id))).forEach(x=>pending.set(String(x.id),x));
+      [0,100,300,700,1500,3000].forEach(ms=>setTimeout(()=>sync(changed),ms));
       return r;
     };
     wrapped.__pr350=true;window.savePurchaseRequest=wrapped;
@@ -23937,8 +23954,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     const fn=window.approvePurchaseRequest;
     if(typeof fn!=='function'||fn.__pr350approve)return;
     const wrapped=function(){
+      const before=new Map(localMine().map(x=>[String(x.id),JSON.stringify(x)]));
       const r=fn.apply(this,arguments);
-      [0,150,500,1200].forEach(ms=>setTimeout(sync,ms));
+      const changed=localMine().filter(x=>before.get(String(x.id))!==JSON.stringify(x));
+      [0,150,500,1200].forEach(ms=>setTimeout(()=>sync(changed),ms));
       return r;
     };
     wrapped.__pr350approve=true;window.approvePurchaseRequest=wrapped;
@@ -25495,9 +25514,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   async function ensure(key){
     if(await hasCloudRow(key))return pull(key);
-    const p=prop();
-    const mine=read(key).filter(x=>String(x?.propertyId||'')===p);
-    if(mine.length)return publish(key,mine);
+    // No cloud row: do not seed it from browser cache. This prevents stale test data
+    // from being copied into a property after a cloud cleanup or first login.
     return false;
   }
 
