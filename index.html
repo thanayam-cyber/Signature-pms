@@ -28054,10 +28054,13 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     }catch(e){console.warn('Revenue cleanup lock check failed:',e?.message||e);return true;}
   }
   function storageKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()));}
-  async function publishPayrollJournals(){
+  async function publishPayrollJournals(lockState){
     if(window.__signaturePropertyCleanupInProgress)return false;
     const z=await session();if(!z)return false;
-    if(await cleanupLockActive(z))return false;
+    // Reuse the lock result already fetched by syncPayrollJournal in this cycle.
+    // If that read failed, verify again here rather than risking a stale publish.
+    if(lockState?.verified){if(lockState.active)return false;}
+    else if(await cleanupLockActive(z))return false;
     const rows=localJournals().filter(j=>String(j?.propertyId||z.p)===z.p&&isPayrollJournal(j));
     for(const j of rows){
       const payload={property_id:z.p,storage_key:storageKey(j),data:{...j,propertyId:z.p},updated_by:z.u?.id||null,updated_at:new Date().toISOString()};
@@ -28152,14 +28155,20 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
       /* Share the cleanup watermark with payroll repair so old Posted/Paid payroll
          rows cannot recreate historical ETF/EPF/payroll expense journals after a clean start. */
       const z=await session();
+      let payrollLockState={verified:false,active:true};
       if(z){
         const lock=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
-        if(!lock.error){const d=lock.data?.data||{};const t=Date.parse(d.startedAt||lock.data?.updated_at||'');if(t>0)window.__signatureAccountingCleanupWatermark=t;}
+        if(!lock.error){
+          const d=lock.data?.data||{};
+          const t=Date.parse(d.startedAt||lock.data?.updated_at||'');
+          if(t>0)window.__signatureAccountingCleanupWatermark=t;
+          payrollLockState={verified:true,active:d.active===true};
+        }
       }
       /* Repair only a missing accounting journal for payroll that is already
          Posted/Paid and was created after the cleanup watermark. This NEVER changes payroll status. */
       const repaired=ensureExistingPostedPayrollJournals();
-      await publishPayrollJournals();
+      await publishPayrollJournals(payrollLockState);
       // The general accounting journal cloud sync (v2-1-397) is the sole
       // reader/merger of all accounting journals. Do not pull and rewrite the
       // same local journal array from this payroll-only loop: concurrent
