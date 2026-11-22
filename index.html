@@ -8276,6 +8276,7 @@ async function clearRevenueHistory(){
            updated_at:new Date().toISOString()
          },{onConflict:'property_id,storage_key'});
          if(lockError)throw new Error('Could not activate the property cleanup lock for '+lockPropertyId+'. No cloud cleanup was attempted: '+(lockError.message||String(lockError)));
+         try{window.signaturePMSInvalidateCleanupLockCache?.(lockPropertyId)}catch(_e){}
          const {data:lockCheck,error:lockCheckError}=await client.from('pms_cloud_records')
            .select('data').eq('property_id',lockPropertyId).eq('storage_key',cleanupLockKey).maybeSingle();
          if(lockCheckError)throw lockCheckError;
@@ -8383,6 +8384,7 @@ async function clearRevenueHistory(){
        const {error:unlockError}=await client.from('pms_cloud_records')
          .delete().in('property_id',unlockAliases).eq('storage_key','signature_pms_revenue_cleanup_lock');
        if(unlockError)throw unlockError;
+       try{window.signaturePMSInvalidateCleanupLockCache?.(unlockAliases)}catch(_e){}
        const {data:lockStillThere,error:lockVerifyError}=await client.from('pms_cloud_records')
          .select('storage_key').in('property_id',unlockAliases).eq('storage_key','signature_pms_revenue_cleanup_lock');
        if(lockVerifyError)throw lockVerifyError;
@@ -16128,8 +16130,40 @@ window.postDailyRevenue=function(){
     finally{busy=false;}
   }
   setTimeout(run,2500);
-  setInterval(run,8000);
+  setInterval(run,60000);
 })();
+/* FIX21 — share cleanup-lock reads between journal/OTA/payroll repair loops.
+   Short cache + in-flight request coalescing; cleanup writes invalidate immediately.
+   Fail closed: an unavailable lock read is never treated as an unlocked property. */
+(function signaturePMSCleanupLockReadCache(){
+  'use strict';
+  if(window.__signaturePMSCleanupLockReadCache)return;
+  window.__signaturePMSCleanupLockReadCache=true;
+  const cache=new Map(),pending=new Map(),TTL=5000;
+  window.signaturePMSReadCleanupLock=async function(client,propertyId){
+    const p=String(propertyId||'');
+    if(!client||!p)return {verified:false,active:true,startedAt:0};
+    const now=Date.now(),old=cache.get(p);
+    if(old&&now-old.at<TTL)return old.state;
+    if(pending.has(p))return pending.get(p);
+    const task=(async()=>{
+      const q=await client.from('pms_cloud_records').select('data,updated_at')
+        .eq('property_id',p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
+      if(q.error)throw q.error;
+      const d=q.data?.data||{};
+      const state={verified:true,active:d.active===true,startedAt:Date.parse(d.startedAt||q.data?.updated_at||'')||0};
+      cache.set(p,{at:Date.now(),state});
+      return state;
+    })();
+    pending.set(p,task);
+    try{return await task;}finally{pending.delete(p);}
+  };
+  window.signaturePMSInvalidateCleanupLockCache=function(propertyIds){
+    const ids=Array.isArray(propertyIds)?propertyIds:[propertyIds];
+    ids.map(x=>String(x||'')).filter(Boolean).forEach(p=>cache.delete(p));
+  };
+})();
+
 /* v2.1.467 — safely split legacy combined OTA commission lines into their own journal.
    When a cleanup lock is active, only repair a journal created after that lock began;
    pre-lock journals remain untouched until cleanup is confirmed complete. */
@@ -16151,11 +16185,10 @@ window.postDailyRevenue=function(){
     try{
       const c=initSupabaseClient();if(!c)return;
       const session=await c.auth.getSession();if(!session?.data?.session?.user)return;
-      const lock=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',LOCK_KEY).maybeSingle();
-      if(lock.error)return;
-      const lockData=lock.data?.data||{};
-      const cleanupLocked=lockData.active===true;
-      const lockStarted=Date.parse(lockData.startedAt||lock.data?.updated_at||'')||0;
+      const lockState=await window.signaturePMSReadCleanupLock(c,p);
+      if(!lockState?.verified)return;
+      const cleanupLocked=lockState.active===true;
+      const lockStarted=lockState.startedAt||0;
       const all=read();let changed=false;const additions=[];
       const propertyRows=all.filter(j=>String(j?.propertyId||p)===p);
       const createdAt=j=>{const m=String(j?.id||'').match(/^je_(\d{13})_/i);return m?Number(m[1]):Date.parse(j?.updatedAt||j?.postedAt||'')||0;};
@@ -16186,7 +16219,7 @@ window.postDailyRevenue=function(){
     }catch(e){console.warn('OTA commission journal separation repair paused:',e?.message||e)}
     finally{busy=false}
   }
-  setTimeout(run,6500);setInterval(run,15000);
+  setTimeout(run,6500);setInterval(run,60000);
 })();
 let dailyPaymentSelectedDateOverride='';
 function dailyPaymentSelectedDate(){
@@ -17322,7 +17355,7 @@ window.deleteSupplierMaster=function(supplierId){
   renderPurchasingModule();
 };
 window.openArticleManager=function(){if(!requireModuleAction("purchasing.articles"))return;const idm='sigArticleModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Article / Purchasing Item Master</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Article Name *</label><input id="saName"></div><div class="form-group"><label>Article Code</label><input id="saCode" placeholder="Auto"></div><div class="form-group"><label>Category</label><input id="saCat" placeholder="Food / HK / Engineering"></div><div class="form-group"><label>Unit</label><input id="saUnit" placeholder="kg / pcs / ltr"></div><div class="form-group"><label>Default Cost</label><input id="saCost" type="number" min="0" step="0.01"></div><div class="form-group"><label>Reorder Level</label><input id="saReorder" type="number" min="0"></div><div class="form-group"><label>Active</label><select id="saActive"><option value="true">Active</option><option value="false">Inactive</option></select></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button><button class="btn btn-primary" onclick="saveArticleMaster()">Save Article</button></div><div id="sigArticleModalList" style="margin-top:18px"></div></div></div>`);document.getElementById(idm).classList.add('show');renderArticleManagerList();};
-window.saveArticleMaster=function(){if(!requireModuleAction("purchasing.articles"))return;const name=document.getElementById('saName').value.trim();if(!name){alert('Article name is required.');return;}const a=rows(K.art);a.push({id:id('art'),propertyId:currentPropertyId,code:document.getElementById('saCode').value.trim()||('ART-'+String(a.length+1).padStart(3,'0')),name,category:document.getElementById('saCat').value.trim()||'General',unit:document.getElementById('saUnit').value.trim()||'pcs',defaultCost:Number(document.getElementById('saCost').value||0),reorderLevel:Number(document.getElementById('saReorder').value||0),active:document.getElementById('saActive').value==='true'});saveProp(K.art,a);['saName','saCode','saCat','saUnit','saCost','saReorder'].forEach(x=>document.getElementById(x).value='');renderArticleManagerList();renderPurchasingModule();};
+window.saveArticleMaster=function(){if(!requireModuleAction("purchasing.articles"))return;const name=document.getElementById('saName').value.trim();if(!name){alert('Article name is required.');return;}const a=rows(K.art);const normCode=v=>String(v??'').trim().toUpperCase().replace(/[\s_-]+/g,'');const normName=v=>String(v??'').trim().toLowerCase().replace(/\s+/g,' ');const nameKey=normName(name);if(a.some(x=>normName(x.name)===nameKey)){alert('An article with this name already exists in this property. Please use the existing article or enter a different name.');return;}let code=document.getElementById('saCode').value.trim();if(!code){const used=new Set(a.map(x=>normCode(x.code)).filter(Boolean));let max=0;a.forEach(x=>{const m=String(x.code||'').trim().match(/^ART[\s_-]*0*(\d+)$/i);if(m)max=Math.max(max,Number(m[1])||0);});let next=max+1;code='ART-'+String(next).padStart(3,'0');while(used.has(normCode(code))){next++;code='ART-'+String(next).padStart(3,'0');}}if(a.some(x=>normCode(x.code)===normCode(code))){alert('Article Code '+code+' is already used in this property. Please enter a unique Article Code.');return;}a.push({id:id('art'),propertyId:currentPropertyId,code,name,category:document.getElementById('saCat').value.trim()||'General',unit:document.getElementById('saUnit').value.trim()||'pcs',defaultCost:Number(document.getElementById('saCost').value||0),reorderLevel:Number(document.getElementById('saReorder').value||0),active:document.getElementById('saActive').value==='true'});saveProp(K.art,a);['saName','saCode','saCat','saUnit','saCost','saReorder'].forEach(x=>document.getElementById(x).value='');renderArticleManagerList();renderPurchasingModule();};
 window.deleteArticleMaster=async function(articleId){
  if(!requireModuleAction("purchasing.articles"))return;
  const all=rows(K.art),article=all.find(x=>String(x.id)===String(articleId));if(!article)return;
@@ -21086,7 +21119,7 @@ async function resolveSupabasePropertyId(localPropertyId){
       if(byName.data?.length===1&&byName.data[0]?.id) return String(byName.data[0].id);
       if(byName.data?.length>1) throw new Error('Duplicate cloud property name "'+name+'"; refusing an ambiguous save.');
     }
-    const {data:ups,error:upErr}=await client.from("user_properties").select("property_id,is_primary").eq("user_id",(await client.auth.getUser()).data.user?.id||"");
+    const {data:ups,error:upErr}=await client.from("user_properties").select("property_id,is_primary").eq("user_id",(await client.auth.getSession()).data.session?.user?.id||"");
     if(upErr) throw upErr;
     const assigned=[...(ups||[])].filter(x=>x.property_id).map(x=>String(x.property_id));
     if(assigned.length===1) return assigned[0];
@@ -21637,6 +21670,7 @@ async function hydrateSupabaseRooms(){
 }
 </script>
 <script>
+/* FIX17 — Stores/Recipes background cloud hydration reduced from 12s to 30s; explicit save and navigation hydration preserved. */
 /* v2.1.400 — STORES + RECIPES CLOUD SOURCE OF TRUTH
    Uses the existing pms_cloud_records table (same cloud pattern as the
    working Purchasing supplier/article modules). Purchasing itself is not
@@ -21746,7 +21780,7 @@ async function hydrateSupabaseRooms(){
     bind();
     [700,1800,3500].forEach(ms=>setTimeout(bind,ms));
     [1200,3000,6000].forEach(ms=>setTimeout(hydrate,ms));
-    setInterval(()=>{if(document.hidden)return;hydrate();},12000);
+    setInterval(()=>{if(document.hidden)return;hydrate();},30000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -23721,12 +23755,12 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const TABLE='pms_cloud_records';
   const SALE_PREFIX='signature_pms_fnb_sale_';
   const PAYMENT_PREFIX='signature_pms_fnb_payment_';
-  const POLL_MS=5000;
+  const POLL_MS=30000; // Realtime is primary; 30s polling is fallback only.
   let channel=null;
   let lastProperty='';
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
-  async function userId(){try{const c=client();if(!c)return '';const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  async function userId(){try{const c=client();if(!c)return '';const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function same(x){return x&&String(x.propertyId||'')===pid()}
   async function put(key,data){
     const c=client(), p=pid(), u=await userId();
@@ -23877,7 +23911,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     try{return String(await resolveSupabasePropertyId(localId)||'')}
     catch(e){console.warn('Purchase Request property resolution failed:',e?.message||e);return ''}
   }
-  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  async function uid(c){try{const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
   function localMine(){const p=localPid();return localAll().filter(x=>String(x?.propertyId||'')===p).map(x=>({...x}))}
   function putLocal(v){try{localStorage.setItem(KEY,JSON.stringify(Array.isArray(v)?v:[]));return true}catch(e){return false}}
@@ -23976,7 +24010,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin');
     [300,800,1500,2500,4000].forEach(ms=>setTimeout(()=>{wrapSave();wrapApprove();wrapNav('switchProperty');wrapNav('hydrateCloudAfterLocalLogin')},ms));
     [700,1800,3500].forEach(ms=>setTimeout(pull,ms));
-    setInterval(()=>{if(localPid()&&!document.hidden)pull()},5000);
+    setInterval(()=>{if(localPid()&&!document.hidden)pull()},30000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();</script>
@@ -24157,14 +24191,16 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.__signatureAccountingJournalCloud397=true;
   const TABLE='pms_cloud_records';
   const PREFIX='signature_pms_accounting_journal_';
-  const POLL_MS=5000;
+  const POLL_MS=30000; // Reduce repeated full journal reads; explicit writes remain immediate.
   const CLEANUP_LOCK_KEY='signature_pms_revenue_cleanup_lock';
   let lastProperty='';
   let busy=false;
+  // FIX18: cache successful journal payloads per property/storage key.
+  const publishedJournalSignatures=new Map();
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   function client(){try{return typeof initSupabaseClient==='function'?initSupabaseClient():null}catch(e){return null}}
   function pid(){try{return String(currentPropertyId||'')}catch(e){return ''}}
-  async function uid(c){try{const r=await c.auth.getUser();return r?.data?.user?.id||''}catch(e){return ''}}
+  async function uid(c){try{const r=await c.auth.getSession();return r?.data?.session?.user?.id||''}catch(e){return ''}}
   function localAll(){try{const v=JSON.parse(localStorage.getItem('signature_pms_accounting_journals')||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
   function writeLocal(rows){try{localStorage.setItem('signature_pms_accounting_journals',JSON.stringify(rows));return true}catch(e){return false}}
   function localMine(p){return localAll().filter(j=>String(j?.propertyId||p)===p)}
@@ -24212,9 +24248,14 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function publishOne(c,p,u,j){
     if(!j || String(j.propertyId||p)!==p)return false;
-    const payload={property_id:p,storage_key:journalKey(j),data:{...j,propertyId:p},updated_by:u,updated_at:new Date().toISOString()};
+    const storageKey=journalKey(j);
+    const signature=JSON.stringify({...j,propertyId:p});
+    const cacheKey=p+'::'+storageKey;
+    if(publishedJournalSignatures.get(cacheKey)===signature)return false;
+    const payload={property_id:p,storage_key:storageKey,data:{...j,propertyId:p},updated_by:u,updated_at:new Date().toISOString()};
     const r=await c.from(TABLE).upsert(payload,{onConflict:'property_id,storage_key'});
     if(r.error)throw r.error;
+    publishedJournalSignatures.set(cacheKey,signature);
     return true;
   }
   function isOperationalResetJournal(j){
@@ -24237,11 +24278,10 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       const u=await uid(c); if(!u)return;
       if(window.__signaturePropertyCleanupInProgress)return;
       if(lastProperty!==p)lastProperty=p;
-      const lockQ=await c.from(TABLE).select('data,updated_at').eq('property_id',p).eq('storage_key',CLEANUP_LOCK_KEY).maybeSingle();
-      if(lockQ.error)throw lockQ.error;
-      const lockData=lockQ.data?.data||{};
-      const cleanupLocked=lockData.active===true;
-      const lockStarted=Date.parse(lockData.startedAt||lockQ.data?.updated_at||'');
+      const lockState=await window.signaturePMSReadCleanupLock(c,p);
+      if(!lockState?.verified)throw new Error('Revenue cleanup lock could not be verified; accounting sync paused for safety.');
+      const cleanupLocked=lockState.active===true;
+      const lockStarted=lockState.startedAt||0;
       /* A completed cleanup lock is also a watermark. Old operational journals
          left in a mobile browser's localStorage must not be merged back into the
          cleaned property or republished to cloud. Journal IDs carry creation time
@@ -24351,12 +24391,11 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   const TABLE='pms_cloud_records';
   const KEYS=[
     'signature_pms_hr_employees',
-    // Attendance and Payroll have dedicated sync handlers below; keep them
-    // out of this broad hydrator to prevent competing refresh/save races.
-    'signature_pms_hr_leave',
+    // Attendance, Leave, Roster and Payroll have dedicated sync handlers;
+    // keep them out of this broad hydrator to prevent duplicate polling and
+    // cloud-pull -> localStorage -> cloud-publish echo cycles.
     'signature_pms_hr_overtime',
     'signature_pms_hr_shifts',
-    'signature_pms_hr_roster',
     'signature_pms_hr_documents',
     'signature_pms_hr_performance',
     'signature_pms_hr_benefits',
@@ -24427,8 +24466,26 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     const z=await ready();if(!z)return false;
     hydrating=true;
     try{
+      // FIX20: fetch the complete HR key group in one request instead of
+      // issuing one GET per key. Property filter and employee-empty safety stay intact.
+      const q=await z.c.from(TABLE).select('storage_key,data,updated_at')
+        .eq('property_id',z.p).in('storage_key',KEYS);
+      if(q.error)throw q.error;
+      const rows=new Map((q.data||[]).map(row=>[String(row.storage_key||''),row]));
       let found=0;
-      for(const key of KEYS){if(await pullKey(z,key))found++;}
+      for(const key of KEYS){
+        const row=rows.get(key);if(!row)continue;
+        const cloud=Array.isArray(row.data)?row.data:[];
+        const localAll=localRead(key),localMine=localAll.filter(mine);
+        if(key==='signature_pms_hr_employees'&&cloud.length===0&&localMine.length>0){
+          console.warn('HR employee cloud hydration skipped: cloud employee list is empty while local property records exist.');
+          if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('Employee cloud list is empty; local employee records were protected. Please verify cloud data before retrying.','error');
+          continue;
+        }
+        const other=localAll.filter(x=>!mine(x));
+        localWrite(key,other.concat(cloud.map(x=>({...x,propertyId:z.p}))));
+        found++;
+      }
       render();
       if(typeof setSupabaseCloudMessage==='function')setSupabaseCloudMessage('HR & Payroll cloud refreshed. '+found+'/'+KEYS.length+' shared records loaded.','success');
       return true;
@@ -24438,10 +24495,13 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       return false;
     }finally{hydrating=false;}
   }
-  async function publish(){
+  async function publish(onlyKey){
     const z=await ready();if(!z||hydrating)return false;
     try{
-      for(const key of KEYS)await pushKey(z,key);
+      // Egress optimization: a local edit publishes only its changed HR key.
+      // Calls without a key (e.g. explicit employee save) retain the full sync.
+      const targets=onlyKey&&KEYS.includes(onlyKey)?[onlyKey]:KEYS;
+      for(const key of targets)await pushKey(z,key);
       return true;
     }catch(e){
       console.warn('HR/Payroll cloud save failed:',e);
@@ -24452,7 +24512,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   function schedule(key){
     if(!KEYS.includes(key)||hydrating)return;
     clearTimeout(timers[key]);
-    timers[key]=setTimeout(()=>publish(),350);
+    timers[key]=setTimeout(()=>publish(key),350);
   }
   const originalSet=Storage.prototype.setItem;
   Storage.prototype.setItem=function(key,value){
@@ -24465,7 +24525,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   window.__signatureHRPayrollCloudKeys=KEYS.slice();
   async function boot(){
     await hydrate();
-    setInterval(()=>{if(!document.hidden&&!hydrating)hydrate();},15000);
+    setInterval(()=>{if(!document.hidden&&!hydrating)hydrate();},30000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -24497,13 +24557,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
       }
     };
   }
-  // Faster cross-user refresh for HR/Payroll. The existing cloud block remains authoritative.
-  const refresh=()=>{
-    if(document.hidden)return;
-    try{if(typeof window.hydrateSupabaseHRPayroll==='function')window.hydrateSupabaseHRPayroll();}catch(e){}
-  };
-  setTimeout(refresh,2500);
-  setInterval(refresh,7000);
+  // Egress optimization: v402 already hydrates HR/Payroll on boot and
+  // refreshes every 15 seconds. Do not add a second 2.5s/7s polling loop here.
+  // Explicit employee saves still call syncSupabaseHRPayroll() above.
 })();
 </script>
 <script id="v2-1-404-hr-attendance-leave-roster-cloud-fix">
@@ -24602,13 +24658,35 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     }catch(e){window.__signatureRosterEditing=false;throw e;}
   };
 
-  // Background refresh: never overwrite active roster editing. Refresh core HR data every 10s.
+  // FIX16: dedicated HR core keys poll every 30s; explicit saves still sync immediately.
+  // Never overwrite active roster editing during background refresh.
   async function tick(){
     if(document.hidden||window.__signatureRosterEditing)return;
-    for(const k of Object.values(KEYS))await refresh(k);
+    try{
+      // FIX20: one property-scoped GET for Attendance, Leave and Roster.
+      // Per-key dirty/version checks still prevent an in-flight read overwriting a save.
+      const z=await session();if(!z)return;
+      const names=Object.values(KEYS);
+      const starts=new Map(names.map(k=>[k,versions.get(k)||0]));
+      const q=await z.c.from('pms_cloud_records').select('storage_key,data,updated_at')
+        .eq('property_id',z.p).in('storage_key',names);
+      if(q.error)throw q.error;
+      const rows=new Map((q.data||[]).map(row=>[String(row.storage_key||''),row]));
+      let changed=false;
+      for(const k of names){
+        if(dirty.has(k)||(versions.get(k)||0)!==starts.get(k))continue;
+        const row=rows.get(k);if(!row)continue;
+        const all=local(k),other=all.filter(x=>String(x.propertyId||'')!==z.p),mineRows=all.filter(x=>String(x.propertyId||'')===z.p);
+        const cloudRows=Array.isArray(row.data)?row.data:[];
+        if(cloudRows.length===0&&mineRows.length>0)continue;
+        localStorage.setItem(k,JSON.stringify(other.concat(cloudRows.map(x=>({...x,propertyId:z.p})))));
+        changed=true;
+      }
+      if(changed&&typeof renderHR==='function')renderHR();
+    }catch(e){console.warn('HR grouped cloud refresh failed',e);}
   }
   setTimeout(tick,2500);
-  setInterval(tick,10000);
+  setInterval(tick,30000);
 })();
 </script>
 <script id="v2-1-406-hr-payroll-explicit-cloud">
@@ -24695,11 +24773,15 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   wrap('postPayroll','Payroll posting status synchronized to Supabase cloud.');
   wrap('payPayroll','Payroll payment status synchronized to Supabase cloud.');
 
-  // Initial cloud load plus a short polling cycle for Admin/Reception cross-window visibility.
+  // FIX16: retain initial load and explicit payroll saves; poll cross-window changes every 30s.
   setTimeout(refresh,1800);
-  setInterval(()=>{if(!document.hidden)refresh();},7000);
+  setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();
 </script>
+<!-- FIX15: F&B background hydration interval reduced from 5s to 30s; action/focus/visibility sync retained. -->
+<!-- FIX18: canonical Accounting journal publisher deduplicates unchanged payloads; removed redundant Employee Advances 20s full-sync trigger and duplicate Payroll journal publishing. -->
+<!-- FIX20: batch HR core (8 keys), HR attendance/leave/roster (3 keys), and F&B closing/legacy-shift reads into property-scoped PostgREST requests. Explicit per-key refresh and save paths remain. -->
+<!-- FIX19: consolidate background GET polling: HR and Purchasing PR 15s -> 30s; remove duplicate v411/v414 F&B cashier-shift background refreshers while retaining v409 closing sync, v415 canonical shift refresh, initial hydration and explicit actions. -->\n<!-- FIX16: remove duplicate HR leave/roster polling and cloud-hydration publish echo; dedicated HR core and payroll background polls set to 30s, explicit saves retained. -->
 <script id="v2-1-409-fnb-closing-cashier-cloud-sync-fix">
 /* v2.1.409 — F&B Daily Closing + F&B Cashier Shift cloud source of truth.
    Admin/Reception must see the same Closed/Open state for the same property,
@@ -24754,12 +24836,32 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function hydrate(render=true){
     try{
-      const a=await pull(DAILY_KEY),b=await pull(SHIFT_KEY);
+      // FIX22: poll Daily Closing here only. The canonical cashier-shift
+      // hydrator in v2.1.415 already refreshes shifts every 30s and writes
+      // them into the legacy local key. Avoid fetching the legacy shift row
+      // again in this second background poll. Legacy shift reads remain in
+      // the dedicated startup/explicit repair paths (v2.1.411/v2.1.414).
+      const z=await ready();if(!z)return false;
+      const keys=[DAILY_KEY];
+      const q=await z.c.from(TABLE).select('storage_key,data,updated_at')
+        .eq('property_id',z.p).in('storage_key',keys);
+      if(q.error)throw q.error;
+      const rows=new Map((q.data||[]).map(row=>[String(row.storage_key||''),row]));
+      let found=0;
+      for(const key of keys){
+        const row=rows.get(key);if(!row)continue;
+        const cloud=Array.isArray(row.data)?row.data:[];
+        const all=read(key),localOther=all.filter(x=>String(x?.propertyId||'')!==z.p),localMine=all.filter(x=>String(x?.propertyId||'')===z.p);
+        const byId=new Map();
+        cloud.forEach(x=>{const item={...x,propertyId:z.p};byId.set(String(item.id||JSON.stringify(item)),item);});
+        localMine.forEach(x=>{const item={...x,propertyId:z.p};byId.set(String(item.id||JSON.stringify(item)),item);});
+        write(key,localOther.concat(Array.from(byId.values())));found++;
+      }
       if(render){
         try{if(typeof renderReports==='function')renderReports();}catch(e){}
         try{if(typeof fnbRefreshCashierShift==='function')fnbRefreshCashierShift();}catch(e){}
       }
-      return !!(a||b);
+      return found>0;
     }catch(e){
       console.warn('F&B closing cloud refresh failed:',e);
       return false;
@@ -24797,7 +24899,7 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bind();
     [500,1500,3000].forEach(ms=>setTimeout(bind,ms));
     [800,2200,4500].forEach(ms=>setTimeout(()=>hydrate(true),ms));
-    setInterval(()=>{if(!document.hidden)hydrate(true);},5000);
+    setInterval(()=>{if(!document.hidden)hydrate(true);},30000);
     window.addEventListener('focus',()=>hydrate(true));
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrate(true);});
   }
@@ -24908,9 +25010,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bind();
     [600,1600,3000].forEach(ms=>setTimeout(bind,ms));
     [1200,3000,6000].forEach(ms=>setTimeout(hydrateShift,ms));
-    setInterval(()=>{if(!document.hidden)hydrateShift();},5000);
-    window.addEventListener('focus',hydrateShift);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrateShift();});
+    // FIX19: v409/v415 own background cashier-shift refresh. Keep this
+    // script's initial hydration and explicit open-shift publish/hydrate path,
+    // but avoid a second 30s timer plus focus/visibility duplicate GETs.
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -25074,9 +25176,9 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
     bindOpen();bindClose();
     [300,1000,2500,4500].forEach(ms=>setTimeout(()=>{bindOpen();bindClose();},ms));
     [1200,3500].forEach(ms=>setTimeout(ensure,ms));
-    setInterval(()=>{if(!document.hidden)ensure()},5000);
-    window.addEventListener('focus',ensure);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensure()});
+    // FIX19: v415 is the canonical background shift hydrator. Keep the
+    // initial key-repair checks and v414 open/close wrappers, but remove this
+    // duplicate 30s/focus/visibility polling path.
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
@@ -28048,16 +28150,19 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   }
   async function cleanupLockActive(z){
     try{
-      const q=await z.c.from(TABLE).select('data').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
-      if(q.error)throw q.error;
-      return q.data?.data?.active===true;
+      const q=await window.signaturePMSReadCleanupLock(z.c,z.p);
+      if(!q?.verified)return true;
+      return q.active===true;
     }catch(e){console.warn('Revenue cleanup lock check failed:',e?.message||e);return true;}
   }
   function storageKey(j){return PREFIX+String(j?.id||j?.reference||('legacy_'+Date.now()));}
-  async function publishPayrollJournals(){
+  async function publishPayrollJournals(lockState){
     if(window.__signaturePropertyCleanupInProgress)return false;
     const z=await session();if(!z)return false;
-    if(await cleanupLockActive(z))return false;
+    // Reuse the lock result already fetched by syncPayrollJournal in this cycle.
+    // If that read failed, verify again here rather than risking a stale publish.
+    if(lockState?.verified){if(lockState.active)return false;}
+    else if(await cleanupLockActive(z))return false;
     const rows=localJournals().filter(j=>String(j?.propertyId||z.p)===z.p&&isPayrollJournal(j));
     for(const j of rows){
       const payload={property_id:z.p,storage_key:storageKey(j),data:{...j,propertyId:z.p},updated_by:z.u?.id||null,updated_at:new Date().toISOString()};
@@ -28152,20 +28257,26 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
       /* Share the cleanup watermark with payroll repair so old Posted/Paid payroll
          rows cannot recreate historical ETF/EPF/payroll expense journals after a clean start. */
       const z=await session();
+      let payrollLockState={verified:false,active:true};
       if(z){
-        const lock=await z.c.from(TABLE).select('data,updated_at').eq('property_id',z.p).eq('storage_key','signature_pms_revenue_cleanup_lock').maybeSingle();
-        if(!lock.error){const d=lock.data?.data||{};const t=Date.parse(d.startedAt||lock.data?.updated_at||'');if(t>0)window.__signatureAccountingCleanupWatermark=t;}
+        const lock=await window.signaturePMSReadCleanupLock(z.c,z.p);
+        if(lock?.verified){
+          if(lock.startedAt>0)window.__signatureAccountingCleanupWatermark=lock.startedAt;
+          payrollLockState={verified:true,active:lock.active===true};
+        }
       }
       /* Repair only a missing accounting journal for payroll that is already
          Posted/Paid and was created after the cleanup watermark. This NEVER changes payroll status. */
       const repaired=ensureExistingPostedPayrollJournals();
-      await publishPayrollJournals();
+      // FIX18: canonical Accounting Journal sync is the sole journal publisher.
+      // Repaired local payroll journals are picked up by that 30s owner; avoid
+      // a second UPSERT of the same payroll journals from this 60s repair loop.
       // The general accounting journal cloud sync (v2-1-397) is the sole
       // reader/merger of all accounting journals. Do not pull and rewrite the
       // same local journal array from this payroll-only loop: concurrent
       // merges can race and make Accounting totals flicker between snapshots.
-      // Payroll journals are still repaired above and published to their
-      // individual cloud records; the general sync hydrates them locally.
+      // Payroll journals are repaired locally above; the canonical sync
+      // publishes and hydrates them without a second writer.
       const cloudChanged=false;
       if(repaired&&!cloudChanged){
         try{if(typeof renderAccounting==='function')renderAccounting();}catch(e){}
@@ -28197,7 +28308,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     try{await syncPayrollJournal();}catch(e){console.warn('Accounting journal initial payroll sync failed:',e);}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  setInterval(()=>{if(!document.hidden)syncPayrollJournal().catch(()=>{});},8000);
+  setInterval(()=>{if(!document.hidden)syncPayrollJournal().catch(()=>{});},60000);
 })();
 </script>
 
@@ -28364,7 +28475,7 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
     bind();
     [500,1500,3000,5000].forEach(ms=>setTimeout(bind,ms));
     [1200,3500].forEach(ms=>setTimeout(hydrateCanonical,ms));
-    setInterval(()=>{if(!document.hidden)hydrateCanonical()},5000);
+    setInterval(()=>{if(!document.hidden)hydrateCanonical()},30000);
     window.addEventListener('focus',hydrateCanonical);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)hydrateCanonical()});
   }
@@ -28846,8 +28957,11 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   }
   function boot(){
     ensureAccounts();ensureUI();
-    setTimeout(()=>{ensureUI();syncJournalCloud();},800);
-    setInterval(()=>{if(!document.hidden){ensureUI();syncJournalCloud();}},20000);
+    setTimeout(()=>{ensureUI();},800);
+    // FIX18: the canonical Accounting owner handles background sync; do not
+    // re-trigger the full journal pull/publish cycle from this 20s UI timer.
+    // Explicit advance actions and the focus handler still request immediate sync.
+    setInterval(()=>{if(!document.hidden)ensureUI();},20000);
     window.addEventListener('focus',()=>{ensureUI();syncJournalCloud();});
     try{const oldRender=window.renderAll;if(typeof oldRender==='function'&&!oldRender.__v422AdvancesWrapped){const w=function(){const r=oldRender.apply(this,arguments);setTimeout(()=>{ensureUI();},100);return r;};w.__v422AdvancesWrapped=true;window.renderAll=w;}}catch(e){}
   }
@@ -28960,7 +29074,7 @@ const canStage=(key,positionCheck,record)=>!!(has(key)&&(key==='purchasing.appro
 const esc=x=>typeof window.escapeHtml==='function'?window.escapeHtml(x):String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const currentProp=()=>String((typeof currentPropertyId!=='undefined'&&currentPropertyId)||window.currentPropertyId||'');
 function syncPR(record){try{window.syncSupabasePurchaseRequests?.(record?[record]:undefined)}catch(e){}}
-function syncPO(){try{window.syncSupabasePurchaseOrders?.()}catch(e){}}
+function syncPO(record){try{const fn=window.syncSupabasePurchaseOrders;if(typeof fn!=="function")return;const payload=record?[record]:undefined;[0,300,900,1800].forEach(ms=>setTimeout(()=>{try{fn(payload)}catch(e){console.warn("PO approval cloud sync retry failed",e)}},ms));}catch(e){console.warn("PO cloud sync scheduling failed",e)}}
 function syncStores(){try{window.syncSupabaseStores?.()}catch(e){}}
 function syncHR(){try{window.syncSupabaseHRPayroll?.()}catch(e){}}
 function audit(event,ref,detail){try{window.logAudit?.(event,ref,detail,currentProp())}catch(e){}}
@@ -28996,9 +29110,9 @@ window.approvePurchaseRequest=function(id){return window.sigApprovePRStage(id)};
 
 /* PO: Purchasing Manager creates it; General Manager approves; Purchasing Manager sends. */
 function getPOs(){try{window.signatureMigrateKnownLegacySignatureHotelPOs?.()}catch(e){}return read(KPO)}
-function savePOs(a){write(KPO,a);syncPO()}
-window.sigApprovePO=function(id){if(!canStage('purchasing.approve_po_gm',isGM,null))return alert('Only a General Manager with the PO approval right can approve a Purchase Order.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.status==='Sent to Supplier'||po.status==='Closed')return alert('This PO is already sent or closed.');if(po.status==='Pending GM Approval' || po.gmApprovalStatus==='Pending'){po.status='Approved';po.gmApprovalStatus='Approved';po.gmApprovedBy=uname();po.gmApprovedAt=new Date().toISOString();po.supplierDispatchStatus='Ready to Send';}else return alert('Only a PO pending GM approval can be approved.');savePOs(a);audit('PURCHASE_ORDER_GM_APPROVED',po.number,'Approved by '+uname());renderPOQueue();window.renderPurchasingModule?.();alert('PO approved. Purchasing Manager can now send it to the supplier.');};
-window.sigSendPOToSupplier=function(id){if(!canStage('purchasing.send_po',isPurchasing,null))return alert('Only a Purchasing Manager with supplier dispatch rights can send the approved PO.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.gmApprovalStatus!=='Approved'&&po.status!=='Approved')return alert('General Manager approval is required before sending this PO.');let suppliers=read('signature_pms_suppliers'),supplier=suppliers.find(x=>String(x.id)===String(po.supplierId)&&String(x.propertyId||'')===currentProp());const email=String(supplier?.email||po.supplierEmail||'').trim();const subject=encodeURIComponent('Purchase Order '+(po.number||''));const body=encodeURIComponent('Dear '+(supplier?.name||po.supplier||'Supplier')+',\n\nPlease find the approved Purchase Order details below.\nPO Number: '+(po.number||'')+'\nDate: '+(po.date||'')+'\nDepartment: '+(po.department||'')+'\nTotal: '+(typeof window.accMoney==='function'?window.accMoney(po.total||0):Number(po.total||0).toFixed(2))+'\n\nPlease confirm receipt and expected delivery.\n\nRegards,\n'+uname());if(email){try{window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body}catch(e){}}else alert('No supplier email is saved. Please send the printed PO through your normal supplier channel.');const sent=confirm('After you send the PO to the supplier, click OK to record it as sent. Click Cancel if you have not sent it yet.');if(!sent)return;const note=prompt('Enter email / dispatch reference (optional):','');if(note===null)return;po.status='Sent to Supplier';po.supplierDispatchStatus='Sent';po.sentToSupplierBy=uname();po.sentToSupplierAt=new Date().toISOString();po.supplierDispatchNote=note.trim();savePOs(a);audit('PURCHASE_ORDER_SENT_TO_SUPPLIER',po.number,note.trim()||'Marked sent by Purchasing Manager');renderPOQueue();window.renderPurchasingModule?.();alert('Supplier dispatch recorded.');};
+function savePOs(a,changedRecord){write(KPO,a);syncPO(changedRecord)}
+window.sigApprovePO=function(id){if(!canStage('purchasing.approve_po_gm',isGM,null))return alert('Only a General Manager with the PO approval right can approve a Purchase Order.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.status==='Sent to Supplier'||po.status==='Closed')return alert('This PO is already sent or closed.');if(po.status==='Pending GM Approval' || po.gmApprovalStatus==='Pending'){po.status='Approved';po.gmApprovalStatus='Approved';po.gmApprovedBy=uname();po.gmApprovedAt=new Date().toISOString();po.supplierDispatchStatus='Ready to Send';}else return alert('Only a PO pending GM approval can be approved.');savePOs(a,po);audit('PURCHASE_ORDER_GM_APPROVED',po.number,'Approved by '+uname());renderPOQueue();window.renderPurchasingModule?.();alert('PO approved. Purchasing Manager can now send it to the supplier.');};
+window.sigSendPOToSupplier=function(id){if(!canStage('purchasing.send_po',isPurchasing,null))return alert('Only a Purchasing Manager with supplier dispatch rights can send the approved PO.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.gmApprovalStatus!=='Approved'&&po.status!=='Approved')return alert('General Manager approval is required before sending this PO.');let suppliers=read('signature_pms_suppliers'),supplier=suppliers.find(x=>String(x.id)===String(po.supplierId)&&String(x.propertyId||'')===currentProp());const email=String(supplier?.email||po.supplierEmail||'').trim();const subject=encodeURIComponent('Purchase Order '+(po.number||''));const body=encodeURIComponent('Dear '+(supplier?.name||po.supplier||'Supplier')+',\n\nPlease find the approved Purchase Order details below.\nPO Number: '+(po.number||'')+'\nDate: '+(po.date||'')+'\nDepartment: '+(po.department||'')+'\nTotal: '+(typeof window.accMoney==='function'?window.accMoney(po.total||0):Number(po.total||0).toFixed(2))+'\n\nPlease confirm receipt and expected delivery.\n\nRegards,\n'+uname());if(email){try{window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body}catch(e){}}else alert('No supplier email is saved. Please send the printed PO through your normal supplier channel.');const sent=confirm('After you send the PO to the supplier, click OK to record it as sent. Click Cancel if you have not sent it yet.');if(!sent)return;const note=prompt('Enter email / dispatch reference (optional):','');if(note===null)return;po.status='Sent to Supplier';po.supplierDispatchStatus='Sent';po.sentToSupplierBy=uname();po.sentToSupplierAt=new Date().toISOString();po.supplierDispatchNote=note.trim();savePOs(a,po);audit('PURCHASE_ORDER_SENT_TO_SUPPLIER',po.number,note.trim()||'Marked sent by Purchasing Manager');renderPOQueue();window.renderPurchasingModule?.();alert('Supplier dispatch recorded.');};
 
 function addQueue(hostId,title,desc,head,rowsHtml){let el=document.getElementById(hostId);if(!el)return;el.innerHTML='<div class="section-header"><div><h3>'+title+'</h3><div style="font-size:12px;color:#64748b">'+desc+'</div></div></div>'+head+'<div class="table-wrap"><table><thead><tr><th>Document</th><th>Department / Details</th><th>Requester / Owner</th><th>Status</th><th>Action</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'}
 function renderPRQueue(){const host=document.getElementById('sig424PRQueue');if(!host)return;const pid=currentProp(),all=(pid?read(KPR).filter(x=>String(x.propertyId||'')===pid):[]).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));const rows=all.map(r=>{const stage=r.approvalStage||(r.status==='Submitted'?'Department Head':r.status==='Pending Purchasing Manager Approval'?'Purchasing Manager':r.status==='Approved'?'Complete':'');let action='—';if(stage==='Department Head'&&canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r)&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';else if(stage==='Purchasing Manager'&&canStage('purchasing.approve_pr_purchasing',isPurchasing,r)&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';return '<tr><td><strong>'+esc(r.number)+'</strong></td><td>'+esc(r.department||'')+'</td><td>'+esc(r.requestedBy||'')+'</td><td>'+esc(r.status||'Submitted')+'<div style="font-size:11px;color:#64748b">Stage: '+esc(stage||'—')+'</div></td><td>'+action+'</td></tr>'}).join('');host.innerHTML='<div class="section-header"><div><h3>Approval Workflow — Purchase Requests</h3><div style="font-size:12px;color:#64748b">Requester → Department Head → Purchasing Manager → PO creation.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PR Number</th><th>Department</th><th>Requested By</th><th>Status / Stage</th><th>Action</th></tr></thead><tbody>'+ (rows||'<tr><td colspan="5" class="empty">No Purchase Requests.</td></tr>')+'</tbody></table></div>'}
@@ -29291,7 +29405,7 @@ function buildUI(){const page=$('housekeeping');if(!page)return;const nav=docume
 @media(max-width:760px){.gcl-wrap{gap:10px}.gcl-wrap .hk-card{padding:12px!important}.gcl-card-title{align-items:flex-start}.gcl-wrap .gcl-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.gcl-wrap .gcl-row>.hk-field{min-width:0;width:100%}.gcl-wrap .hk-section{padding:10px!important}.gcl-wrap .hk-section-head{gap:8px;align-items:flex-start;flex-wrap:wrap}.gcl-wrap .hk-item{display:grid!important;grid-template-columns:minmax(0,1fr)!important;padding:12px!important;gap:10px!important;border-radius:10px}.gcl-wrap .hk-item>select,.gcl-wrap .hk-item>input{width:100%;min-height:42px}.gcl-wrap .hk-item-photo .btn{min-height:40px}.gcl-wrap .hk-actions .btn{flex:1 1 145px}.gcl-wrap .hk-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}.gcl-wrap .gcl-admin-grid{grid-template-columns:minmax(0,1fr)}.gcl-wrap .hk-item-rules{display:grid;gap:8px}}
 @media(min-width:761px){.gcl-wrap .hk-item-photo img{width:84px;height:64px}}
 #gclAdmin{position:relative;isolation:isolate}#gclAdmin #gclAddSectionBtn{position:relative;z-index:20;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important;opacity:1!important;visibility:visible!important}</style><div class="gcl-wrap"><div class="hk-card"><div class="gcl-card-title"><div><h2 style="margin:0 0 5px">General Checklists</h2><p class="gcl-muted" style="margin:0">One professional checklist workflow for Housekeeping, Kitchen, Manager Tours and any department. Templates sync through Supabase; completed checklists and camera photos stay on this device.</p></div><span class="hk-pill">CLOUD TEMPLATES · LOCAL REPORTS</span></div><div id="gclNotice" class="hk-alert" style="display:none;margin-top:12px"></div><div class="gcl-row" style="margin-top:14px"><div class="hk-field"><label>Checklist Template</label><select id="gclTemplateSelect" onchange="gclSelectTemplate(this.value)"><option value="">Loading templates…</option></select><button class="btn btn-secondary btn-small" type="button" onclick="gclRefreshTemplates()" style="margin-top:6px">Refresh Cloud Templates</button></div><div class="hk-field"><label>Area / Room / Tour Reference</label><input id="gclArea" placeholder="Room 204 / Kitchen / Manager tour"></div><div class="hk-field"><button class="btn btn-primary" type="button" onclick="gclStartRun()">Start Checklist</button></div></div><p id="gclCloudStatus" class="gcl-muted" style="margin-bottom:0">Connecting to the selected property's Supabase checklist templates…</p></div><div class="hk-card" id="gclAdmin" style="display:none"><div class="gcl-card-title"><div><h3 style="margin:0">Admin — Template Builder</h3><p class="gcl-muted" style="margin:5px 0 0">Create reusable department checklists, sections and lines. Changes are published to Supabase for this property.</p></div><span class="hk-pill">ADMIN CONFIGURATION</span></div><div class="gcl-row" style="margin-top:12px"><div class="hk-field"><label>Template to edit</label><select id="gclEditTemplate" onchange="gclEditSelect(this.value)"></select></div><div class="hk-field"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" type="button" onclick="gclCreateTemplate()">+ New Checklist Template</button><button class="btn btn-secondary" type="button" onclick="gclDeleteTemplate()" title="Delete the selected template">Delete Selected Template</button></div></div></div><div class="gcl-admin-grid" style="margin-top:12px"><div class="hk-field"><label>Checklist Name</label><input id="gclTemplateName" placeholder="Kitchen Opening Checklist"></div><div class="hk-field"><label>Department</label><input id="gclDepartment" placeholder="Kitchen / Housekeeping / Management"></div><div class="hk-field" style="align-content:end"><label><input id="gclActive" type="checkbox" checked> Active — available to staff</label></div></div><div class="gcl-row" style="margin-top:12px"><div class="hk-field"><label for="gclNewSectionName">New Section Name</label><input id="gclNewSectionName" type="text" placeholder="e.g. Food Safety / Guest Rooms / Equipment"></div><button id="gclAddSectionBtn" class="btn btn-secondary" type="button" aria-label="Add checklist section">+ Add Section</button><button class="btn btn-primary" type="button" onclick="gclSaveTemplates()">Save Templates to Supabase</button></div><p class="gcl-muted" style="margin:6px 0 0">Enter a section name first, then click Add Section. Click Save Templates to Supabase to publish your changes.</p><div id="gclAdminEditor" style="margin-top:12px"></div><p class="gcl-muted">For each line, set ★ Mandatory and 📷 Photo required separately. Staff can only take a fresh camera photo; gallery/file upload is not offered.</p></div><div class="hk-card" id="gclRunCard"><div class="gcl-card-title"><div><h3 style="margin:0">Checklist Inspection</h3><p class="gcl-muted" style="margin:5px 0 0">Complete the required lines and capture photos where requested. Then complete the checklist and share the PDF.</p></div><div id="gclStats" class="hk-statrow"></div></div><div class="gcl-admin-grid" style="margin-top:12px"><div class="hk-field"><label>Inspection Date</label><input id="gclDate" type="date"></div><div class="hk-field"><label>Inspector</label><input id="gclInspector" placeholder="Staff name"></div></div><div id="gclRun" style="margin-top:12px"><div class="hk-empty">Select a checklist template, then click Start Checklist.</div></div><p id="gclStatus" class="gcl-muted"></p><div class="hk-actions"><button id="gclComplete" class="btn btn-primary" type="button" onclick="gclComplete()">Complete Checklist</button><button id="gclSharePdf" class="btn btn-secondary" type="button" onclick="gclSharePdf()">Share as PDF</button><button id="gclNewRun" class="btn btn-secondary" type="button" onclick="gclNewRun()">New Checklist</button></div></div><div class="hk-card"><h3 style="margin:0 0 8px">Saved Reports on This Device</h3><p class="gcl-muted">These reports and photos are stored locally in this browser/device, not in Supabase. Clearing browser data or changing devices may remove or hide them.</p><div id="gclHistory"><div class="hk-empty">Loading local reports…</div></div></div></div><div id="gclCameraModal" class="gcl-camera-modal" role="dialog" aria-modal="true" aria-label="Take checklist photo"><div class="gcl-camera-box"><strong>Take Photo — Camera Only</strong><video id="gclCameraVideo" autoplay playsinline muted></video><canvas id="gclCameraCanvas" style="display:none"></canvas><div class="gcl-camera-actions"><button class="btn btn-primary" type="button" onclick="gclCapturePhoto()">Capture Photo</button><button class="btn btn-secondary" type="button" onclick="gclCancelCamera()">Cancel</button></div><p class="gcl-muted" style="color:#ddd;margin:0">Use the camera view to capture new evidence. Selecting existing photos is not available.</p></div></div>`;/* Add Section click is handled by the document-level delegated listener below. */const title=$('pageTitle');if(title&&document.getElementById('housekeeping')?.classList.contains('active'))title.textContent='General Checklists';}
-async function boot(){buildUI();try{await db();}catch(e){$('gclCloudStatus').textContent='Local report storage unavailable: '+e.message;return}try{await loadCloudTemplates();$('gclCloudStatus').textContent='Templates loaded from Supabase for '+propertyName()+'. Checklist reports and camera photos remain local.';render()}catch(e){templates=[];render();$('gclCloudStatus').textContent='Could not load Supabase templates: '+e.message+' — check login/property/cloud access. No local template fallback is used.';console.warn('General Checklist template load failed',e)}const oldShow=window.showPage;if(typeof oldShow==='function'&&!oldShow.__gcl431){window.showPage=function(page,button){const r=oldShow.apply(this,arguments);if(page==='housekeeping'){setTimeout(async()=>{const t=$('pageTitle');if(t)t.textContent='General Checklists';if(loadedPropertyId!==localPropId()||!templates.length){try{await loadCloudTemplates();$('gclCloudStatus').textContent='Templates loaded from Supabase for '+propertyName()+'. Reports remain local.'}catch(e){$('gclCloudStatus').textContent='Could not load Supabase templates: '+e.message}}render()},0)}return r};window.showPage.__gcl431=true}const oldSwitch=window.switchProperty;if(typeof oldSwitch==='function'&&!oldSwitch.__gcl431){window.switchProperty=function(id){const r=oldSwitch.apply(this,arguments);setTimeout(async()=>{templates=[];currentRun=null;cloudPropertyId='';loadedPropertyId='';try{await loadCloudTemplates();$('gclCloudStatus').textContent='Templates loaded from Supabase for '+propertyName()+'. Reports remain local to this browser.';render()}catch(e){$('gclCloudStatus').textContent='Could not load templates for this property: '+e.message;render()}},0);return r};window.switchProperty.__gcl431=true}['gclDate','gclArea','gclInspector'].forEach(id=>{const el=$(id);if(el)el.addEventListener('change',async()=>{if(!currentRun)return;runKeyValues();try{await putRun(currentRun)}catch(e){console.warn('Checklist metadata autosave failed',e)}})});const observer=new MutationObserver(()=>{const p=$('housekeeping');if(p&&p.classList.contains('active')){const t=$('pageTitle');if(t&&t.textContent==='Housekeeping Checklist')t.textContent='General Checklists';const a=$('gclAdmin');if(a)a.style.display=allowed('configure')?'block':'none'}});observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});}
+async function boot(){buildUI();try{await db();}catch(e){$('gclCloudStatus').textContent='Local report storage unavailable: '+e.message;return}$('gclCloudStatus').textContent='Select a property and open General Checklists to load templates.';const oldShow=window.showPage;if(typeof oldShow==='function'&&!oldShow.__gcl431){window.showPage=function(page,button){const r=oldShow.apply(this,arguments);if(page==='housekeeping'){setTimeout(async()=>{const t=$('pageTitle');if(t)t.textContent='General Checklists';if(loadedPropertyId!==localPropId()||!templates.length){try{await loadCloudTemplates();$('gclCloudStatus').textContent='Templates loaded from Supabase for '+propertyName()+'. Reports remain local.'}catch(e){$('gclCloudStatus').textContent='Could not load Supabase templates: '+e.message}}render()},0)}return r};window.showPage.__gcl431=true}const oldSwitch=window.switchProperty;if(typeof oldSwitch==='function'&&!oldSwitch.__gcl431){window.switchProperty=function(id){const r=oldSwitch.apply(this,arguments);setTimeout(async()=>{templates=[];currentRun=null;cloudPropertyId='';loadedPropertyId='';try{await loadCloudTemplates();$('gclCloudStatus').textContent='Templates loaded from Supabase for '+propertyName()+'. Reports remain local to this browser.';render()}catch(e){$('gclCloudStatus').textContent='Could not load templates for this property: '+e.message;render()}},0);return r};window.switchProperty.__gcl431=true}['gclDate','gclArea','gclInspector'].forEach(id=>{const el=$(id);if(el)el.addEventListener('change',async()=>{if(!currentRun)return;runKeyValues();try{await putRun(currentRun)}catch(e){console.warn('Checklist metadata autosave failed',e)}})});const observer=new MutationObserver(()=>{const p=$('housekeeping');if(p&&p.classList.contains('active')){const t=$('pageTitle');if(t&&t.textContent==='Housekeeping Checklist')t.textContent='General Checklists';const a=$('gclAdmin');if(a)a.style.display=allowed('configure')?'block':'none'}});observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 
