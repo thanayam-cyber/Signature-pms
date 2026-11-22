@@ -24836,9 +24836,13 @@ window.calculateSriLankaTaxPreview=calculateSriLankaTaxPreview;
   }
   async function hydrate(render=true){
     try{
-      // FIX20: batch Daily Closing + legacy cashier-shift reads into one request.
+      // FIX22: poll Daily Closing here only. The canonical cashier-shift
+      // hydrator in v2.1.415 already refreshes shifts every 30s and writes
+      // them into the legacy local key. Avoid fetching the legacy shift row
+      // again in this second background poll. Legacy shift reads remain in
+      // the dedicated startup/explicit repair paths (v2.1.411/v2.1.414).
       const z=await ready();if(!z)return false;
-      const keys=[DAILY_KEY,SHIFT_KEY];
+      const keys=[DAILY_KEY];
       const q=await z.c.from(TABLE).select('storage_key,data,updated_at')
         .eq('property_id',z.p).in('storage_key',keys);
       if(q.error)throw q.error;
