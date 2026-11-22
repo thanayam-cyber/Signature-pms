@@ -28071,20 +28071,20 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
   function wrapSave(){
     const fn=window.saveArticleMaster;
     if(typeof fn!=='function'||fn.__v369ArticlesWrapped)return;
+    let saveQueue=Promise.resolve();
     const w=function(){
       const p=pid();
       if(!p)return false;
-      // Save locally synchronously first. A slow/offline Supabase read must
-      // never prevent the existing saveProp() call from running.
       const before=scoped(read());
       articleMutationVersion++;
       const result=fn.apply(this,arguments);
       const after=scoped(read());
       const oldIds=new Set(before.map(x=>String(x?.id||'')));
       const newlyAdded=after.filter(x=>!oldIds.has(String(x?.id||'')));
-      // A deleted article's tombstone must not block a later, intentional
-      // re-creation that reuses the same article code/name in this property.
-      if(newlyAdded.length){
+      if(!newlyAdded.length)return result;
+      // Serialize article publishes so two quick saves cannot overwrite each other.
+      const task=async()=>{
+        if(p!==pid())throw new Error('Selected property changed before cloud save completed.');
         const allTombs=readTombs();
         const kept=allTombs.filter(t=>{
           if(String(t?.propertyId||'')!==p)return true;
@@ -28096,17 +28096,19 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
           });
         });
         writeTombs(kept);
-        const activeTombs=dedupeTombs(kept);
-        // Remove the stale deletion marker in the cloud before publishing the
-        // newly saved article, otherwise a later window hydration can hide it.
-        Promise.resolve().then(()=>publishTombs(activeTombs)).then(()=>publish(after)).then(ok=>{
-          if(!ok)console.warn('Purchasing Article saved locally, but cloud confirmation failed.');
-        }).catch(e=>console.warn('Purchasing Article cloud publish failed:',e?.message||e));
-      }else{
-        Promise.resolve().then(()=>publish(after)).then(ok=>{
-          if(!ok)console.warn('Purchasing Article saved locally, but cloud confirmation failed.');
-        }).catch(e=>console.warn('Purchasing Article cloud publish failed:',e?.message||e));
-      }
+        if(!await publishTombs(dedupeTombs(kept)))throw new Error('Could not sync article deletion markers.');
+        if(!await publish(after))throw new Error('Supabase rejected the Purchasing Article save.');
+        const cloud=await cloudRead();
+        if(!cloud||!newlyAdded.every(a=>cloud.some(x=>String(x.id)===String(a.id))))
+          throw new Error('Article save was sent, but cloud verification did not find the new item.');
+        return true;
+      };
+      saveQueue=saveQueue.then(task).then(()=>{
+        if(p===pid())console.info('Purchasing Article cloud save verified:',newlyAdded.map(x=>x.code+' '+x.name).join(', '));
+      }).catch(e=>{
+        console.error('Purchasing Article cloud save failed:',e?.message||e);
+        alert('Article was saved in this browser, but cloud sync could not be confirmed. Do not re-add it. Please contact the PMS administrator and refresh only after sync is checked.\n\nReason: '+(e?.message||'Unknown cloud sync error'));
+      });
       return result;
     };
     w.__v369ArticlesWrapped=true;
