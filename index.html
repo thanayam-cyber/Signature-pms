@@ -519,7 +519,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 }
 </style>
 
-</head>
+<!-- FIX29: Department/Position profile_meta is restored from property-scoped cloud permissions on all user refresh paths. -->\n</head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
@@ -26245,18 +26245,24 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   function cloudUserFromRows(pr,ua,pp){
     const role=normalizeCloudRole(pr,{email:pr.username});
+    const primaryProperty=(ua.find(x=>x.is_primary)||ua[0])?.property_id||
+      (role==='Admin'?'all':null);
+    const scopedPermissions=(pp||[]).filter(x=>!primaryProperty||primaryProperty==='all'||String(x.property_id)===String(primaryProperty));
+    const meta=scopedPermissions.filter(x=>x.module==='profile_meta').map(x=>String(x.action||''));
+    const deptMeta=meta.find(x=>x.startsWith('department:'));
+    const posMeta=meta.find(x=>x.startsWith('position:'));
     return {
       id:pr.id,authUserId:pr.id,username:pr.username||'',
       name:pr.full_name||pr.username||'',fullName:pr.full_name||pr.username||'',
-      role,department:pr.department||'',
+      role,department:deptMeta!==undefined?deptMeta.slice('department:'.length):(pr.department||''),
+      position:posMeta!==undefined?posMeta.slice('position:'.length):'',
       active:String(pr.status||'active').toLowerCase()==='active',
-      propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||
-        (role==='Admin'?'all':null),
+      propertyId:primaryProperty,
       propertyIds:ua.map(x=>x.property_id).filter(Boolean),
       permissions:{
-        pages:pp.filter(x=>x.module==='page').map(x=>x.action),
-        actions:pp.filter(x=>x.module!=='page'&&x.module!=='report').map(x=>x.module+'.'+x.action),
-        reports:pp.filter(x=>x.module==='report').map(x=>x.action)
+        pages:scopedPermissions.filter(x=>x.module==='page').map(x=>x.action),
+        actions:scopedPermissions.filter(x=>x.module!=='page'&&x.module!=='report'&&x.module!=='profile_meta').map(x=>x.module+'.'+x.action),
+        reports:scopedPermissions.filter(x=>x.module==='report').map(x=>x.action)
       },cloudManaged:true
     };
   }
@@ -26376,8 +26382,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const first=rows[0];
       const ua=rows.map(x=>({property_id:x.property_id,is_primary:x.is_primary}))
         .filter(x=>x.property_id);
-      const pp=perms.filter(x=>String(x.user_id)===id);
       const role=normalizeCloudRole(first,{email:first.username});
+      const propertyId=(ua.find(x=>x.is_primary)||ua[0])?.property_id||((role==='Admin')?'all':null);
+      const pp=perms.filter(x=>String(x.user_id)===id&&(!propertyId||propertyId==='all'||String(x.property_id)===String(propertyId)));
+      const meta=pp.filter(x=>x.module==='profile_meta').map(x=>String(x.action||''));
+      const deptMeta=meta.find(x=>x.startsWith('department:'));
+      const posMeta=meta.find(x=>x.startsWith('position:'));
       const existing=(state.users||[]).find(u=>String(u.id)===id);
       cloudUsers.push({
         ...(existing||{}),
@@ -26387,13 +26397,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         name:first.full_name||first.username||'',
         fullName:first.full_name||first.username||'',
         role,
-        department:first.department||'',
+        department:deptMeta!==undefined?deptMeta.slice('department:'.length):(first.department||''),
+        position:posMeta!==undefined?posMeta.slice('position:'.length):(existing?.position||''),
         active:String(first.status||'active').toLowerCase()==='active',
-        propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||((role==='Admin')?'all':null),
+        propertyId,
         propertyIds:ua.map(x=>x.property_id).filter(Boolean),
         permissions:{
           pages:pp.filter(x=>x.module==='page').map(x=>x.action),
-          actions:pp.filter(x=>x.module!=='page'&&x.module!=='report').map(x=>x.module+'.'+x.action),
+          actions:pp.filter(x=>x.module!=='page'&&x.module!=='report'&&x.module!=='profile_meta').map(x=>x.module+'.'+x.action),
           reports:pp.filter(x=>x.module==='report').map(x=>x.action)
         },
         cloudManaged:true
