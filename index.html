@@ -519,7 +519,7 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 }
 </style>
 
-<!-- FIX29: Department/Position profile_meta is restored from property-scoped cloud permissions on all user refresh paths. -->\n</head>
+<!-- FIX29: Department/Position profile_meta is restored from property-scoped cloud permissions on all user refresh paths. -->\n<!-- FIX30: Store requisition approval now honors the explicit stores.approve permission regardless of approver department/position. -->\n</head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
@@ -29260,7 +29260,20 @@ function renderLeaveQueue(){const host=document.getElementById('sig424LeaveQueue
 const oldStSaveReq=window.stSaveReq;
 if(typeof oldStSaveReq==='function')window.stSaveReq=function(){const before=read(KSR),ids=new Set(before.map(x=>String(x.id)));const result=oldStSaveReq.apply(this,arguments);const after=read(KSR),r=after.filter(x=>!ids.has(String(x.id))&&String(x.propertyId||'')===currentProp()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];if(r){r.status='Pending';r.approvalStage='Department Head';delete r.approvedBy;delete r.approvedAt;write(KSR,after);syncStores();audit('STORE_REQUISITION_SUBMITTED',r.number,'Pending Department Head approval');window.renderStores?.();}return result;};
 const oldStApprove=window.stApproveReq;
-window.stApproveReq=function(id){const all=read(KSR),r=all.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===currentProp());if(!r||r.status!=='Pending')return; if(!canStage('stores.approve',()=>isDeptHead(r),r))return alert('Only the Department Head for '+(r.department||'this department')+' can approve this store requisition.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own store requisition.');r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();write(KSR,all);syncStores();audit('STORE_REQUISITION_APPROVED',r.number,'Department Head approval by '+uname());window.renderStores?.();};
+window.stApproveReq=function(id){
+ const all=read(KSR),r=all.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===currentProp());
+ if(!r||r.status!=='Pending')return;
+ /* Store requisition approval is explicitly permission-based: any user granted
+    stores.approve (including a GM covering a Department Head's day off) may
+    approve, independent of their own department or position. */
+ if(!(me().role==='Admin'||has('stores.approve')))return alert('You need the Approve / Reject Store Requisitions permission to approve this request.');
+ if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own store requisition.');
+ r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();
+ r.approvalStage='Complete';r.approverType='Authorized User';
+ write(KSR,all);syncStores();
+ audit('STORE_REQUISITION_APPROVED',r.number,'Approved by authorized user '+uname());
+ window.renderStores?.();
+};
 /* Replenishment PR from stores must enter the purchasing workflow at the Department Head stage, then Purchasing Manager. */
 const oldSavePR=window.savePurchaseRequest;
 if(typeof oldSavePR==='function'){
