@@ -4745,7 +4745,7 @@ const USER_MODULE_ACTION_GROUPS={
   purchasing:{title:"Purchasing Action Rights",items:[
     ["purchasing.po","Purchase Order"],["purchasing.ap","Supplier Payment"],["purchasing.grn","GRN"],
     ["purchasing.suppliers","Suppliers"],["purchasing.articles","Articles"],["purchasing.request","Purchase Request"],["purchasing.refresh","Refresh"],
-    ["purchasing.approve_pr_department","Approve PR — Department Head"],["purchasing.approve_pr_purchasing","Approve PR — Purchasing Manager"],["purchasing.approve_po_gm","Approve PO — General Manager"],["purchasing.send_po","Send Approved PO to Supplier"]
+    ["purchasing.approve_pr_department","Approve PR — Department Head"],["purchasing.approve_pr_gm","Approve PR — General Manager"],["purchasing.approve_pr_purchasing","Approve PR — Purchasing Manager"],["purchasing.approve_po_gm","Approve PO — General Manager"],["purchasing.send_po","Send Approved PO to Supplier"]
   ]},
   cashiershift:{title:"Cashier Shift & Daily Closing Action Rights",items:ACTION_PERMISSION_GROUPS["Cashiering"]||[]},
   cashier:{title:"Cashier Shift & Daily Closing Action Rights",items:ACTION_PERMISSION_GROUPS["Cashiering"]||[]},
@@ -4834,9 +4834,14 @@ async function refreshUserPermissionsBeforeEdit(userId){
         const u=users.find(x=>String(x.id)===String(userId));
         if(!u) return null;
         const allowed=Array.isArray(rows)?rows:[];
+        const meta=allowed.filter(x=>x.module==='profile_meta').map(x=>String(x.action||''));
+        const deptMeta=meta.find(x=>x.startsWith('department:'));
+        const posMeta=meta.find(x=>x.startsWith('position:'));
+        if(deptMeta!==undefined)u.department=deptMeta.slice('department:'.length);
+        if(posMeta!==undefined)u.position=posMeta.slice('position:'.length);
         u.permissions={
             pages:[...new Set(allowed.filter(x=>x.module==='page').map(x=>x.action))],
-            actions:[...new Set(allowed.filter(x=>x.module!=='page'&&x.module!=='report').map(x=>String(x.module)+'.'+String(x.action)))],
+            actions:[...new Set(allowed.filter(x=>x.module!=='page'&&x.module!=='report'&&x.module!=='profile_meta').map(x=>String(x.module)+'.'+String(x.action)))],
             reports:[...new Set(allowed.filter(x=>x.module==='report').map(x=>x.action))]
         };
         u.cloudManaged=true;
@@ -5256,6 +5261,7 @@ async function saveUser(){
             localUser.authUserId=provisioned.id;
             localUser.authEmail=provisioned.email||email;
             localUser.cloudManaged=true;
+            try{await syncUserRightsOnlyToSupabaseCloud(localUser);}catch(metaErr){console.warn("User profile metadata cloud sync will retry on next edit:",metaErr);}
         }catch(cloudErr){
             showUserError("Cloud user creation failed: "+(cloudErr?.message||cloudErr));
             return;
@@ -17398,7 +17404,7 @@ function renderSuppliers(){const e=document.getElementById('supplierListTable');
 function renderArticles(){const e=document.getElementById('articleListTable');if(!e)return;const a=rows(K.art);e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td>${esc(x.category)}</td><td>${esc(x.unit)}</td><td>${typeof accMoney==='function'?accMoney(x.defaultCost):x.defaultCost}</td><td>${x.reorderLevel}</td><td>${x.active?'Yes':'No'}</td></tr>`).join(''):`<tr><td colspan="7" class="empty">No articles configured.</td></tr>`;}
 window.openPurchaseRequestModal=function(){if(!requireModuleAction("purchasing.request"))return;ensureDefaults();const idm='sigPRModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>New Purchase Request</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Department *</label><input id="prDept" placeholder="Housekeeping / F&B / Engineering"></div><div class="form-group"><label>Required Date</label><input id="prDate" type="date"></div><div class="form-group"><label>Priority</label><select id="prPriority"><option>Normal</option><option>Urgent</option><option>Critical</option></select></div><div class="form-group full"><label>Request Notes</label><textarea id="prNotes"></textarea></div></div><div id="prLines"></div><button class="btn btn-secondary" onclick="addPurchaseRequestLine()">+ Add Article</button><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="savePurchaseRequest()">Submit Request</button></div></div></div>`);document.getElementById('prDate').value=today();document.getElementById('prLines').innerHTML='';addPurchaseRequestLine();document.getElementById(idm).classList.add('show');};
 window.addPurchaseRequestLine=function(){const host=document.getElementById('prLines');if(!host)return;const n=host.querySelectorAll('.pr-line').length+1;const arts=rows(K.art).filter(x=>x.active);const opts=arts.map(x=>`<option value="${esc(x.id)}">${esc(x.code)} — ${esc(x.name)} (${esc(x.unit)})</option>`).join('');host.insertAdjacentHTML('beforeend',`<div class="pr-line" style="display:grid;grid-template-columns:2fr .8fr 1fr 40px;gap:8px;align-items:end;margin:10px 0"><div class="form-group"><label>Article</label><select class="pr-art">${opts}</select></div><div class="form-group"><label>Qty</label><input class="pr-qty" type="number" min="0.01" step="0.01" value="1"></div><div class="form-group"><label>Estimated Unit Cost</label><input class="pr-cost" type="number" min="0" step="0.01" value="0"></div><button class="btn btn-danger" type="button" onclick="this.closest('.pr-line').remove()">×</button></div>`);};
-window.savePurchaseRequest=function(){if(!requireModuleAction("purchasing.request"))return;const dept=document.getElementById('prDept').value.trim();const lines=[...document.querySelectorAll('#prLines .pr-line')].map(x=>({articleId:x.querySelector('.pr-art').value,qty:Number(x.querySelector('.pr-qty').value||0),unitCost:Number(x.querySelector('.pr-cost').value||0)})).filter(x=>x.qty>0);if(!dept||!lines.length){alert('Enter department and at least one article.');return;}const art=rows(K.art);lines.forEach(l=>{const a=art.find(x=>x.id===l.articleId);l.articleCode=a?.code;l.articleName=a?.name;l.unit=a?.unit;});const total=lines.reduce((s,x)=>s+x.qty*x.unitCost,0);const r={id:id('pr'),propertyId:currentPropertyId,number:'PR-'+Date.now(),date:today(),requiredDate:document.getElementById('prDate').value||today(),department:dept,priority:document.getElementById('prPriority').value,requestedBy:user(),notes:document.getElementById('prNotes').value.trim(),lines,total,status:'Submitted',createdAt:new Date().toISOString()};const a=rows(K.pr);a.push(r);saveProp(K.pr,a);document.getElementById('sigPRModal').classList.remove('show');renderPR();alert('Purchase Request submitted.');};
+window.savePurchaseRequest=function(){if(!requireModuleAction("purchasing.request"))return;const dept=document.getElementById('prDept').value.trim();const lines=[...document.querySelectorAll('#prLines .pr-line')].map(x=>({articleId:x.querySelector('.pr-art').value,qty:Number(x.querySelector('.pr-qty').value||0),unitCost:Number(x.querySelector('.pr-cost').value||0)})).filter(x=>x.qty>0);if(!dept||!lines.length){alert('Enter department and at least one article.');return;}const art=rows(K.art);lines.forEach(l=>{const a=art.find(x=>x.id===l.articleId);l.articleCode=a?.code;l.articleName=a?.name;l.unit=a?.unit;});const total=lines.reduce((s,x)=>s+x.qty*x.unitCost,0);const r={id:id('pr'),propertyId:currentPropertyId,number:'PR-'+Date.now(),date:today(),requiredDate:document.getElementById('prDate').value||today(),department:dept,priority:document.getElementById('prPriority').value,requestedBy:user(),notes:document.getElementById('prNotes').value.trim(),lines,total,status:'Pending Department Head / GM Approval',approvalStage:'Department Head / GM',createdAt:new Date().toISOString()};const a=rows(K.pr);a.push(r);saveProp(K.pr,a);document.getElementById('sigPRModal').classList.remove('show');renderPR();alert('Purchase Request submitted.');};
 window.approvePurchaseRequest=function(rid){if(!requireModuleAction("purchasing.request"))return;const a=rows(K.pr),r=a.find(x=>x.id===rid);if(!r)return;r.status='Approved';r.approvedBy=user();r.approvedAt=new Date().toISOString();saveProp(K.pr,a);renderPR();};
 window.renderPR=renderPR;
 function findExistingPOForPR(pr){
@@ -17540,7 +17546,7 @@ window.openPurchaseRequestDetails=function(rid){
 window.createPOFromPR=function(prId){if(!requireModuleAction("purchasing.po"))return;
  // PR-to-PO conversion is a Purchasing action. Keep Admin/Manager compatibility
  // while allowing the function to work even when the granular Purchasing UI is enabled.
- if(currentUser && !['Admin','Manager'].includes(currentUser.role) && typeof requireAccess==='function' && !requireAccess('purchasing'))return;
+ if(currentUser && !['Admin','Manager'].includes(currentUser.role) && typeof requireModuleAction==='function' && !requireModuleAction('purchasing.po'))return;
  const pr=rows(K.pr).find(x=>x.id===prId);
  if(!pr){alert('Purchase Request not found.');return;}
  if(pr.status!=='Approved'){alert('Only approved Purchase Requests can be converted to a Purchase Order.');return;}
@@ -20818,19 +20824,24 @@ async function syncSupabaseUsers(){
             const pr={id:first.id,username:first.username,full_name:first.full_name,
                 role:first.role,department:first.department,status:first.status};
             const ua=rows.map(x=>({property_id:x.property_id,is_primary:x.is_primary})).filter(x=>x.property_id);
-            const pp=perms.filter(x=>String(x.user_id)===id);
             const role=normalizeCloudRole(pr,{email:pr.username});
+            const userProperty=(ua.find(x=>x.is_primary)||ua[0])?.property_id||((role==="Admin")?"all":null);
+            const pp=perms.filter(x=>String(x.user_id)===id&&(!userProperty||String(x.property_id)===String(userProperty)));
+            const meta=pp.filter(x=>x.module==="profile_meta").map(x=>String(x.action||''));
+            const deptMeta=meta.find(x=>x.startsWith('department:'));
+            const posMeta=meta.find(x=>x.startsWith('position:'));
             const ex=state.users.find(u=>String(u.id)===id);
             const u={...(ex||{}),id:pr.id,authUserId:pr.id,
                 username:pr.username||ex?.username||"",
                 name:pr.full_name||pr.username||"",fullName:pr.full_name||pr.username||"",
-                role,department:pr.department||"",
+                role,department:deptMeta!==undefined?deptMeta.slice('department:'.length):(pr.department||""),
+                position:posMeta!==undefined?posMeta.slice('position:'.length):(ex?.position||""),
                 active:String(pr.status||"active").toLowerCase()==="active",
-                propertyId:(ua.find(x=>x.is_primary)||ua[0])?.property_id||((role==="Admin")?"all":null),
+                propertyId:userProperty,
                 propertyIds:ua.map(x=>x.property_id).filter(Boolean),
                 permissions:{
                     pages:pp.filter(x=>x.module==="page").map(x=>x.action),
-                    actions:pp.filter(x=>x.module!=="page"&&x.module!=="report").map(x=>x.module+"."+x.action),
+                    actions:pp.filter(x=>x.module!=="page"&&x.module!=="report"&&x.module!=="profile_meta").map(x=>x.module+"."+x.action),
                     reports:pp.filter(x=>x.module==="report").map(x=>x.action)
                 },cloudManaged:true};
             const i=state.users.findIndex(x=>String(x.id)===id);
@@ -21006,6 +21017,10 @@ async function syncUserRightsOnlyToSupabaseCloud(user){
     });
     (user.permissions?.pages||[]).forEach(pg=>addRow("page",pg));
     (user.permissions?.reports||[]).forEach(rp=>addRow("report",rp));
+    // Profile metadata is stored as non-permission rows in the existing property-scoped
+    // permissions RPC, avoiding a schema migration and keeping Department/Position per property.
+    addRow("profile_meta","department:"+String(user.department||""));
+    addRow("profile_meta","position:"+String(user.position||""));
 
     const {error}=await client.rpc("replace_user_permissions",{
         target_user_id:String(user.id),
@@ -29122,7 +29137,7 @@ const positionMap={
 'Housekeeping':['Room Attendant','Housekeeping Supervisor','Executive Housekeeper','Department Head'],
 'Food & Beverage':['Waiter / Server','Restaurant Supervisor','Restaurant Manager','Department Head'],
 'Kitchen':['Commis Chef','Chef de Partie','Sous Chef','Executive Chef','Department Head'],
-'Purchasing':['Purchasing Officer','Purchasing Manager','Department Head'],
+'Purchasing':['Purchasing Officer','Purchasing Manager','Department Head','General Manager'],
 'Stores':['Store Keeper','Stores Supervisor','Department Head'],
 'Engineering':['Technician','Engineering Supervisor','Chief Engineer','Department Head'],
 'Finance / Accounts':['Accounts Officer','Finance Manager','Chief Accountant','Department Head'],
@@ -29132,31 +29147,83 @@ const positionMap={
 'General Management':['General Manager','Resident Manager','Hotel Manager'],
 'Administration':['Administrator','Administration Manager','Department Head']};
 window.sigUpdateUserPositions=function(selected){const d=document.getElementById('userDepartment'),p=document.getElementById('userPosition');if(!d||!p)return;const list=positionMap[d.value]||[];p.innerHTML='<option value="">Select position</option>'+list.map(x=>'<option>'+esc(x)+'</option>').join('');if(selected&&list.includes(selected))p.value=selected;window.sigUpdatePositionRightsHint?.()};
-window.sigUpdatePositionRightsHint=function(){const p=document.getElementById('userPosition')?.value||'',h=document.getElementById('userPositionHint');if(h)h.textContent=(p==='General Manager'?'Final approver for Purchase Orders and final leave approver. Individual action rights must also be assigned.':p==='Purchasing Manager'?'Reviews PRs after Department Head approval, creates POs, and sends POs only after GM approval.':p==='HR Manager'?'Reviews leave requests after Department Head approval. Individual action rights must also be assigned.':p==='Store Keeper'?'Raises replenishment PRs and issues approved store requisitions.':p==='Department Head'?'Approves requests for the assigned department only.': 'Position identifies approval responsibility; access remains controlled by individual rights.')};
+window.sigUpdatePositionRightsHint=function(){const p=document.getElementById('userPosition')?.value||'',h=document.getElementById('userPositionHint');if(h)h.textContent=(p==='General Manager'?'Final approver for Purchase Orders and final leave approver. Individual action rights must also be assigned.':p==='Purchasing Manager'?'Creates POs from approved PRs and sends POs only after GM approval.':p==='HR Manager'?'Reviews leave requests after Department Head approval. Individual action rights must also be assigned.':p==='Store Keeper'?'Raises replenishment PRs and issues approved store requisitions.':p==='Department Head'?'Approves requests for the assigned department only.': 'Position identifies approval responsibility; access remains controlled by individual rights.')};
 
 /* PR chain: Department Head -> Purchasing Manager -> approved for PO creation. */
 function getPR(id){const pid=currentProp();return pid?read(KPR).find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null}
 function savePRRecord(r){const pid=currentProp();if(!pid||String(r?.propertyId||'')!==pid)return false;const all=read(KPR),i=all.findIndex(x=>String(x.id)===String(r.id)&&String(x.propertyId||'')===pid);if(i<0)return false;all[i]=r;write(KPR,all);syncPR(r);return true}
-window.sigApprovePRStage=function(id){const r=getPR(id);if(!r)return alert('Purchase Request not found.');const stage=String(r.approvalStage||'Department Head');
- if(stage==='Department Head'){if(!canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r))return alert('Only the assigned Department Head can approve this PR stage.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');r.departmentHeadApprovedBy=uname();r.departmentHeadApprovedAt=new Date().toISOString();r.approvalStage='Purchasing Manager';r.status='Pending Purchasing Manager Approval';}
- else if(stage==='Purchasing Manager'){if(!canStage('purchasing.approve_pr_purchasing',isPurchasing,r))return alert('Only the Purchasing Manager can approve this PR stage.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');r.purchasingManagerApprovedBy=uname();r.purchasingManagerApprovedAt=new Date().toISOString();r.approvalStage='Complete';r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();}
- else return alert('This PR approval stage is already complete.');savePRRecord(r);audit('PURCHASE_REQUEST_STAGE_APPROVED',r.number,'Approved by '+uname()+'; next stage '+r.approvalStage);window.renderPurchasingModule?.();window.renderPR?.();renderPRQueue();alert('PR stage approved. '+(r.status==='Approved'?'Purchasing can now create the PO.':'Next approval: '+r.approvalStage+'.'));};
-window.sigRejectPRStage=function(id){const r=getPR(id);if(!r)return;const stage=String(r.approvalStage||'Department Head');const allowed=stage==='Department Head'?canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r):stage==='Purchasing Manager'?canStage('purchasing.approve_pr_purchasing',isPurchasing,r):false;if(!allowed)return alert('You are not authorized to reject this PR stage.');const reason=prompt('Reason for rejecting '+r.number+':','');if(reason===null)return;if(!reason.trim())return alert('A rejection reason is required.');r.status='Rejected';r.rejectReason=reason.trim();r.rejectedBy=uname();r.rejectedAt=new Date().toISOString();savePRRecord(r);audit('PURCHASE_REQUEST_REJECTED',r.number,reason.trim());window.renderPurchasingModule?.();renderPRQueue();};
+window.sigApprovePRStage=function(id){
+ const r=getPR(id);if(!r)return alert('Purchase Request not found.');
+ const stage=String(r.approvalStage||'Department Head / GM');
+ const deptAllowed=has('purchasing.approve_pr_department')&&isDeptHead(r);
+ const gmAllowed=has('purchasing.approve_pr_gm')||has('purchasing.approve_po_gm');
+ if(!['Department Head','Department Head / GM','GM','General Manager'].includes(stage))return alert('This PR approval is already complete.');
+ if(!deptAllowed&&!gmAllowed)return alert('You need Department Head or General Manager PR approval permission to approve this request.');
+ if(norm(r.requestedBy)===norm(uname()))return alert('You cannot approve your own Purchase Request.');
+ r.approvalStage='Complete';r.status='Approved';r.approvedBy=uname();r.approvedAt=new Date().toISOString();
+ r.approverType=deptAllowed?'Department Head':'General Manager';
+ if(deptAllowed){r.departmentHeadApprovedBy=uname();r.departmentHeadApprovedAt=r.approvedAt;}else{r.generalManagerApprovedBy=uname();r.generalManagerApprovedAt=r.approvedAt;}
+ savePRRecord(r);audit('PURCHASE_REQUEST_APPROVED',r.number,'Approved by '+r.approverType+': '+uname());window.renderPurchasingModule?.();window.renderPR?.();renderPRQueue();alert('PR approved. Purchasing can now create the PO.');
+};
+window.sigRejectPRStage=function(id){const r=getPR(id);if(!r)return;const stage=String(r.approvalStage||'Department Head / GM');const allowed=['Department Head','Department Head / GM','GM','General Manager'].includes(stage)&&((has('purchasing.approve_pr_department')&&isDeptHead(r))||has('purchasing.approve_pr_gm')||has('purchasing.approve_po_gm'));if(!allowed)return alert('You are not authorized to reject this Purchase Request.');if(norm(r.requestedBy)===norm(uname()))return alert('You cannot reject your own Purchase Request.');const reason=prompt('Reason for rejecting '+r.number+':','');if(reason===null)return;if(!reason.trim())return alert('A rejection reason is required.');r.status='Rejected';r.approvalStage='Complete';r.rejectReason=reason.trim();r.rejectedBy=uname();r.rejectedAt=new Date().toISOString();savePRRecord(r);audit('PURCHASE_REQUEST_REJECTED',r.number,reason.trim());window.renderPurchasingModule?.();renderPRQueue();};
 /* Keep legacy Approve handler from bypassing the staged workflow. */
 window.approvePurchaseRequest=function(id){return window.sigApprovePRStage(id)};
 
 /* PO: Purchasing Manager creates it; General Manager approves; Purchasing Manager sends. */
 function getPOs(){try{window.signatureMigrateKnownLegacySignatureHotelPOs?.()}catch(e){}return read(KPO)}
 function savePOs(a,changedRecord){write(KPO,a);syncPO(changedRecord)}
-window.sigApprovePO=function(id){if(!canStage('purchasing.approve_po_gm',isGM,null))return alert('Only a General Manager with the PO approval right can approve a Purchase Order.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.status==='Sent to Supplier'||po.status==='Closed')return alert('This PO is already sent or closed.');if(po.status==='Pending GM Approval' || po.gmApprovalStatus==='Pending'){po.status='Approved';po.gmApprovalStatus='Approved';po.gmApprovedBy=uname();po.gmApprovedAt=new Date().toISOString();po.supplierDispatchStatus='Ready to Send';}else return alert('Only a PO pending GM approval can be approved.');savePOs(a,po);audit('PURCHASE_ORDER_GM_APPROVED',po.number,'Approved by '+uname());renderPOQueue();window.renderPurchasingModule?.();alert('PO approved. Purchasing Manager can now send it to the supplier.');};
+function migrateLegacyPurchasingWorkflow(){
+ const pid=currentProp();if(!pid)return;
+ // A PR already approved by its Department Head is approved under the new
+ // one-step Department Head OR GM rule; do not force a second PR approval.
+ const prs=read(KPR);let prChanged=false,changedPRs=[];
+ prs.forEach(r=>{if(String(r.propertyId||'')!==pid||r.status==='PO Created'||r.status==='Rejected')return;
+   if(r.approvalStage==='Purchasing Manager'){
+     if(r.departmentHeadApprovedBy){r.approvalStage='Complete';r.status='Approved';r.approvedBy=r.departmentHeadApprovedBy;r.approvedAt=r.departmentHeadApprovedAt||r.approvedAt||new Date().toISOString();r.approverType='Department Head';}
+     else{r.approvalStage='Department Head / GM';r.status='Pending Department Head / GM Approval';}
+     prChanged=true;changedPRs.push(r);
+   }
+ });
+ if(prChanged){write(KPR,prs);changedPRs.forEach(syncPR);}
+ // Existing, unsent POs created before this workflow patch must enter GM approval.
+ const pos=getPOs();let poChanged=[];
+ pos.forEach(po=>{if(String(po.propertyId||'')!==pid||po.status==='Sent to Supplier'||po.status==='Closed'||po.gmApprovalStatus==='Approved'||po.gmApprovalStatus==='Pending')return;
+   po.status='Pending GM Approval';po.gmApprovalStatus='Pending';po.supplierDispatchStatus=po.supplierDispatchStatus||'Not Sent';poChanged.push(po);
+ });
+ if(poChanged.length){write(KPO,pos);poChanged.forEach(syncPO);}
+}
+window.sigApprovePO=function(id){if(!(has('purchasing.approve_po_gm')&&isGM()))return alert('You need the Approve PO — General Manager permission to approve a Purchase Order.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.status==='Sent to Supplier'||po.status==='Closed')return alert('This PO is already sent or closed.');if(po.status==='Pending GM Approval' || po.gmApprovalStatus==='Pending'){po.status='Approved';po.gmApprovalStatus='Approved';po.gmApprovedBy=uname();po.gmApprovedAt=new Date().toISOString();po.supplierDispatchStatus='Ready to Send';}else return alert('Only a PO pending GM approval can be approved.');savePOs(a,po);audit('PURCHASE_ORDER_GM_APPROVED',po.number,'Approved by '+uname());renderPOQueue();window.renderPurchasingModule?.();alert('PO approved. Purchasing Manager can now send it to the supplier.');};
 window.sigSendPOToSupplier=function(id){if(!canStage('purchasing.send_po',isPurchasing,null))return alert('Only a Purchasing Manager with supplier dispatch rights can send the approved PO.');const a=getPOs(),pid=currentProp(),po=pid?a.find(x=>String(x.id)===String(id)&&String(x.propertyId||'')===pid):null;if(!po)return alert('Purchase Order not found.');if(po.gmApprovalStatus!=='Approved'&&po.status!=='Approved')return alert('General Manager approval is required before sending this PO.');let suppliers=read('signature_pms_suppliers'),supplier=suppliers.find(x=>String(x.id)===String(po.supplierId)&&String(x.propertyId||'')===currentProp());const email=String(supplier?.email||po.supplierEmail||'').trim();const subject=encodeURIComponent('Purchase Order '+(po.number||''));const body=encodeURIComponent('Dear '+(supplier?.name||po.supplier||'Supplier')+',\n\nPlease find the approved Purchase Order details below.\nPO Number: '+(po.number||'')+'\nDate: '+(po.date||'')+'\nDepartment: '+(po.department||'')+'\nTotal: '+(typeof window.accMoney==='function'?window.accMoney(po.total||0):Number(po.total||0).toFixed(2))+'\n\nPlease confirm receipt and expected delivery.\n\nRegards,\n'+uname());if(email){try{window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body}catch(e){}}else alert('No supplier email is saved. Please send the printed PO through your normal supplier channel.');const sent=confirm('After you send the PO to the supplier, click OK to record it as sent. Click Cancel if you have not sent it yet.');if(!sent)return;const note=prompt('Enter email / dispatch reference (optional):','');if(note===null)return;po.status='Sent to Supplier';po.supplierDispatchStatus='Sent';po.sentToSupplierBy=uname();po.sentToSupplierAt=new Date().toISOString();po.supplierDispatchNote=note.trim();savePOs(a,po);audit('PURCHASE_ORDER_SENT_TO_SUPPLIER',po.number,note.trim()||'Marked sent by Purchasing Manager');renderPOQueue();window.renderPurchasingModule?.();alert('Supplier dispatch recorded.');};
 
 function addQueue(hostId,title,desc,head,rowsHtml){let el=document.getElementById(hostId);if(!el)return;el.innerHTML='<div class="section-header"><div><h3>'+title+'</h3><div style="font-size:12px;color:#64748b">'+desc+'</div></div></div>'+head+'<div class="table-wrap"><table><thead><tr><th>Document</th><th>Department / Details</th><th>Requester / Owner</th><th>Status</th><th>Action</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'}
-function renderPRQueue(){const host=document.getElementById('sig424PRQueue');if(!host)return;const pid=currentProp(),all=(pid?read(KPR).filter(x=>String(x.propertyId||'')===pid):[]).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));const rows=all.map(r=>{const stage=r.approvalStage||(r.status==='Submitted'?'Department Head':r.status==='Pending Purchasing Manager Approval'?'Purchasing Manager':r.status==='Approved'?'Complete':'');let action='—';if(stage==='Department Head'&&canStage('purchasing.approve_pr_department',()=>isDeptHead(r),r)&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';else if(stage==='Purchasing Manager'&&canStage('purchasing.approve_pr_purchasing',isPurchasing,r)&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';return '<tr><td><strong>'+esc(r.number)+'</strong></td><td>'+esc(r.department||'')+'</td><td>'+esc(r.requestedBy||'')+'</td><td>'+esc(r.status||'Submitted')+'<div style="font-size:11px;color:#64748b">Stage: '+esc(stage||'—')+'</div></td><td>'+action+'</td></tr>'}).join('');host.innerHTML='<div class="section-header"><div><h3>Approval Workflow — Purchase Requests</h3><div style="font-size:12px;color:#64748b">Requester → Department Head → Purchasing Manager → PO creation.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PR Number</th><th>Department</th><th>Requested By</th><th>Status / Stage</th><th>Action</th></tr></thead><tbody>'+ (rows||'<tr><td colspan="5" class="empty">No Purchase Requests.</td></tr>')+'</tbody></table></div>'}
-function renderPOQueue(){const host=document.getElementById('sig424POQueue');if(!host)return;const pid=currentProp(),all=(pid?getPOs().filter(x=>String(x.propertyId||'')===pid):[]).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));const rows=all.map(po=>{let action='—';if((po.status==='Pending GM Approval'||po.gmApprovalStatus==='Pending')&&canStage('purchasing.approve_po_gm',isGM,po))action='<button class="btn btn-primary btn-small" onclick="sigApprovePO(\''+esc(po.id)+'\')">GM Approve PO</button>';else if((po.gmApprovalStatus==='Approved'||po.status==='Approved')&&canStage('purchasing.send_po',isPurchasing,po)&&po.status!=='Sent to Supplier')action='<button class="btn btn-success btn-small" onclick="sigSendPOToSupplier(\''+esc(po.id)+'\')">Send to Supplier</button>';return '<tr><td><strong>'+esc(po.number||'')+'</strong></td><td>'+esc(po.department||'')+' / '+esc(po.supplier||'')+'</td><td>'+esc(po.createdBy||'')+'</td><td>'+esc(po.status||'Open')+(po.gmApprovedBy?'<div style="font-size:11px;color:#64748b">GM: '+esc(po.gmApprovedBy)+'</div>':'')+'</td><td>'+action+'</td></tr>'}).join('');host.innerHTML='<div class="section-header"><div><h3>Approval Workflow — Purchase Orders</h3><div style="font-size:12px;color:#64748b">Purchasing Manager creates PO → General Manager approves → Purchasing Manager sends to supplier.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PO Number</th><th>Department / Supplier</th><th>Created By</th><th>Status</th><th>Action</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No Purchase Orders.</td></tr>')+'</tbody></table></div>'}
+function renderPRQueue(){
+ const hosts=[document.getElementById('sig424PRQueue'),document.getElementById('sig424ManagerPRQueue')].filter(Boolean);if(!hosts.length)return;
+ const pid=currentProp(),all=(pid?read(KPR).filter(x=>String(x.propertyId||'')===pid):[]).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+ const rows=all.map(r=>{const stage=r.approvalStage||(r.status==='Submitted'||r.status==='Pending Purchasing Manager Approval'?'Department Head / GM':r.status==='Approved'?'Complete':'');let action='—';if(['Department Head','Department Head / GM','GM','General Manager'].includes(stage)&&((has('purchasing.approve_pr_department')&&isDeptHead(r))||has('purchasing.approve_pr_gm')||has('purchasing.approve_po_gm'))&&norm(r.requestedBy)!==norm(uname()))action='<button class="btn btn-primary btn-small" onclick="sigApprovePRStage(\''+esc(r.id)+'\')">Approve PR</button> <button class="btn btn-danger btn-small" onclick="sigRejectPRStage(\''+esc(r.id)+'\')">Reject</button>';return '<tr><td><strong>'+esc(r.number)+'</strong></td><td>'+esc(r.department||'')+'</td><td>'+esc(r.requestedBy||'')+'</td><td>'+esc(r.status||'Submitted')+'<div style="font-size:11px;color:#64748b">Stage: '+esc(stage||'—')+'</div></td><td>'+action+'</td></tr>'}).join('');
+ const html='<div class="section-header"><div><h3>Purchase Request Approvals</h3><div style="font-size:12px;color:#64748b">PR Creator → Department Head OR General Manager (one approval) → Purchasing creates PO.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PR Number</th><th>Department</th><th>Requested By</th><th>Status / Stage</th><th>Action</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No Purchase Requests.</td></tr>')+'</tbody></table></div>';
+ hosts.forEach(host=>host.innerHTML=html);
+}
+function renderPOQueue(){
+ const hosts=[document.getElementById('sig424POQueue'),document.getElementById('sig424ManagerPOQueue')].filter(Boolean);if(!hosts.length)return;
+ const pid=currentProp(),all=(pid?getPOs().filter(x=>String(x.propertyId||'')===pid):[]).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+ const rows=all.map(po=>{let action='—';if((po.status==='Pending GM Approval'||po.gmApprovalStatus==='Pending')&&has('purchasing.approve_po_gm'))action='<button class="btn btn-primary btn-small" onclick="sigApprovePO(\''+esc(po.id)+'\')">Approve PO</button>';else if((po.gmApprovalStatus==='Approved'||po.status==='Approved')&&canStage('purchasing.send_po',isPurchasing,po)&&po.status!=='Sent to Supplier')action='<button class="btn btn-success btn-small" onclick="sigSendPOToSupplier(\''+esc(po.id)+'\')">Send to Supplier</button>';return '<tr><td><strong>'+esc(po.number||'')+'</strong></td><td>'+esc(po.department||'')+' / '+esc(po.supplier||'')+'</td><td>'+esc(po.createdBy||'')+'</td><td>'+esc(po.status||'Open')+(po.gmApprovedBy?'<div style="font-size:11px;color:#64748b">Approved by: '+esc(po.gmApprovedBy)+'</div>':'')+'</td><td>'+action+'</td></tr>'}).join('');
+ const html='<div class="section-header"><div><h3>Purchase Order Approvals & Dispatch</h3><div style="font-size:12px;color:#64748b">Purchasing User creates PO → General Manager approves → Purchasing Manager sends to supplier.</div></div><button class="btn btn-secondary btn-small" onclick="sigRenderApprovalQueues()">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PO Number</th><th>Department / Supplier</th><th>Created By</th><th>Status</th><th>Action</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No Purchase Orders.</td></tr>')+'</tbody></table></div>';
+ hosts.forEach(host=>host.innerHTML=html);
+}
 window.sigRenderApprovalQueues=function(){renderPRQueue();renderPOQueue();renderLeaveQueue()};
-function ensurePurchasingQueues(){const page=document.getElementById('purchasing');if(!page)return;if(!document.getElementById('sig424PRQueue')){const x=document.createElement('div');x.className='section';x.id='sig424PRQueue';x.style.marginTop='14px';page.appendChild(x)}if(!document.getElementById('sig424POQueue')){const x=document.createElement('div');x.className='section';x.id='sig424POQueue';x.style.marginTop='14px';page.appendChild(x)}renderPRQueue();renderPOQueue()}
+function ensurePurchasingQueues(){const page=document.getElementById('purchasing');if(!page)return;migrateLegacyPurchasingWorkflow();if(!document.getElementById('sig424PRQueue')){const x=document.createElement('div');x.className='section';x.id='sig424PRQueue';x.style.marginTop='14px';page.appendChild(x)}if(!document.getElementById('sig424POQueue')){const x=document.createElement('div');x.className='section';x.id='sig424POQueue';x.style.marginTop='14px';page.appendChild(x)}renderPRQueue();renderPOQueue()}
 
+function ensureManagerDashboardQueues(){
+ const page=document.getElementById('dashboard');if(!page)return;migrateLegacyPurchasingWorkflow();
+ const u=me(),acts=Array.isArray(u.permissions?.actions)?u.permissions.actions:[];
+ if(acts.includes('purchasing.approve_pr_department')||acts.includes('purchasing.approve_pr_gm')||acts.includes('purchasing.approve_po_gm')){
+  if(!document.getElementById('sig424ManagerPRQueue')){const x=document.createElement('div');x.className='section';x.id='sig424ManagerPRQueue';x.style.marginTop='14px';page.appendChild(x);}
+ }
+ if(acts.includes('purchasing.approve_po_gm')||acts.includes('purchasing.send_po')){
+  if(!document.getElementById('sig424ManagerPOQueue')){const x=document.createElement('div');x.className='section';x.id='sig424ManagerPOQueue';x.style.marginTop='14px';page.appendChild(x);}
+ }
+ renderPRQueue();renderPOQueue();
+}
 /* Leave: Department Head -> HR Manager -> General Manager. Attendance is written only after final approval. */
 function leaveRecords(){return read(KLV).filter(x=>String(x.propertyId||'')===currentProp())}
 function saveLeaves(a){const all=read(KLV).filter(x=>String(x.propertyId||currentProp())!==currentProp()).concat(a);write(KLV,all);syncHR()}
@@ -29186,15 +29253,15 @@ window.stApproveReq=function(id){const all=read(KSR),r=all.find(x=>String(x.id)=
 /* Replenishment PR from stores must enter the purchasing workflow at the Department Head stage, then Purchasing Manager. */
 const oldSavePR=window.savePurchaseRequest;
 if(typeof oldSavePR==='function'){
-  window.savePurchaseRequest=function(){const beforeIds=new Set(read(KPR).map(x=>String(x.id)));const result=oldSavePR.apply(this,arguments);setTimeout(()=>{const a=read(KPR);const r=a.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||'')===currentProp()).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')))[0];if(!r)return;if(!r.approvalStage){const fromStores=norm(r.department)==='stores'||norm(r.notes).includes('store requisition');r.approvalStage=fromStores?'Purchasing Manager':'Department Head';r.status=fromStores?'Pending Purchasing Manager Approval':'Pending Department Head Approval';write(KPR,a);syncPR();}},0);return result;};
+  window.savePurchaseRequest=function(){const beforeIds=new Set(read(KPR).map(x=>String(x.id)));const result=oldSavePR.apply(this,arguments);setTimeout(()=>{const a=read(KPR);const r=a.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||'')===currentProp()).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')))[0];if(!r)return;if(!r.approvalStage){const fromStores=norm(r.department)==='stores'||norm(r.notes).includes('store requisition');r.approvalStage='Department Head / GM';r.status='Pending Department Head / GM Approval';write(KPR,a);syncPR();}},0);return result;};
 }
 /* Prevent a PO from being dispatched or treated as fully approved before GM approval. */
 const oldCreatePO=window.savePOFromPR;
-if(typeof oldCreatePO==='function')window.savePOFromPR=function(prId){const r=getPR(prId);if(!r||r.status!=='Approved'||r.approvalStage!=='Complete')return alert('The PR must pass Department Head and Purchasing Manager approvals before PO creation.');const beforeIds=new Set(read(KPO).map(x=>String(x.id)));const res=oldCreatePO.apply(this,arguments);setTimeout(()=>{const a=read(KPO),po=a.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||'')===currentProp()).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')))[0];if(!po)return;po.status='Pending GM Approval';po.gmApprovalStatus='Pending';po.supplierDispatchStatus='Not Sent';const i=a.findIndex(x=>x.id===po.id);if(i>=0)a[i]=po;savePOs(a);renderPOQueue();},0);return res;};
+if(typeof oldCreatePO==='function')window.savePOFromPR=function(prId){const r=getPR(prId);if(!r||r.status!=='Approved'||r.approvalStage!=='Complete')return alert('The PR must be approved by an authorized Department Head or General Manager before PO creation.');const beforeIds=new Set(read(KPO).map(x=>String(x.id)));const res=oldCreatePO.apply(this,arguments);setTimeout(()=>{const a=read(KPO),po=a.filter(x=>!beforeIds.has(String(x.id))&&String(x.propertyId||'')===currentProp()).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')))[0];if(!po)return;po.status='Pending GM Approval';po.gmApprovalStatus='Pending';po.supplierDispatchStatus='Not Sent';const i=a.findIndex(x=>x.id===po.id);if(i>=0)a[i]=po;savePOs(a);renderPOQueue();},0);return res;};
 
 function boot(){
-  ensurePurchasingQueues();ensureLeaveQueue();window.sigRenderApprovalQueues();
-  const oldShow=window.showPage;if(oldShow&&!oldShow.__sig424WorkflowWrapped){window.showPage=function(pageName){const r=oldShow.apply(this,arguments);setTimeout(()=>{if(pageName==='purchasing')ensurePurchasingQueues();if(pageName==='hr')ensureLeaveQueue();window.sigRenderApprovalQueues()},100);return r};window.showPage.__sig424WorkflowWrapped=true;}
+  ensurePurchasingQueues();ensureManagerDashboardQueues();ensureLeaveQueue();window.sigRenderApprovalQueues();
+  const oldShow=window.showPage;if(oldShow&&!oldShow.__sig424WorkflowWrapped){window.showPage=function(pageName){const r=oldShow.apply(this,arguments);setTimeout(()=>{if(pageName==='purchasing')ensurePurchasingQueues();if(pageName==='dashboard')ensureManagerDashboardQueues();if(pageName==='hr')ensureLeaveQueue();window.sigRenderApprovalQueues()},100);return r};window.showPage.__sig424WorkflowWrapped=true;}
   const oldRenderHR=window.renderHR;if(oldRenderHR&&!oldRenderHR.__sig424WorkflowWrapped){window.renderHR=function(){const r=oldRenderHR.apply(this,arguments);setTimeout(()=>{ensureLeaveQueue();renderLeaveQueue()},50);return r};window.renderHR.__sig424WorkflowWrapped=true;}
   let lastSnapshot=JSON.stringify([read(KPR),read(KPO),read(KLV),read(KSR)]);
   setInterval(()=>{if(document.hidden)return;const snapshot=JSON.stringify([read(KPR),read(KPO),read(KLV),read(KSR)]);if(snapshot!==lastSnapshot){lastSnapshot=snapshot;ensurePurchasingQueues();ensureLeaveQueue();renderPRQueue();renderPOQueue();renderLeaveQueue();}},5000);
