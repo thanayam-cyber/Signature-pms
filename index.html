@@ -9919,17 +9919,16 @@ function removeManualFolioCharge(reservationId, itemId){
 }
 
 
-async function extendStay(reservationId){
+function extendStay(reservationId){
 
     if(!requireRole("Admin","Manager","Front Office")) return;
 
-    const r=reservations.find(x=>String(x.id)===String(reservationId));
+    const r=reservations.find(x=>x.id===reservationId);
     if(!r) return;
 
-    // Accept the PMS canonical status and legacy spellings, but never Checked-Out.
-    const status=String(r.status||"").toLowerCase().replace(/[\s_-]/g,"");
-    if(status!=="checkedin"){
-        alert("Extend Stay is available only for a currently Checked-In guest.");
+    const status=String(r.status||"").toLowerCase();
+    if(status!=="checked_in"){
+        alert("Extend Stay is available only for an in-house guest.");
         return;
     }
 
@@ -9967,19 +9966,13 @@ async function extendStay(reservationId){
         return;
     }
 
-    const dateNights=(from,to)=>Math.round((Date.parse(String(to)+"T00:00:00Z")-Date.parse(String(from)+"T00:00:00Z"))/86400000);
-    const oldNights=Math.max(1,dateNights(r.checkIn,currentCheckOut));
-    const newNights=dateNights(r.checkIn,newDate);
+    const oldNights=Math.max(1,Number(r.nights||0));
+    const newNights=Math.round((new Date(newDate)-new Date(r.checkIn))/86400000);
     const additionalNights=Math.max(0,newNights-oldNights);
+    const nightlyRate=Number(r.rate||0);
+    const additionalCharge=additionalNights*nightlyRate;
     const oldTotal=Number(r.total||0);
-    // Keep the reservation's existing guest-facing nightly rate/currency.
-    const nightlyRate=Number(r.rate||0)>0?Number(r.rate):oldTotal/oldNights;
-    if(!Number.isFinite(nightlyRate)||nightlyRate<=0){
-        alert("The existing room rate could not be determined. Please check the reservation rate before extending.");
-        return;
-    }
-    const additionalCharge=Number((additionalNights*nightlyRate).toFixed(2));
-    const newTotal=Number((oldTotal+additionalCharge).toFixed(2));
+    const newTotal=nightlyRate>0 ? nightlyRate*newNights : oldTotal;
 
     const confirmed=confirm(
         "Extend Stay\n\n"+
@@ -10030,16 +10023,6 @@ async function extendStay(reservationId){
 
     saveData();
     renderAll();
-
-    // The reservation table is the cloud source of truth for stays. Explicitly
-    // upsert this one changed reservation so the extension reaches other devices.
-    let cloudSynced=false;
-    try{
-        if(typeof syncReservationToSupabase==="function") cloudSynced=await syncReservationToSupabase(r)===true;
-    }catch(syncError){
-        console.warn("Stay extension cloud sync failed:",syncError);
-    }
-
     logAudit(
         "STAY_EXTENDED",
         r.bookingNo,
@@ -10047,18 +10030,11 @@ async function extendStay(reservationId){
         r.propertyId||currentPropertyId
     );
 
-    if(cloudSynced){
-        alert(
-            "Stay extended successfully and synchronized to Supabase.\n\n"+
-            r.guestName+" will now check out on "+formatDate(newDate)+".\n"+
-            "Additional accommodation charge: "+money(additionalCharge)
-        );
-    }else{
-        alert(
-            "Stay extension was saved on this device, but Supabase synchronization was NOT confirmed.\n\n"+
-            "Do not repeat the extension. Please ask an administrator to verify the reservation in Supabase before using another device."
-        );
-    }
+    alert(
+        "Stay extended successfully.\n\n"+
+        r.guestName+" will now check out on "+formatDate(newDate)+".\n"+
+        "Additional accommodation charge: "+money(additionalCharge)
+    );
 
     viewFolio(r.id);
 }
@@ -10152,7 +10128,6 @@ function viewFolio(reservationId){
         <div>
             <strong>Check-Out</strong>
             <p>${formatDate(r.checkOut)}</p>
-            ${String(r.status||"").toLowerCase().replace(/[\s_-]/g,"")==="checkedin" && ["Admin","Manager","Front Office"].includes(currentUser?.role) ? `<button class="btn btn-warning btn-small" type="button" style="margin-top:6px" onclick="extendStay('${r.id}')">Extend Stay</button>` : ""}
         </div>
 
     </div>
@@ -17379,8 +17354,11 @@ window.deleteSupplierMaster=function(supplierId){
   renderSupplierManagerList();
   renderPurchasingModule();
 };
-window.openArticleManager=function(){if(!requireModuleAction("purchasing.articles"))return;const idm='sigArticleModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Article / Purchasing Item Master</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Article Name *</label><input id="saName"></div><div class="form-group"><label>Article Code</label><input id="saCode" placeholder="Auto"></div><div class="form-group"><label>Category</label><input id="saCat" placeholder="Food / HK / Engineering"></div><div class="form-group"><label>Unit</label><input id="saUnit" placeholder="kg / pcs / ltr"></div><div class="form-group"><label>Default Cost</label><input id="saCost" type="number" min="0" step="0.01"></div><div class="form-group"><label>Reorder Level</label><input id="saReorder" type="number" min="0"></div><div class="form-group"><label>Active</label><select id="saActive"><option value="true">Active</option><option value="false">Inactive</option></select></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button><button class="btn btn-primary" onclick="saveArticleMaster()">Save Article</button></div><div id="sigArticleModalList" style="margin-top:18px"></div></div></div>`);document.getElementById(idm).classList.add('show');renderArticleManagerList();};
-window.saveArticleMaster=function(){if(!requireModuleAction("purchasing.articles"))return;const name=document.getElementById('saName').value.trim();if(!name){alert('Article name is required.');return;}const a=rows(K.art);const normCode=v=>String(v??'').trim().toUpperCase().replace(/[\s_-]+/g,'');const normName=v=>String(v??'').trim().toLowerCase().replace(/\s+/g,' ');const nameKey=normName(name);if(a.some(x=>normName(x.name)===nameKey)){alert('An article with this name already exists in this property. Please use the existing article or enter a different name.');return;}let code=document.getElementById('saCode').value.trim();if(!code){const used=new Set(a.map(x=>normCode(x.code)).filter(Boolean));let max=0;a.forEach(x=>{const m=String(x.code||'').trim().match(/^ART[\s_-]*0*(\d+)$/i);if(m)max=Math.max(max,Number(m[1])||0);});let next=max+1;code='ART-'+String(next).padStart(3,'0');while(used.has(normCode(code))){next++;code='ART-'+String(next).padStart(3,'0');}}if(a.some(x=>normCode(x.code)===normCode(code))){alert('Article Code '+code+' is already used in this property. Please enter a unique Article Code.');return;}a.push({id:id('art'),propertyId:currentPropertyId,code,name,category:document.getElementById('saCat').value.trim()||'General',unit:document.getElementById('saUnit').value.trim()||'pcs',defaultCost:Number(document.getElementById('saCost').value||0),reorderLevel:Number(document.getElementById('saReorder').value||0),active:document.getElementById('saActive').value==='true'});saveProp(K.art,a);['saName','saCode','saCat','saUnit','saCost','saReorder'].forEach(x=>document.getElementById(x).value='');renderArticleManagerList();renderPurchasingModule();};
+window._editingPurchaseArticleId=null;
+window.cancelEditArticleMaster=function(){window._editingPurchaseArticleId=null;['saName','saCode','saCat','saUnit','saCost','saReorder'].forEach(x=>{const e=document.getElementById(x);if(e)e.value='';});const b=document.getElementById('saSaveBtn');if(b)b.textContent='Save Article';const c=document.getElementById('saCancelEditBtn');if(c)c.style.display='none';};
+window.editArticleMaster=function(articleId){if(!requireModuleAction("purchasing.articles"))return;const a=rows(K.art).find(x=>String(x.id)===String(articleId));if(!a)return;window._editingPurchaseArticleId=String(a.id);document.getElementById('saName').value=a.name||'';document.getElementById('saCode').value=a.code||'';document.getElementById('saCat').value=a.category||'';document.getElementById('saUnit').value=a.unit||'';document.getElementById('saCost').value=Number(a.defaultCost||0);document.getElementById('saReorder').value=Number(a.reorderLevel||0);document.getElementById('saActive').value=a.active?'true':'false';const b=document.getElementById('saSaveBtn');if(b)b.textContent='Update Article';const c=document.getElementById('saCancelEditBtn');if(c)c.style.display='inline-block';document.getElementById('sigArticleModal').scrollTop=0;};
+window.openArticleManager=function(){if(!requireModuleAction("purchasing.articles"))return;const idm='sigArticleModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>Article / Purchasing Item Master</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Article Name *</label><input id="saName"></div><div class="form-group"><label>Article Code</label><input id="saCode" placeholder="Auto"></div><div class="form-group"><label>Category</label><input id="saCat" placeholder="Food / HK / Engineering"></div><div class="form-group"><label>Unit</label><input id="saUnit" placeholder="kg / pcs / ltr"></div><div class="form-group"><label>Default Cost</label><input id="saCost" type="number" min="0" step="0.01"></div><div class="form-group"><label>Reorder Level</label><input id="saReorder" type="number" min="0"></div><div class="form-group"><label>Active</label><select id="saActive"><option value="true">Active</option><option value="false">Inactive</option></select></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button id="saCancelEditBtn" class="btn btn-secondary" style="display:none" onclick="cancelEditArticleMaster()">Cancel Edit</button><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Close</button><button id="saSaveBtn" class="btn btn-primary" onclick="saveArticleMaster()">Save Article</button></div><div id="sigArticleModalList" style="margin-top:18px"></div></div></div>`);document.getElementById(idm).classList.add('show');renderArticleManagerList();};
+window.saveArticleMaster=function(){if(!requireModuleAction("purchasing.articles"))return;const name=document.getElementById('saName').value.trim();if(!name){alert('Article name is required.');return;}const a=rows(K.art);const editingId=window._editingPurchaseArticleId?String(window._editingPurchaseArticleId):null;const current=editingId?a.find(x=>String(x.id)===editingId):null;if(editingId&&!current){alert('This article is no longer available in the selected property. Refresh the list and try again.');return;}const normCode=v=>String(v??'').trim().toUpperCase().replace(/[\s_-]+/g,'');const normName=v=>String(v??'').trim().toLowerCase().replace(/\s+/g,' ');const nameKey=normName(name);if(a.some(x=>String(x.id)!==String(editingId||'')&&normName(x.name)===nameKey)){alert('An article with this name already exists in this property. Please use the existing article or enter a different name.');return;}let code=document.getElementById('saCode').value.trim();if(!code&&current)code=current.code||'';if(!code){const used=new Set(a.map(x=>normCode(x.code)).filter(Boolean));let max=0;a.forEach(x=>{const m=String(x.code||'').trim().match(/^ART[\s_-]*0*(\d+)$/i);if(m)max=Math.max(max,Number(m[1])||0);});let next=max+1;code='ART-'+String(next).padStart(3,'0');while(used.has(normCode(code))){next++;code='ART-'+String(next).padStart(3,'0');}}if(a.some(x=>String(x.id)!==String(editingId||'')&&normCode(x.code)===normCode(code))){alert('Article Code '+code+' is already used in this property. Please enter a unique Article Code.');return;}const values={code,name,category:document.getElementById('saCat').value.trim()||'General',unit:document.getElementById('saUnit').value.trim()||'pcs',defaultCost:Number(document.getElementById('saCost').value||0),reorderLevel:Number(document.getElementById('saReorder').value||0),active:document.getElementById('saActive').value==='true'};if(current){Object.assign(current,values);}else{a.push({id:id('art'),propertyId:currentPropertyId,...values});}saveProp(K.art,a);window._editingPurchaseArticleId=null;['saName','saCode','saCat','saUnit','saCost','saReorder'].forEach(x=>document.getElementById(x).value='');const b=document.getElementById('saSaveBtn');if(b)b.textContent='Save Article';const c=document.getElementById('saCancelEditBtn');if(c)c.style.display='none';renderArticleManagerList();renderPurchasingModule();};
 window.deleteArticleMaster=async function(articleId){
  if(!requireModuleAction("purchasing.articles"))return;
  const all=rows(K.art),article=all.find(x=>String(x.id)===String(articleId));if(!article)return;
@@ -17415,7 +17393,7 @@ window.deleteArticleMaster=async function(articleId){
  try{if(typeof window.syncSupabasePurchaseArticles==='function')articleCloudOK=await window.syncSupabasePurchaseArticles();}catch(e){console.warn('Article delete cloud sync:',e)}
  if(!tombstoneCloudOK||!articleCloudOK){alert('Article deleted from this device. Cloud sync could not be confirmed, so keep this window online and allow sync to retry before using another device.');}
 };
-function renderArticleManagerList(){const e=document.getElementById('sigArticleModalList');if(!e)return;const a=rows(K.art);e.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Code</th><th>Article</th><th>Category</th><th>Unit</th><th>Cost</th><th>Reorder</th><th>Active</th><th>Action</th></tr></thead><tbody>${a.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td>${esc(x.category)}</td><td>${esc(x.unit)}</td><td>${typeof accMoney==='function'?accMoney(x.defaultCost):x.defaultCost}</td><td>${x.reorderLevel}</td><td>${x.active?'Yes':'No'}</td><td><button class="btn btn-danger" type="button" onclick="deleteArticleMaster('${esc(x.id)}')">Delete</button></td></tr>`).join('')}</tbody></table></div>`;}
+function renderArticleManagerList(){const e=document.getElementById('sigArticleModalList');if(!e)return;const a=rows(K.art);e.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Code</th><th>Article</th><th>Category</th><th>Unit</th><th>Cost</th><th>Reorder</th><th>Active</th><th>Action</th></tr></thead><tbody>${a.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td>${esc(x.category)}</td><td>${esc(x.unit)}</td><td>${typeof accMoney==='function'?accMoney(x.defaultCost):x.defaultCost}</td><td>${x.reorderLevel}</td><td>${x.active?'Yes':'No'}</td><td><button class="btn btn-secondary" type="button" onclick="editArticleMaster('${esc(x.id)}')">Edit</button> <button class="btn btn-danger" type="button" onclick="deleteArticleMaster('${esc(x.id)}')">Delete</button></td></tr>`).join('')}</tbody></table></div>`;}
 function renderSuppliers(){const e=document.getElementById('supplierListTable');if(!e)return;const a=rows(K.sup);e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td>${esc(x.contact)}</td><td>${esc(x.phone)}</td><td>${esc(x.terms)}</td><td>${x.active?'Active':'Inactive'}</td></tr>`).join(''):`<tr><td colspan="6" class="empty">No suppliers configured. Click Manage Suppliers.</td></tr>`;}
 function renderArticles(){const e=document.getElementById('articleListTable');if(!e)return;const a=rows(K.art);e.innerHTML=a.length?a.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td>${esc(x.category)}</td><td>${esc(x.unit)}</td><td>${typeof accMoney==='function'?accMoney(x.defaultCost):x.defaultCost}</td><td>${x.reorderLevel}</td><td>${x.active?'Yes':'No'}</td></tr>`).join(''):`<tr><td colspan="7" class="empty">No articles configured.</td></tr>`;}
 window.openPurchaseRequestModal=function(){if(!requireModuleAction("purchasing.request"))return;ensureDefaults();const idm='sigPRModal';if(!document.getElementById(idm))document.body.insertAdjacentHTML('beforeend',`<div class="modal sig-modal-wide" id="${idm}"><div class="modal-box"><div class="modal-header"><h3>New Purchase Request</h3><button class="close-btn" onclick="document.getElementById('${idm}').classList.remove('show')">×</button></div><div class="form-grid"><div class="form-group"><label>Department *</label><input id="prDept" placeholder="Housekeeping / F&B / Engineering"></div><div class="form-group"><label>Required Date</label><input id="prDate" type="date"></div><div class="form-group"><label>Priority</label><select id="prPriority"><option>Normal</option><option>Urgent</option><option>Critical</option></select></div><div class="form-group full"><label>Request Notes</label><textarea id="prNotes"></textarea></div></div><div id="prLines"></div><button class="btn btn-secondary" onclick="addPurchaseRequestLine()">+ Add Article</button><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:15px"><button class="btn btn-secondary" onclick="document.getElementById('${idm}').classList.remove('show')">Cancel</button><button class="btn btn-primary" onclick="savePurchaseRequest()">Submit Request</button></div></div></div>`);document.getElementById('prDate').value=today();document.getElementById('prLines').innerHTML='';addPurchaseRequestLine();document.getElementById(idm).classList.add('show');};
@@ -28132,12 +28110,12 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
         writeTombs(readTombs().filter(x=>String(x?.propertyId||'')!==p).concat(tombs));
         const before=mergeArticles(cloud,scoped(read()),tombs);
         write(read().filter(x=>String(x?.propertyId||'')!==p).concat(before));
-        const oldIds=new Set(before.map(x=>String(x?.id||'')));
+        const oldById=new Map(before.map(x=>[String(x?.id||''),JSON.stringify(x)]));
         articleMutationVersion++;
         const result=fn.apply(this,args);
         const after=scoped(read());
-        const newlyAdded=after.filter(x=>!oldIds.has(String(x?.id||'')));
-        if(!newlyAdded.length)return result;
+        const changedArticles=after.filter(x=>!oldById.has(String(x?.id||''))||oldById.get(String(x?.id||''))!==JSON.stringify(x));
+        if(!changedArticles.length)return result;
         if(p!==pid())throw new Error('Selected property changed before cloud confirmation.');
         // Keep deletion markers for other records. A new item has its own unique id;
         // reusing a former code/name must not cause a different article to be hidden.
@@ -28146,9 +28124,10 @@ button[id*="H999ResetBtn"], button[id*="H999Reset"], #v288H999ResetBtn, #v287H99
         if(!await publishTombs(activeTombs))throw new Error('Could not sync article deletion markers.');
         if(!await publish(after))throw new Error('Supabase rejected the Purchasing Article save.');
         const verify=await cloudRead();
-        if(verify===null||!newlyAdded.every(a=>verify.some(x=>String(x.id)===String(a.id))))
-          throw new Error('Cloud save was sent, but the new item could not be verified in Supabase.');
-        console.info('Purchasing Article cloud save verified:',newlyAdded.map(x=>x.code+' '+x.name).join(', '));
+        const verifyFields=['code','name','category','unit','defaultCost','reorderLevel','active'];
+        if(verify===null||!changedArticles.every(a=>verify.some(x=>String(x.id)===String(a.id)&&verifyFields.every(k=>String(x?.[k]??'')===String(a?.[k]??'')))))
+          throw new Error('Cloud save was sent, but the changed article could not be verified in Supabase.');
+        console.info('Purchasing Article cloud save verified:',changedArticles.map(x=>x.code+' '+x.name).join(', '));
         return result;
       };
       saveQueue=saveQueue.then(task).catch(e=>{
