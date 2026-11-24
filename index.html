@@ -528,7 +528,87 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 }
 </style>
 
-<!-- FIX29: Department/Position profile_meta is restored from property-scoped cloud permissions on all user refresh paths. -->\n<!-- FIX30: Store requisition approval now honors the explicit stores.approve permission regardless of approver department/position. -->\n</head>
+<!-- FIX29: Department/Position profile_meta is restored from property-scoped cloud permissions on all user refresh paths. -->\n<!-- FIX30: Store requisition approval now honors the explicit stores.approve permission regardless of approver department/position. -->\n<!-- FIX32: Property-scoped Hardware & Printers settings; configurable KOT/BOT devices and 58/80mm browser ticket layout. Direct IP printing requires a local ESC/POS bridge. -->
+<!-- FIX33: Multi-outlet preparation station and per-menu-item routing configuration, property-scoped. -->
+
+<style id="signature-pos-table-first-invoice-filter">
+/* Table-first workflow: keep the existing order engine and permissions unchanged. */
+#pos.pos-table-first > .grid-2{display:none!important;}
+#pos.pos-table-first #fnbTableServiceSection{display:block!important;margin-top:0!important;}
+#pos.pos-order-active > .grid-2{display:block!important;}
+#pos.pos-order-active #fnbTableServiceSection .grid-2 > div:first-child{display:none!important;}
+#pos.pos-order-active #fnbTableServiceSection .grid-2 > div:last-child{width:100%!important;min-width:0!important;}
+#pos.pos-order-active #fnbActiveTablePanel{width:100%!important;}
+#pos .pos-invoice-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0;}
+#pos .pos-invoice-filters .form-group{min-width:150px;flex:1;margin:0;}
+#pos .pos-invoice-filters input{width:100%;}
+</style>
+
+
+<style id="signature-pos-faithful-layout-fix35">
+#pos{padding:0!important;background:transparent!important}
+#pos .pos-topbar{margin-bottom:12px!important;padding:15px 18px!important;background:#10233f!important;color:#fff!important;border-radius:12px!important}
+#pos .pos-topbar h3{color:#fff!important;margin:0!important;font-size:20px!important}
+#pos .pos-topbar .pos-subtitle{color:#cbd5e1!important;font-size:12px!important;margin-top:5px}
+#pos .pos-topbar .section-header{margin:0!important;align-items:center}
+#pos .pos-outlet-picker{display:flex;align-items:center;gap:8px;color:#fff;font-size:12px}
+#pos .pos-outlet-picker select{min-width:190px;background:#fff;color:#172033;border-radius:7px;padding:9px}
+#pos .pos-workspace{display:grid;grid-template-columns:minmax(205px,24%) minmax(360px,41%) minmax(330px,35%);gap:12px;align-items:start}
+#pos .pos-workspace>.section{margin:0!important;min-width:0;padding:14px!important;border:1px solid #dbe2ea;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.05)}
+#pos .pos-panel-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+#pos .pos-panel-heading h3{font-size:16px;margin:0;color:#172b4d}
+#pos .pos-panel-actions{display:flex;gap:5px}
+#pos .pos-table-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#pos .pos-table-card{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;min-height:82px;padding:10px 9px;border:1px solid #d8e0eb;border-radius:9px;background:#f8fafc;color:#172b4d;text-align:left;cursor:pointer}
+#pos .pos-table-card strong{font-size:14px}#pos .pos-table-card span{font-size:10px;font-weight:700;color:#64748b}#pos .pos-table-card small{font-size:10px;color:#64748b}
+#pos .pos-table-card.is-open{background:#fff7ed;border-color:#fdba74}#pos .pos-table-card.is-selected{background:#1d4ed8;border-color:#1d4ed8;color:#fff}#pos .pos-table-card.is-selected span,#pos .pos-table-card.is-selected small{color:#dbeafe}
+#pos .pos-table-footer{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb}
+#pos .pos-selection-hint{font-size:11px;color:#64748b;text-align:right}
+#pos .pos-order-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px}
+#pos .pos-order-meta .form-group{margin:0!important;min-width:0}#pos .pos-order-meta label{font-size:11px}#pos .pos-order-meta select,#pos .pos-order-meta input{width:100%;min-width:0;padding:8px;font-size:12px}
+#pos .pos-menu{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;max-height:650px;overflow:auto}
+#pos .pos-item{margin:0!important;padding:11px!important;border:1px solid #e2e8f0;border-radius:9px;background:#fff;min-width:0}
+#pos .pos-item h4{font-size:13px;margin:4px 0 7px;min-height:32px}
+#pos .pos-menu-add-btn{width:100%;margin-top:8px}
+#pos .pos-category-tabs{gap:6px;margin:8px 0 12px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:5px}
+#pos .pos-category-btn{white-space:nowrap;padding:8px 11px;font-size:11px}
+#pos .pos-bill-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;margin:-2px -2px 12px;background:#12345b;color:#fff;border-radius:9px}
+#pos .pos-bill-head>div:first-child{display:flex;flex-direction:column;gap:3px}#pos .pos-bill-head span,#pos .pos-pax-control label{font-size:10px;color:#cbd5e1}#pos .pos-bill-head strong{font-size:18px;color:#fff}
+#pos .pos-pax-control{display:flex;align-items:center;gap:6px}#pos .pos-pax-control select{width:58px;padding:6px;border-radius:6px}
+#pos .pos-guest-fields{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px}#pos .pos-guest-fields .form-group{margin:0!important}#pos .pos-guest-fields label{font-size:11px}#pos .pos-guest-fields select,#pos .pos-guest-fields input{width:100%;padding:8px;font-size:12px}
+#pos .pos-bill-lines{max-height:390px;overflow:auto;min-height:120px;border-top:1px solid #e5e7eb}
+#pos .pos-bill-line{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:10px 2px;border-bottom:1px solid #edf0f4}
+#pos .pos-bill-item{display:flex;flex-direction:column;gap:3px;min-width:0}#pos .pos-bill-item strong{font-size:12px}#pos .pos-bill-item small,#pos .pos-bill-item span{font-size:10px;color:#64748b}#pos .pos-line-total{font-size:11px;white-space:nowrap}
+#pos .pos-qty-stepper{display:flex;align-items:center;gap:5px}#pos .pos-qty-stepper button{width:25px;height:25px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-weight:bold}
+#pos .pos-empty-order,#pos .pos-empty-lines{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:35px 12px;text-align:center;color:#64748b;font-size:12px}#pos .pos-empty-icon{font-size:30px}
+#pos .pos-bill-summary{padding:10px 0}#pos .pos-bill-summary>div{display:flex;justify-content:space-between;padding:5px 0;font-size:12px}
+#pos .pos-bill-total{display:flex;justify-content:space-between;align-items:center;padding:13px;background:#12345b;color:#fff;border-radius:8px;margin:5px 0 12px}#pos .pos-bill-total span{font-size:11px;font-weight:bold}#pos .pos-bill-total strong{font-size:20px;color:#fde68a}
+#pos .pos-bill-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}#pos .pos-bill-actions .btn{font-size:11px;padding:10px 6px;color:#fff;border:0}
+#pos .pos-discount-btn{background:#16a34a}#pos .pos-view-btn{background:#7c3aed}#pos .pos-print-btn{background:#ea580c}#pos .pos-kot-btn{background:#0891b2}
+#pos .pos-save-btn{width:100%;margin-top:9px;background:#15803d;color:#fff;border:0;padding:13px;font-weight:700}
+#pos .pos-ticket-note{font-size:10px;color:#64748b;margin-top:7px}#pos .pos-ticket-history{margin-top:12px;font-size:11px}#pos .pos-ticket-history summary{cursor:pointer;font-weight:700;padding:7px 0}
+#pos .pos-invoices-section{padding:16px!important;background:#fff;border:1px solid #dbe2ea;border-radius:12px}
+#pos .pos-invoice-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0}#pos .pos-invoice-filters .form-group{min-width:150px;flex:1;margin:0}#pos .pos-invoice-filters input{width:100%}
+#pos #posLegacyControls{display:none!important}
+@media(max-width:1100px){#pos .pos-workspace{grid-template-columns:minmax(180px,28%) minmax(0,1fr)}#pos .pos-bill-panel{grid-column:1/-1}#pos .pos-bill-lines{max-height:300px}}
+@media(max-width:700px){#pos .pos-workspace{grid-template-columns:1fr}#pos .pos-table-grid{grid-template-columns:repeat(3,minmax(0,1fr))}#pos .pos-menu{grid-template-columns:repeat(2,minmax(0,1fr))}#pos .pos-order-meta{grid-template-columns:1fr 1fr}#pos .pos-bill-panel{grid-column:auto}}
+</style>
+
+
+<style id="signature-pos-standalone-workspace-fix36">
+/* FIX36: POS-only workspace. The PMS shell is hidden only while the POS page is active. */
+body.pos-workspace-mode{overflow-x:hidden}
+body.pos-workspace-mode>.sidebar{display:none!important}
+body.pos-workspace-mode>.main{margin-left:0!important;width:100%!important;min-height:100vh}
+body.pos-workspace-mode .main>.topbar{display:none!important}
+body.pos-workspace-mode .main>.content{padding:12px!important;max-width:none!important}
+body.pos-workspace-mode #pos.page.active{display:block!important;min-height:calc(100vh - 24px)}
+body.pos-workspace-mode #pos .pos-topbar{position:sticky;top:0;z-index:30}
+#pos .pos-back-pms{white-space:nowrap;background:#fff;color:#12345b;border:1px solid #cbd5e1;font-weight:700}
+#pos .pos-back-pms:hover{background:#eaf1fb}
+@media(max-width:700px){body.pos-workspace-mode .main>.content{padding:7px!important}#pos .pos-outlet-picker{flex-wrap:wrap;justify-content:flex-end}#pos .pos-back-pms{padding:8px 10px}}
+</style>
+</head>
 <body data-customer-build="true" data-pms-patch="v2.1.209-property-user-report-permission-fix">
 <!-- =========================================================
      LOGIN / FIRST ADMIN SETUP
@@ -1097,28 +1177,38 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 </div>
 </section>
 <!-- POS -->
-<section class="page" id="pos">
-<div class="grid-2">
-<div class="section">
-<div class="section-header"><h3>Restaurant POS</h3></div><div class="form-group" style="margin-bottom:15px"><label>Restaurant / Outlet</label><select id="posOutlet" onchange="selectPOSOutlet(this.value)"></select></div><div id="posOutletContext" style="font-size:12px;color:#64748b;margin:-7px 0 12px 0"></div><div class="form-group" style="margin-bottom:15px"><label>Customer Type</label><select id="posCustomerType" onchange="renderPOSCustomerMode()"><option value="In-House">In-House Guest</option><option value="Walk-In">Walk-In / Outside Guest</option></select></div><div class="form-group" style="margin-bottom:15px"><label>Guest Rate Type</label><select id="posRateType" onchange="renderPOS()"><option value="Local">Local Rate</option><option value="Foreign">Foreign Rate</option></select><div style="font-size:11px;color:#64748b;margin-top:4px">Choose the applicable rate before adding menu items.</div></div><div class="form-group" id="posGuestWrap" style="margin-bottom:15px"><label>In-House Guest / Folio</label><select id="posGuest"><option value="">Select In-House Guest / Folio</option></select></div><div class="form-group" id="posWalkInWrap" style="margin-bottom:15px;display:none"><label>Walk-In Guest Name (optional)</label><input id="posWalkInName" placeholder="Customer name"/></div><div class="form-group" style="margin-bottom:15px"><label>Payment Method</label><select id="posPaymentMethod"><option value="Room Charge">Room Charge</option><option value="Cash">Cash</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Online Payment">Online Payment</option><option value="Other">Other</option></select></div>
-<div id="posMenuRule"><div style="background:#f8faf9;border:1px solid #d1d5db;border-radius:8px;padding:9px;margin-bottom:10px;font-size:12px;color:#475569"><strong>Restaurant pricing:</strong> Food cost + 20% preparation &amp; service. Tea / Coffee included.</div></div>
-<div id="posMenuCategories" class="pos-category-tabs" aria-label="Menu categories"></div>
-<div class="pos-menu" id="posMenu"><div class="empty">No active restaurant menu items for this property.</div></div>
-<!-- Keep the legacy order model and actions available; table orders are displayed in the selected table panel. -->
-<div id="posOrder" style="display:none" aria-hidden="true"></div>
-<div class="summary-box" style="margin-top:15px">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-    <strong>Order Total</strong><strong id="posTotal">LKR 0.00</strong>
+<section class="page pos-table-first" id="pos">
+  <div class="section pos-topbar">
+    <div class="section-header"><div><h3>Signature PMS · Restaurant POS</h3><div id="posOutletContext" class="pos-subtitle">Select restaurant / outlet</div></div>
+      <div class="pos-outlet-picker"><label for="posOutlet">Outlet</label><select id="posOutlet" onchange="selectPOSOutlet(this.value)"></select><button class="btn btn-secondary btn-small pos-back-pms" type="button" onclick="exitPOSWorkspace()" title="Return to Signature PMS">← Back to PMS</button></div>
+    </div>
   </div>
-  <div class="toolbar" style="margin-top:10px;justify-content:flex-end">
-    <button class="btn btn-secondary btn-small" onclick="clearPOSOrder()">Clear Order</button>
-    <button class="btn btn-success" onclick="savePOSOrder()">Save Restaurant Order</button>
+  <div class="pos-workspace">
+    <aside class="section pos-tables-panel">
+      <div class="pos-panel-heading"><h3>Select Table</h3><div class="pos-panel-actions"><button class="btn btn-secondary btn-small" onclick="refreshFNBTablesFromCloud()">Refresh</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Table</button></div></div>
+      <div id="fnbTableGrid" class="pos-table-grid"></div>
+      <div class="pos-table-footer"><button class="btn btn-secondary btn-small" onclick="showPage('settings')">Settings</button><button class="btn btn-secondary btn-small" onclick="showPage('pos')">Orders</button></div>
+    </aside>
+    <main class="section pos-menu-panel">
+      <div class="pos-panel-heading"><h3>Menu Categories &amp; Items</h3><span class="pos-selection-hint" id="posSelectionHint">Open a table to start an order</span></div>
+      <div class="pos-order-meta" id="posOrderMeta">
+        <div class="form-group"><label>Menu Price</label><select id="posRateType" onchange="renderPOS()"><option value="Local">Local Rate</option><option value="Foreign">Foreign Rate</option></select></div>
+      </div>
+      <div id="posLegacyControls" style="display:none"><select id="posCustomerType" onchange="renderPOSCustomerMode()"><option value="In-House">In-House</option><option value="Walk-In">Walk-In</option></select><div id="posGuestWrap"><select id="posGuest"></select></div><div id="posWalkInWrap"><input id="posWalkInName"/></div><select id="posPaymentMethod"><option value="Room Charge">Room Charge</option><option value="Cash">Cash</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Online Payment">Online Payment</option><option value="Other">Other</option></select></div>
+      <div id="posMenuRule"></div>
+      <div id="posMenuCategories" class="pos-category-tabs" aria-label="Menu categories"></div>
+      <div class="pos-menu" id="posMenu"><div class="empty">Select a table to view the menu.</div></div>
+      <div id="posOrder" style="display:none" aria-hidden="true"></div><div id="posTotal" style="display:none">LKR 0.00</div>
+    </main>
+    <aside class="section pos-bill-panel">
+      <div class="pos-panel-heading"><h3>Order / Bill Preview</h3></div>
+      <div id="fnbActiveTablePanel"><div class="empty">Select a table to view the order.</div></div>
+    </aside>
   </div>
-</div>
-</div>
-</div>
-<div class="section" id="fnbTableServiceSection" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close &amp; settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTablesFromCloud()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
-<div class="section" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Invoices</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Latest 25 restaurant bills. Every POS order (cash, card, room charge) gets an invoice number.</div></div></div><div class="table-wrap"><table><thead><tr><th>Invoice No</th><th>Date / Time</th><th>Outlet</th><th>Customer</th><th>Method</th><th style="text-align:right">Total</th><th>Action</th></tr></thead><tbody id="posInvoiceTable"><tr><td class="empty" colspan="7">No restaurant invoices yet.</td></tr></tbody></table></div></div>
+  <div class="section pos-invoices-section" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Invoices</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Today’s invoices are shown by default. Use the date range or All Dates to find older bills.</div></div></div>
+    <div class="pos-invoice-filters"><div class="form-group"><label>From Date</label><input type="date" id="posInvoiceFrom" onchange="window.__posInvoiceAllDates=false;renderPOSInvoices()"></div><div class="form-group"><label>To Date</label><input type="date" id="posInvoiceTo" onchange="window.__posInvoiceAllDates=false;renderPOSInvoices()"></div><div class="form-group"><label>Search Invoice / Guest / Outlet</label><input type="search" id="posInvoiceSearch" placeholder="Invoice no, guest name..." oninput="renderPOSInvoices()"></div><button class="btn btn-secondary" type="button" onclick="setPOSInvoiceToday()">Today</button><button class="btn btn-secondary" type="button" onclick="clearPOSInvoiceDates()">All Dates</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Invoice No</th><th>Date / Time</th><th>Outlet</th><th>Customer</th><th>Method</th><th style="text-align:right">Total</th><th>Action</th></tr></thead><tbody id="posInvoiceTable"><tr><td class="empty" colspan="7">No restaurant invoices yet.</td></tr></tbody></table></div>
+  </div>
 </section>
 <!-- PAYMENTS -->
 <section class="page" id="payments">
@@ -1683,6 +1773,24 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
   <button class="btn btn-danger" type="button" onclick="clearStoresHistory()">Delete Stores History</button>
 </div>
 <p style="font-size:12px;color:#92400e;margin-top:6px">These actions apply only to the selected property. They do not clear Revenue history or master/setup records. Deletions are permanent.</p>
+</div>
+<div class="section" id="hardwarePrintersSection" style="border:2px solid #dbeafe;background:#f8fbff">
+<div class="section-header"><div><h3>Hardware &amp; Printers</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Printer settings belong to the selected property. Configure Kitchen (KOT) and Bar (BOT) independently.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
+<div class="form-grid">
+<div class="form-group"><label>KOT Printer Brand</label><select id="kotPrinterBrand"><option value="Generic">Generic / Other</option><option>Epson</option><option>Xprinter</option><option>Rongta</option><option>HPRT</option><option>SNBC</option><option>Bixolon</option><option>Star</option></select></div>
+<div class="form-group"><label>KOT Printer Model</label><input id="kotPrinterModel" placeholder="Optional model name"/></div>
+<div class="form-group"><label>KOT Printer IP Address</label><input id="kotPrinterIp" placeholder="e.g. 192.168.1.201"/></div>
+<div class="form-group"><label>KOT Port</label><input id="kotPrinterPort" type="number" min="1" max="65535" value="9100"/></div>
+<div class="form-group"><label>BOT Printer Brand</label><select id="botPrinterBrand"><option value="Generic">Generic / Other</option><option>Epson</option><option>Xprinter</option><option>Rongta</option><option>HPRT</option><option>SNBC</option><option>Bixolon</option><option>Star</option></select></div>
+<div class="form-group"><label>BOT Printer Model</label><input id="botPrinterModel" placeholder="Optional model name"/></div>
+<div class="form-group"><label>BOT Printer IP Address</label><input id="botPrinterIp" placeholder="e.g. 192.168.1.202"/></div>
+<div class="form-group"><label>BOT Port</label><input id="botPrinterPort" type="number" min="1" max="65535" value="9100"/></div>
+<div class="form-group"><label>Paper Width</label><select id="fnbPrinterPaperWidth"><option value="80">80mm</option><option value="58">58mm</option></select></div>
+<div class="form-group"><label>Print Method</label><select id="fnbPrinterMethod"><option value="browser">Browser Print (works with standard printer driver)</option><option value="bridge">Network / ESC-POS Bridge (requires local print service)</option></select></div>
+</div>
+<div class="summary-box" style="margin-top:10px"><strong>Browser limitation:</strong> Browser printing uses the operating-system printer driver and print dialog. Saving a printer IP here does not itself create a direct network connection. Direct IP / ESC-POS printing requires a trusted local print service or supported vendor bridge on the hotel's POS computer.</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-primary" type="button" onclick="saveHardwarePrinterSettings()">Save Printer Settings</button><button class="btn btn-secondary" type="button" onclick="testFNBPrinterPrint('KOT')">Test KOT Print</button><button class="btn btn-secondary" type="button" onclick="testFNBPrinterPrint('BOT')">Test BOT Print</button></div>
+<div id="hardwarePrinterStatus" style="font-size:12px;color:#475569;margin-top:9px">Settings apply only to the currently selected property.</div>
 </div>
 <div class="section" id="sriLankaTaxConfigurationSection" style="border:2px solid #dbeafe;background:#f8fbff">
 <div class="section-header"><div><h3>Sri Lanka Tax &amp; Billing Configuration</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Configure customer-facing VAT/service charge separately from statutory turnover levies. Rates are property-specific.</div></div><span class="badge badge-blue">PROPERTY-SCOPED</span></div>
@@ -6015,10 +6123,29 @@ window.renderEngineering=render;window.renderEngineeringJobs=renderJobs;window.o
    NAVIGATION
 ========================================================= */
 
+window.__signatureLastPMSPage = window.__signatureLastPMSPage || "dashboard";
+function exitPOSWorkspace(){
+    const returnPage=window.__signatureLastPMSPage||"dashboard";
+    showPage(returnPage);
+}
+
 function showPage(page,button=null){
 
     if(!requireAccess(page))
         return;
+
+    if(page==="pos"){
+        if(!document.body.classList.contains("pos-workspace-mode")){
+            const activePage=document.querySelector(".page.active");
+            if(activePage && activePage.id && activePage.id!=="pos")
+                window.__signatureLastPMSPage=activePage.id;
+        }
+        document.body.classList.add("pos-workspace-mode");
+    }else{
+        if(!document.body.classList.contains("pos-workspace-mode"))
+            window.__signatureLastPMSPage=page;
+        document.body.classList.remove("pos-workspace-mode");
+    }
 
     // Operations Budget is a child panel of Accounting. It must never
     // remain visible when the user navigates to another PMS module.
@@ -7694,6 +7821,11 @@ function loadSettings(){
     const label=document.getElementById("roomRateLabel");
     if(label) label.textContent=settings.rooms?.length===1 ? "Accommodation Rate / Night" : "Individual Room — BB Rate / Night";
 
+    const printerCfg=settings.hardwarePrinters||{};
+    const printerSet=(id,value)=>{const el=document.getElementById(id);if(el)el.value=value??"";};
+    printerSet("kotPrinterBrand",printerCfg.kot?.brand||"Generic"); printerSet("kotPrinterModel",printerCfg.kot?.model||""); printerSet("kotPrinterIp",printerCfg.kot?.ip||""); printerSet("kotPrinterPort",printerCfg.kot?.port||9100);
+    printerSet("botPrinterBrand",printerCfg.bot?.brand||"Generic"); printerSet("botPrinterModel",printerCfg.bot?.model||""); printerSet("botPrinterIp",printerCfg.bot?.ip||""); printerSet("botPrinterPort",printerCfg.bot?.port||9100);
+    printerSet("fnbPrinterPaperWidth",printerCfg.paperWidth||"80"); printerSet("fnbPrinterMethod",printerCfg.method||"browser");
     settings.rateMatrix=normalizeRateMatrix(settings.rateMatrix);
     loadRatePlans();
     updateReservationForm();
@@ -8066,6 +8198,30 @@ async function saveSettings(){
     }
 }
 
+
+async function saveHardwarePrinterSettings(){
+ if(!hasActionPermission("settings.property")){alert("Access denied. Property settings permission is required.");return;}
+ if(!settings||!currentPropertyId){alert("Select a property before saving printer settings.");return;}
+ const val=id=>String(document.getElementById(id)?.value??"").trim();
+ const port=(id)=>{const n=Number(val(id)||9100);return Number.isInteger(n)&&n>=1&&n<=65535?n:9100;};
+ settings.hardwarePrinters={
+  kot:{brand:val("kotPrinterBrand")||"Generic",model:val("kotPrinterModel"),ip:val("kotPrinterIp"),port:port("kotPrinterPort")},
+  bot:{brand:val("botPrinterBrand")||"Generic",model:val("botPrinterModel"),ip:val("botPrinterIp"),port:port("botPrinterPort")},
+  paperWidth:["58","80"].includes(val("fnbPrinterPaperWidth"))?val("fnbPrinterPaperWidth"):"80",
+  method:val("fnbPrinterMethod")==="bridge"?"bridge":"browser"
+ };
+ saveData();
+ const status=document.getElementById("hardwarePrinterStatus");if(status)status.textContent="Saved locally. Verifying cloud sync…";
+ try{if(typeof window.__signatureSavePropertyConfigToCloud!=="function")throw new Error("Cloud configuration saver is unavailable.");await window.__signatureSavePropertyConfigToCloud();if(status)status.textContent="Printer settings saved and cloud synchronization confirmed for the selected property.";alert("Printer settings saved for this property.");}
+ catch(e){console.error("Printer settings cloud save failed:",e);if(status)status.textContent="Saved locally only; cloud sync was not verified: "+(e?.message||e);alert("Saved locally, but cloud sync was NOT verified. Please retry before using another device.");}
+}
+function testFNBPrinterPrint(type){
+ const isBot=String(type).toUpperCase()==="BOT",cfg=settings?.hardwarePrinters||{},device=isBot?(cfg.bot||{}):(cfg.kot||{}),width=String(cfg.paperWidth||"80");
+ const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to run the printer test.");return;}
+ const title=isBot?"BAR ORDER TICKET — TEST":"KITCHEN ORDER TICKET — TEST",brand=device.brand||"Generic",model=device.model||"",ip=device.ip||"Not configured";
+ w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>@page{size:${width}mm auto;margin:2mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;width:${width==="80"?"74":"52"}mm;margin:0 auto;color:#111;font-size:12px}h2{text-align:center;font-size:16px;margin:4px 0}p{margin:4px 0}.rule{border-top:1px dashed #111;margin:8px 0}.center{text-align:center}.big{font-size:20px;font-weight:bold}</style></head><body><h2>${title}</h2><div class="center big">TABLE TEST</div><div class="rule"></div><p>Printer: ${escapeHtml(brand)} ${escapeHtml(model)}</p><p>Configured IP: ${escapeHtml(ip)}</p><p>Paper: ${width}mm</p><div class="rule"></div><p>1 × Test Item</p><p>Special instructions: TEST ONLY</p><div class="rule"></div><p class="center">Signature PMS · Printer Test</p><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
+ w.document.close();
+}
 
 /* =========================================================
    PROPERTY-SCOPED MODULE HISTORY CLEANUP
@@ -12386,17 +12542,39 @@ function printPOSInvoice(saleId){
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},400);
 }
+function posInvoiceDateValue(x){
+    const raw=String(x?.businessDate||x?.date||x?.dateTime||"");
+    if(/^\d{4}-\d{2}-\d{2}/.test(raw))return raw.slice(0,10);
+    const m=raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if(m)return m[3]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
+    return "";
+}
+function setPOSInvoiceToday(){
+    window.__posInvoiceAllDates=false;
+    const today=String(cashierBusinessDate()||localDateString()).slice(0,10);
+    const from=document.getElementById("posInvoiceFrom"),to=document.getElementById("posInvoiceTo");
+    if(from)from.value=today;if(to)to.value=today;renderPOSInvoices();
+}
+function clearPOSInvoiceDates(){window.__posInvoiceAllDates=true;const from=document.getElementById("posInvoiceFrom"),to=document.getElementById("posInvoiceTo");if(from)from.value="";if(to)to.value="";renderPOSInvoices();}
 function renderPOSInvoices(){
     const tb=document.getElementById("posInvoiceTable");if(!tb)return;
-    const list=(sales||[]).slice().reverse().slice(0,25);
+    const from=document.getElementById("posInvoiceFrom"),to=document.getElementById("posInvoiceTo"),search=document.getElementById("posInvoiceSearch");
+    const today=String(cashierBusinessDate()||localDateString()).slice(0,10);
+    if(!window.__posInvoiceAllDates){if(from&&!from.value)from.value=today;if(to&&!to.value)to.value=today;}
+    const fromDate=from?.value||"",toDate=to?.value||"",q=String(search?.value||"").trim().toLowerCase();
+    const list=(sales||[]).filter(x=>String(x.propertyId||currentPropertyId)===String(currentPropertyId)).filter(x=>{
+        const d=posInvoiceDateValue(x);if(fromDate&&(!d||d<fromDate))return false;if(toDate&&(!d||d>toDate))return false;
+        if(q){const hay=[x.invoiceNo,x.customerName,x.outletName,x.paymentMethod,x.tableNo].join(" ").toLowerCase();if(!hay.includes(q))return false;}return true;
+    }).slice().reverse();
     tb.innerHTML=list.length?list.map(x=>{
         const cust=x.customerName||(x.customerType==="In-House"?"In-House Guest":"Walk-In");
         const voided=!!(x.voided||x.isVoided||x.status==="Voided");
-         const statusBadge=voided?" <span class='badge badge-red'>VOIDED</span>":"";
-         const action=(voided?"":"<button class='btn btn-danger btn-small' onclick=\"fnbVoidInvoice('"+escapeHtml(x.id)+"')\">Void / Refund</button> ")+"<button class='btn btn-secondary btn-small' onclick=\"printPOSInvoice('"+escapeHtml(x.id)+"')\">"+(x.invoiceNo?"Print Invoice":"Create &amp; Print")+"</button>";
-         return "<tr><td><strong>"+escapeHtml(x.invoiceNo||"—")+"</strong>"+statusBadge+"</td><td>"+escapeHtml(x.dateTime||x.date||"")+"</td><td>"+escapeHtml(x.outletName||"")+"</td><td>"+escapeHtml(cust)+"</td><td>"+escapeHtml(x.paymentMethod||"")+"</td><td style='text-align:right'>"+posSaleMoney(x,Number(x.total||0))+"</td><td>"+action+"</td></tr>";
-    }).join(""):"<tr><td colspan='7' class='empty'>No restaurant invoices yet.</td></tr>";
+        const statusBadge=voided?" <span class='badge badge-red'>VOIDED</span>":"";
+        const action=(voided?"":"<button class='btn btn-danger btn-small' onclick=\"fnbVoidInvoice('"+escapeHtml(x.id)+"')\">Void / Refund</button> ")+"<button class='btn btn-secondary btn-small' onclick=\"printPOSInvoice('"+escapeHtml(x.id)+"')\">"+(x.invoiceNo?"Print Invoice":"Create &amp; Print")+"</button>";
+        return "<tr><td><strong>"+escapeHtml(x.invoiceNo||"—")+"</strong>"+statusBadge+"</td><td>"+escapeHtml(x.dateTime||x.date||"")+"</td><td>"+escapeHtml(x.outletName||"")+"</td><td>"+escapeHtml(cust)+"</td><td>"+escapeHtml(x.paymentMethod||"")+"</td><td style='text-align:right'>"+posSaleMoney(x,Number(x.total||0))+"</td><td>"+action+"</td></tr>";
+    }).join(""):"<tr><td colspan='7' class='empty'>No restaurant invoices match the selected date range / search.</td></tr>";
 }
+
 /* =========================================================
    F&B VOID / REFUND CONTROL
    Full invoice reversal: mandatory reason + Admin/Manager authorization,
@@ -12492,7 +12670,7 @@ async function fnbVoidInvoice(saleId){
    F&B TABLE SERVICE / KOT / BOT — v2.1.307
 ========================================================= */
 function defaultFNBTableList(){
- const a=[]; for(let i=1;i<=12;i++) a.push({id:"tbl_"+String(i).padStart(2,"0"),tableNo:String(i),name:"Table "+i,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]}); return a;
+ const a=[]; for(let i=1;i<=12;i++) a.push({id:"tbl_"+String(i).padStart(2,"0"),tableNo:String(i),name:"Table "+i,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",pax:2,items:[],kotNo:0,botNo:0,ticketHistory:[]}); return a;
 }
 function saveFNBTableData(){
  if(!currentPropertyId)return;
@@ -12527,10 +12705,21 @@ function fnbNextTicket(t,type){if(type==="BOT")t.botNo=Number(t.botNo||0)+1;else
 function refreshFNBTableService(){
  const g=document.getElementById("fnbTableGrid"),p=document.getElementById("fnbActiveTablePanel");if(!g||!p)return;
  if(!fnbTables.length){fnbTables=defaultFNBTableList();saveFNBTableData();}
- g.innerHTML=fnbTables.map(t=>{const open=t.status==="Open";return `<button class="btn ${open?'btn-primary':'btn-secondary'}" style="min-height:72px;text-align:left" onclick="selectFNBTable('${escapeHtml(t.id)}')"><strong>${escapeHtml(t.name)}</strong><br><span style="font-size:11px">${open?'OPEN · '+posMoney(fnbTableTotal(t)):'AVAILABLE'}</span></button>`}).join("");
- const t=fnbTableById(activeFNBTableId);if(!t){p.innerHTML='<div class="empty">Select an available table to open it.</div>';return;}
- p.innerHTML=`<div style="border:1px solid #d1d5db;border-radius:10px;padding:14px;background:#fff"><div style="display:flex;justify-content:space-between"><div><h3 style="margin:0">${escapeHtml(t.name)}</h3><div style="font-size:11px;color:#64748b">${t.status} · KOT ${t.kotNo||0} · BOT ${t.botNo||0}</div></div><button class="btn btn-secondary btn-small" onclick="closeFNBTableSelection()">Close</button></div><div class="form-grid" style="margin:12px 0"><div class="form-group"><label>Customer</label><select id="fnbTableCustomerType" onchange="updateFNBTableGuestMode()"><option value="In-House" ${t.customerType==='In-House'?'selected':''}>In-House Guest</option><option value="Walk-In" ${t.customerType!=='In-House'?'selected':''}>Walk-In</option></select></div><div class="form-group" id="fnbTableGuestWrap" style="display:${t.customerType==='In-House'?'block':'none'}"><label>Guest / Folio</label><select id="fnbTableGuest" onchange="updateFNBTableGuest()"><option value="">Select checked-in guest</option>${reservations.filter(r=>r.status==='Checked-In').map(r=>`<option value="${escapeHtml(r.id)}" ${String(t.guestId)===String(r.id)?'selected':''}>${escapeHtml(r.guestName)} — ${escapeHtml(r.bookingNo)}</option>`).join('')}</select></div><div class="form-group" id="fnbTableWalkWrap" style="display:${t.customerType==='In-House'?'none':'block'}"><label>Walk-In Name</label><input id="fnbTableWalkName" value="${escapeHtml(t.guestName||'')}" oninput="updateFNBTableGuest()" placeholder="Optional"/></div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Sent</th><th>New</th><th>Amount</th><th>Adjust</th></tr></thead><tbody>${t.items.length?t.items.map(i=>`<tr><td><strong>${escapeHtml(i.name)}</strong><div style="font-size:11px;color:#64748b">${escapeHtml(i.category||'')}</div></td><td>${i.qty}</td><td>${i.sentQty||0}</td><td>${Math.max(0,Number(i.qty)-Number(i.sentQty||0))}</td><td>${posMoney(Number(i.price)*Number(i.qty))}</td><td><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="changePOSQty('${escapeHtml(String(i.id))}',-1)">−</button><button class="btn btn-secondary btn-small" onclick="changePOSQty('${escapeHtml(String(i.id))}',1)">+</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">No items. Add items from the menu above.</td></tr>'}</tbody></table></div><div style="display:flex;justify-content:space-between;margin-top:12px"><strong>Total</strong><strong>${posMoney(fnbTableTotal(t))}</strong></div><div class="toolbar" style="margin-top:12px"><button class="btn btn-primary" onclick="sendFNBTableTickets()">Send New KOT / BOT</button><button class="btn btn-success" onclick="settleFNBTable()">Close Table & Settle</button></div><div style="font-size:11px;color:#64748b;margin-top:7px">Only NEW quantities are sent. Previous KOT/BOT items are never duplicated.</div><div style="margin-top:16px"><h4 style="margin:0 0 8px">KOT / BOT History</h4>${hasActionPermission("pos.history")?fnbTicketHistoryHtml(t):'<div class="empty">KOT / BOT History access has not been assigned to this user.</div>'}</div></div>`;
+ g.innerHTML=fnbTables.map(t=>{const open=t.status==="Open",pax=Math.max(1,Number(t.pax||2));return `<button type="button" class="pos-table-card ${open?'is-open':''} ${String(t.id)===String(activeFNBTableId)?'is-selected':''}" onclick="selectFNBTable('${escapeHtml(t.id)}')"><strong>${escapeHtml(t.name||('Table '+t.tableNo))}</strong><span>${open?'OPEN':'AVAILABLE'}</span><small>${pax} Pax${open?' · '+posMoney(fnbTableTotal(t)):''}</small></button>`}).join("");
+ const t=fnbTableById(activeFNBTableId);if(!t){p.innerHTML='<div class="pos-empty-order"><div class="pos-empty-icon">☕</div><strong>No table selected</strong><span>Choose a table on the left to begin</span></div>';const hint=document.getElementById('posSelectionHint');if(hint)hint.textContent='Open a table to start an order';return;}
+ const subtotal=fnbTableTotal(t),pax=Math.max(1,Number(t.pax||2));
+ p.innerHTML=`<div class="pos-bill-head"><div><span>TABLE NO.</span><strong>${escapeHtml(t.name||('Table '+t.tableNo))}</strong></div><div class="pos-pax-control"><label for="fnbTablePax">PAX</label><select id="fnbTablePax" onchange="updateFNBTablePax(this.value)">${Array.from({length:30},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===pax?'selected':''}>${n}</option>`).join('')}</select></div><button class="btn btn-secondary btn-small" onclick="closeFNBTableSelection()">Change</button></div>
+ <div class="pos-guest-fields"><div class="form-group"><label>Order Type</label><select id="fnbTableCustomerType" onchange="updateFNBTableGuestMode()"><option value="In-House" ${t.customerType==='In-House'?'selected':''}>In-House</option><option value="Walk-In" ${t.customerType!=='In-House'?'selected':''}>Walk-In</option></select></div><div class="form-group" id="fnbTableGuestWrap" style="display:${t.customerType==='In-House'?'block':'none'}"><label>Room / Guest</label><select id="fnbTableGuest" onchange="updateFNBTableGuest()"><option value="">Select checked-in guest</option>${reservations.filter(r=>r.status==='Checked-In').map(r=>`<option value="${escapeHtml(r.id)}" ${String(t.guestId)===String(r.id)?'selected':''}>${escapeHtml(getRoomLabel(r.roomId))} · ${escapeHtml(r.guestName)} — ${escapeHtml(r.bookingNo)}</option>`).join('')}</select></div><div class="form-group" id="fnbTableWalkWrap" style="display:${t.customerType==='In-House'?'none':'block'}"><label>Guest Name</label><input id="fnbTableWalkName" value="${escapeHtml(t.guestName||'')}" oninput="updateFNBTableGuest()" placeholder="Enter guest name"/></div></div>
+ <div class="pos-bill-lines">${t.items.length?t.items.map(i=>`<div class="pos-bill-line"><div class="pos-bill-item"><strong>${escapeHtml(i.name)}</strong><small>${escapeHtml(i.category||'')}</small><span>${posMoney(Number(i.price||0))} each</span></div><div class="pos-qty-stepper"><button type="button" onclick="changePOSQty('${escapeHtml(String(i.id))}',-1)">−</button><b>${Number(i.qty||0)}</b><button type="button" onclick="changePOSQty('${escapeHtml(String(i.id))}',1)">+</button></div><strong class="pos-line-total">${posMoney(Number(i.price||0)*Number(i.qty||0))}</strong></div>`).join(''):'<div class="pos-empty-lines">No items added yet. Choose menu items in the centre panel.</div>'}</div>
+ <div class="pos-bill-summary"><div><span>Subtotal</span><strong>${posMoney(subtotal)}</strong></div><div><span>Discount</span><strong>${posMoney(0)}</strong></div></div><div class="pos-bill-total"><span>BILL TOTAL</span><strong>${posMoney(subtotal)}</strong></div>
+ <div class="pos-bill-actions"><button class="btn pos-discount-btn" type="button" disabled title="Discount control is not enabled for table orders yet">Discount</button><button class="btn pos-view-btn" type="button" onclick="printPOSInvoiceForActiveTable()">View Bill</button><button class="btn pos-print-btn" type="button" onclick="printPOSInvoiceForActiveTable()">Print Check</button><button class="btn pos-kot-btn" type="button" onclick="sendFNBTableTickets()">KOT / BOT</button></div>
+ <button class="btn pos-save-btn" type="button" onclick="saveFNBTableDraft()">Save / Send Order</button><div class="pos-ticket-note">KOT / BOT sends only new quantities. Previously sent items will not be duplicated.</div><details class="pos-ticket-history"><summary>KOT / BOT History</summary>${hasActionPermission("pos.history")?fnbTicketHistoryHtml(t):'<div class="empty">KOT / BOT History access has not been assigned to this user.</div>'}</details>`;
+ const hint=document.getElementById('posSelectionHint');if(hint)hint.textContent='Ordering on '+(t.name||('Table '+t.tableNo));
 }
+function updateFNBTablePax(value){const t=fnbTableById(activeFNBTableId);if(!t)return;t.pax=Math.max(1,Math.min(30,Number(value)||1));saveFNBTableData();refreshFNBTableService();}
+function saveFNBTableDraft(){const t=fnbTableById(activeFNBTableId);if(!t){alert('Select a table first.');return;}syncFNBActiveTable();if(t.customerType==='Walk-In'&&!String(t.guestName||'').trim()){alert('Please enter the walk-in guest name.');document.getElementById('fnbTableWalkName')?.focus();return;}if(t.customerType==='In-House'&&!t.guestId){alert('Please select the checked-in guest / room.');return;}saveFNBTableData();refreshFNBTableService();alert('Order saved for '+t.name+'. Send KOT / BOT when ready.');}
+function printPOSInvoiceForActiveTable(){const t=fnbTableById(activeFNBTableId);if(!t){alert('Select a table first.');return;}if(!t.items?.length){alert('Add items before viewing the bill.');return;}const outlet=getCurrentPOSOutlet();const lines=t.items.map(i=>`<tr><td>${escapeHtml(i.name)} × ${Number(i.qty||0)}</td><td style="text-align:right">${posMoney(Number(i.price||0)*Number(i.qty||0))}</td></tr>`).join('');const w=window.open('','_blank');if(!w){alert('Please allow pop-ups to view / print the bill.');return;}w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Check ${escapeHtml(t.name)}</title><style>body{font:14px Arial;padding:20px}h2{text-align:center}table{width:100%;border-collapse:collapse}td{padding:8px 0;border-bottom:1px dashed #bbb}.total{font-size:20px;font-weight:bold;text-align:right;margin-top:15px}</style></head><body><h2>${escapeHtml(outlet?.name||'Restaurant')}<br>ORDER CHECK</h2><p>${escapeHtml(t.name)} · ${Number(t.pax||2)} Pax<br>${escapeHtml(t.guestName||'Walk-In')}<br>${escapeHtml(localDateTime())}</p><table>${lines}</table><div class="total">Total: ${posMoney(fnbTableTotal(t))}</div><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close();}
+
 function selectFNBTable(id){
  if(!currentUser){showLoginScreen();return;}
  if(!canAccessPage("pos")){alert("Access denied. Restaurant POS has not been assigned to your user account.");return;}
@@ -12548,7 +12737,7 @@ function selectFNBTable(id){
    if(!hasActionPermission("pos.open_table")){alert("Access denied. Open / Reopen Table has not been assigned to your user account.");return;}
    t.status="Open";t.items=Array.isArray(t.items)?t.items:[];t.kotNo=Number(t.kotNo||0);t.botNo=Number(t.botNo||0);t.customerType=t.customerType||"Walk-In";t.guestId=t.guestId||"";t.guestName=t.guestName||"";
  }
- fnbEnsureHistory(t);activeFNBTableId=String(t.id);window.__signatureActiveFNBTableNo=String(t.tableNo||"");posOrder=t.items.map(i=>({...i}));
+ fnbEnsureHistory(t);t.pax=Math.max(1,Number(t.pax||2));document.getElementById("pos")?.classList.remove("pos-table-first");document.getElementById("pos")?.classList.add("pos-order-active");activeFNBTableId=String(t.id);window.__signatureActiveFNBTableNo=String(t.tableNo||"");posOrder=t.items.map(i=>({...i}));
  saveFNBTableData();renderPOSOrder();refreshFNBTableService();
  /* Refresh cloud in the background after the table is active. Never block the
     Add-item workflow on Supabase latency. */
@@ -12561,14 +12750,14 @@ function selectFNBTable(id){
    }).catch(e=>console.warn("F&B background cloud refresh failed:",e));
  }
 }
-function closeFNBTableSelection(){activeFNBTableId="";window.__signatureActiveFNBTableNo="";posOrder=[];renderPOSOrder();refreshFNBTableService();}
+function closeFNBTableSelection(){activeFNBTableId="";window.__signatureActiveFNBTableNo="";posOrder=[];document.getElementById("pos")?.classList.remove("pos-order-active");document.getElementById("pos")?.classList.add("pos-table-first");renderPOSOrder();refreshFNBTableService();}
 function syncFNBActiveTable(){const t=fnbTableById(activeFNBTableId);if(!t)return false;t.items=posOrder.map(i=>({...i,sentQty:Number(i.sentQty||0)}));t.status="Open";saveFNBTableData();return true;}
 function updateFNBTableGuestMode(){const t=fnbTableById(activeFNBTableId);if(!t)return;t.customerType=document.getElementById("fnbTableCustomerType")?.value||"Walk-In";if(t.customerType!=="In-House"){t.guestId="";t.guestName="";}saveFNBTableData();refreshFNBTableService();}
 function updateFNBTableGuest(){const t=fnbTableById(activeFNBTableId);if(!t)return;const type=document.getElementById("fnbTableCustomerType")?.value||"Walk-In";t.customerType=type;if(type==="In-House"){t.guestId=document.getElementById("fnbTableGuest")?.value||"";t.guestName=reservations.find(r=>String(r.id)===String(t.guestId))?.guestName||"";}else t.guestName=String(document.getElementById("fnbTableWalkName")?.value||"").trim();saveFNBTableData();}
 function sendFNBTableTickets(){
  if(!hasActionPermission("pos.kot")){alert("Access denied. Send KOT / BOT has not been assigned to your user account.");return;}
  const t=fnbTableById(activeFNBTableId);if(!t){alert("Open a table first.");return;}syncFNBActiveTable();const pending=t.items.map(i=>({...i,newQty:Math.max(0,Number(i.qty)-Number(i.sentQty||0))})).filter(i=>i.newQty>0);if(!pending.length){alert("No new items to send.");return;}const kot=pending.filter(i=>!fnbIsBarItem(i)),bot=pending.filter(i=>fnbIsBarItem(i));
- const printTicket=(type,rows,no)=>{const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to print KOT/BOT.");return;}const title=type==="BOT"?"BAR ORDER TICKET":"KITCHEN ORDER TICKET";w.document.write(`<html><head><title>${title} ${no}</title><style>body{font-family:Arial;padding:20px;max-width:360px;margin:auto}h1,h2{text-align:center}.line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #999}</style></head><body><h1>${title}</h1><h2>${escapeHtml(t.name)} · ${no}</h2><p>Guest: ${escapeHtml(t.guestName||'Walk-In')}<br>Time: ${escapeHtml(localDateTime())}</p>${rows.map(i=>`<div class="line"><span>${escapeHtml(i.name)}</span><strong>${i.newQty}</strong></div>`).join('')}<script>window.onload=function(){window.print();}<\/script></body></html>`);w.document.close();};
+ const printTicket=(type,rows,no)=>{const w=window.open("","_blank");if(!w){alert("Please allow pop-ups to print KOT/BOT.");return;}const cfg=settings?.hardwarePrinters||{},width=String(cfg.paperWidth||"80"),title=type==="BOT"?"BAR ORDER TICKET":"KITCHEN ORDER TICKET",device=type==="BOT"?(cfg.bot||{}):(cfg.kot||{});w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} ${no}</title><style>@page{size:${width}mm auto;margin:2mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;width:${width==="80"?"74":"52"}mm;margin:0 auto;color:#111;font-size:12px}h1,h2{text-align:center;margin:4px 0}h1{font-size:16px}.meta{font-size:11px;margin:8px 0}.line{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px dashed #999}.line span{overflow-wrap:anywhere;flex:1}.qty{font-size:16px;font-weight:bold}.rule{border-top:1px dashed #111;margin:8px 0}</style></head><body><h1>${title}</h1><h2>${escapeHtml(t.name)} · ${no}</h2><div class="meta">Guest: ${escapeHtml(t.guestName||'Walk-In')}<br>Time: ${escapeHtml(localDateTime())}<br>Printer: ${escapeHtml(device.brand||'Generic')} ${escapeHtml(device.model||'')}</div><div class="rule"></div>${rows.map(i=>`<div class="line"><span>${escapeHtml(i.name)}</span><strong class="qty">${i.newQty}</strong></div>`).join('')}<div class="rule"></div><script>window.onload=function(){window.print();}<\/script></body></html>`);w.document.close();};
  if(kot.length){const no=fnbNextTicket(t,"KOT");printTicket("KOT",kot,no);fnbEnsureHistory(t).push({no,type:"KOT",time:localDateTime(),items:kot.map(i=>({name:i.name,qty:i.newQty}))});kot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}if(bot.length){const no=fnbNextTicket(t,"BOT");printTicket("BOT",bot,no);fnbEnsureHistory(t).push({no,type:"BOT",time:localDateTime(),items:bot.map(i=>({name:i.name,qty:i.newQty}))});bot.forEach(i=>{const x=t.items.find(a=>String(a.id)===String(i.id));if(x)x.sentQty=Number(x.sentQty||0)+i.newQty;});}saveFNBTableData();posOrder=t.items.map(i=>({...i}));renderPOSOrder();refreshFNBTableService();}
 async function settleFNBTable(){
  if(!hasActionPermission("pos.close_table")){alert("Access denied. Close Table / Settle Bill has not been assigned to your user account.");return;}
@@ -12638,7 +12827,7 @@ async function settleFNBTable(){
  }
  if(confirm("Table settled. Invoice No: "+invoiceNo+"\n\nPrint final bill now?"))printPOSInvoice(saleId);
 }
-function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
+function addFNBTable(){const n=prompt("Enter table number / name:",String(fnbTables.length+1));if(n===null)return;const v=String(n).trim();if(!v)return;if(fnbTables.some(t=>String(t.tableNo).toLowerCase()===v.toLowerCase())){alert("That table already exists.");return;}fnbTables.push({id:"tbl_"+Date.now(),tableNo:v,name:"Table "+v,status:"Available",propertyId:currentPropertyId,customerType:"Walk-In",guestId:"",guestName:"",pax:2,items:[],kotNo:0,botNo:0,ticketHistory:[]});saveFNBTableData();refreshFNBTableService();}
 
 function signatureGetTaxConfig(){
  const p=(typeof getProperty==='function'?getProperty(currentPropertyId):null)||(typeof getSelectedProperty==='function'?getSelectedProperty():null)||{};
@@ -30360,6 +30549,58 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   wrapSupplierPaymentSave();
   [500,1500,3000].forEach(ms=>setTimeout(wrapSupplierPaymentSave,ms));
+})();
+</script>
+
+
+<script>
+/* FIX33: Multi-outlet / multi-preparation-station configuration foundation.
+   Property scoped under settings.restaurantOperations. Does not alter existing
+   table, POS, payment, inventory, or KOT/BOT transaction flows. */
+(function(){
+ 'use strict';
+ if(window.__signatureFix33MultiOutlet)return;
+ window.__signatureFix33MultiOutlet=true;
+ const esc=v=>typeof escapeHtml==='function'?escapeHtml(String(v??'')):String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const getOps=()=>{
+   if(!settings) return null;
+   if(!settings.restaurantOperations||typeof settings.restaurantOperations!=='object')settings.restaurantOperations={version:1,stations:[],itemRoutes:{}};
+   const x=settings.restaurantOperations;
+   if(!Array.isArray(x.stations))x.stations=[];
+   if(!x.itemRoutes||typeof x.itemRoutes!=='object')x.itemRoutes={};
+   return x;
+ };
+ const outlets=()=>{try{return (typeof getPOSOutlets==='function'?getPOSOutlets():[]).filter(o=>o&&o.active!==false)}catch(e){return []}};
+ const host=()=>document.getElementById('restaurantStationManager');
+ function ensureUI(){
+   const section=document.getElementById('hardwarePrintersSection');if(!section||document.getElementById('restaurantStationManager'))return;
+   const box=document.createElement('div');box.id='restaurantStationManager';box.style.cssText='margin-top:18px;padding-top:14px;border-top:1px solid #cbd5e1';
+   box.innerHTML='<div class="section-header"><div><h3>Restaurant Outlets &amp; Preparation Stations</h3><div style="font-size:12px;color:#64748b">Configure each restaurant separately, then add its Kitchen, Bar, Bakery or other preparation stations and assign a printer to each station.</div></div><span class="badge badge-blue">MULTI-OUTLET</span></div><div class="form-grid"><div class="form-group"><label>Restaurant / Outlet</label><select id="fix33OutletSelect"></select></div><div class="form-group"><label>New Station Name</label><input id="fix33StationName" placeholder="e.g. Main Kitchen / Pool Bar" /></div><div class="form-group"><label>Station Type</label><select id="fix33StationType"><option>Kitchen</option><option>Bar</option><option>Bakery</option><option>Cold Kitchen</option><option>Other</option></select></div></div><div class="toolbar" style="margin:8px 0"><button type="button" class="btn btn-primary" id="fix33AddStation">Add Preparation Station</button><button type="button" class="btn btn-secondary" id="fix33SaveStations">Save Outlet Configuration</button></div><div id="fix33StationList"></div><div style="margin-top:16px"><h4>Menu Item Routing</h4><div style="font-size:12px;color:#64748b;margin-bottom:8px">Assign each menu item to the station that prepares it. Items without an assignment remain on the existing KOT/BOT routing until routing integration is enabled.</div><div id="fix33ItemRoutes"></div></div><div id="fix33Status" style="font-size:12px;color:#475569;margin-top:8px">Configuration is scoped to the selected property.</div>';
+   section.appendChild(box);
+   const sel=box.querySelector('#fix33OutletSelect');
+   sel.addEventListener('change',render);
+   box.querySelector('#fix33AddStation').addEventListener('click',addStation);
+   box.querySelector('#fix33SaveStations').addEventListener('click',save);
+   box.addEventListener('change',e=>{const item=e.target.closest('[data-fix33-route]');if(item){const op=getOps();if(!op)return;const outletId=sel.value;op.itemRoutes[outletId+':'+item.dataset.fix33Route]=item.value;}});
+   box.addEventListener('click',e=>{const b=e.target.closest('[data-fix33-remove]');if(!b)return;const op=getOps();const id=b.dataset.fix33Remove;if(!confirm('Remove this preparation station? Menu item assignments to it will be cleared.'))return;op.stations=op.stations.filter(x=>x.id!==id);Object.keys(op.itemRoutes).forEach(k=>{if(op.itemRoutes[k]===id)delete op.itemRoutes[k]});render();});
+   render();
+ }
+ function render(){
+   const h=host();if(!h||!settings)return;const sel=h.querySelector('#fix33OutletSelect'),list=h.querySelector('#fix33StationList'),routes=h.querySelector('#fix33ItemRoutes');
+   const os=outlets();const previous=sel.value;sel.innerHTML=os.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.name||o.outletName||'Restaurant')+'</option>').join('');
+   if(os.some(o=>String(o.id)===String(previous)))sel.value=previous;
+   const outletId=sel.value;const op=getOps();if(!outletId){list.innerHTML='<div class="empty">Create an active Restaurant / Outlet first in Restaurant Outlet Setup.</div>';routes.innerHTML='';return;}
+   const stations=op.stations.filter(x=>String(x.outletId)===String(outletId));
+   list.innerHTML=stations.length?stations.map(st=>'<div class="section" style="padding:12px;margin:8px 0;background:#fff;border:1px solid #dbe3ee"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>'+esc(st.name)+' · '+esc(st.type)+'</strong><button type="button" class="btn btn-danger btn-small" data-fix33-remove="'+esc(st.id)+'">Remove</button></div><div class="form-grid" style="margin-top:10px"><div class="form-group"><label>Printer Brand</label><select data-fix33-field="brand" data-station="'+esc(st.id)+'">'+['Generic','Epson','Xprinter','Rongta','HPRT','SNBC','Bixolon','Star','Other'].map(v=>'<option '+(st.printer?.brand===v?'selected':'')+'>'+v+'</option>').join('')+'</select></div><div class="form-group"><label>Model</label><input data-fix33-field="model" data-station="'+esc(st.id)+'" value="'+esc(st.printer?.model||'')+'" placeholder="Printer model" /></div><div class="form-group"><label>Network IP</label><input data-fix33-field="ip" data-station="'+esc(st.id)+'" value="'+esc(st.printer?.ip||'')+'" placeholder="192.168.1.201" /></div><div class="form-group"><label>Port</label><input type="number" min="1" max="65535" data-fix33-field="port" data-station="'+esc(st.id)+'" value="'+esc(st.printer?.port||9100)+'" /></div><div class="form-group"><label>Paper Width</label><select data-fix33-field="paperWidth" data-station="'+esc(st.id)+'"><option value="80" '+(String(st.printer?.paperWidth||80)==='80'?'selected':'')+'>80mm</option><option value="58" '+(String(st.printer?.paperWidth||80)==='58'?'selected':'')+'>58mm</option></select></div><div class="form-group"><label>Print Method</label><select data-fix33-field="method" data-station="'+esc(st.id)+'"><option value="browser" '+((st.printer?.method||'browser')==='browser'?'selected':'')+'>Browser / OS driver</option><option value="bridge" '+(st.printer?.method==='bridge'?'selected':'')+'>Local ESC/POS bridge</option></select></div></div></div>').join(''):'<div class="empty">No preparation stations configured for this outlet yet.</div>';
+   const menu=Array.isArray(POS_MENU)?POS_MENU.filter(i=>i.active!==false&&String(i.outletId||'')===String(outletId)):[];
+   routes.innerHTML=menu.length?'<div class="table-wrap"><table><thead><tr><th>Menu Item</th><th>Category</th><th>Preparation Station</th></tr></thead><tbody>'+menu.map(i=>{const key=outletId+':'+i.id;const chosen=op.itemRoutes[key]||'';return '<tr><td>'+esc(i.name)+'</td><td>'+esc(i.category||'General')+'</td><td><select data-fix33-route="'+esc(i.id)+'"><option value="">Use existing KOT/BOT rule</option>'+stations.map(st=>'<option value="'+esc(st.id)+'" '+(chosen===st.id?'selected':'')+'>'+esc(st.name)+' ('+esc(st.type)+')</option>').join('')+'</select></td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">No menu items found for this outlet. Create menu items first.</div>';
+   h.querySelectorAll('[data-fix33-field]').forEach(el=>el.addEventListener('change',()=>{const st=op.stations.find(x=>x.id===el.dataset.station);if(!st)return;if(!st.printer)st.printer={};let v=el.value;if(el.dataset.fix33Field==='port'){v=Number(v);if(!Number.isInteger(v)||v<1||v>65535){el.value='9100';v=9100;}}st.printer[el.dataset.fix33Field]=v;}));
+ }
+ function addStation(){const h=host(),name=h.querySelector('#fix33StationName').value.trim(),type=h.querySelector('#fix33StationType').value,outletId=h.querySelector('#fix33OutletSelect').value;if(!outletId){alert('Select a restaurant outlet first.');return;}if(!name){alert('Enter a preparation station name.');return;}const op=getOps();op.stations.push({id:'prep_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7),outletId,name,type,printer:{brand:'Generic',model:'',ip:'',port:9100,paperWidth:80,method:'browser'}});h.querySelector('#fix33StationName').value='';render();}
+ async function save(){if(!hasActionPermission('settings.property')){alert('Access denied. Property settings permission is required.');return;}if(!settings||!currentPropertyId){alert('Select a property first.');return;}const h=host(),op=getOps();h.querySelectorAll('[data-fix33-field]').forEach(el=>{const st=op.stations.find(x=>x.id===el.dataset.station);if(st){if(!st.printer)st.printer={};st.printer[el.dataset.fix33Field]=el.dataset.fix33Field==='port'?Number(el.value||9100):el.value;}});h.querySelectorAll('[data-fix33-route]').forEach(el=>{const k=h.querySelector('#fix33OutletSelect').value+':'+el.dataset.fix33Route;if(el.value)op.itemRoutes[k]=el.value;else delete op.itemRoutes[k];});saveData();const status=h.querySelector('#fix33Status');status.textContent='Saved locally. Verifying selected-property cloud sync…';try{if(typeof window.__signatureSavePropertyConfigToCloud!=='function')throw new Error('Property cloud configuration saver unavailable');await window.__signatureSavePropertyConfigToCloud();status.textContent='Outlet, station, printer and menu-routing configuration saved and cloud sync confirmed for this property.';alert('Multi-outlet station configuration saved for this property.');}catch(e){console.error('FIX33 station configuration cloud save failed',e);status.textContent='Saved locally only; cloud sync NOT verified: '+(e?.message||e);alert('Saved locally, but cloud sync was not verified. Do not rely on another device until sync succeeds.');}}
+ const obs=new MutationObserver(()=>{if(document.getElementById('hardwarePrintersSection'))ensureUI()});obs.observe(document.documentElement,{childList:true,subtree:true});
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureUI);else ensureUI();
+ window.renderRestaurantPreparationStations=render;
 })();
 </script>
 
