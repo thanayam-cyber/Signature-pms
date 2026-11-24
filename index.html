@@ -418,6 +418,15 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
   #pos #fnbTableGrid { grid-template-columns:repeat(2,minmax(0,1fr))!important; }
   #pos .section { padding:12px!important; }
 }
+
+/* Restaurant POS category navigation and compact order controls */
+#pos > .grid-2 { grid-template-columns:minmax(0,1fr)!important; }
+#pos .pos-category-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 14px;padding:2px 0;}
+#pos .pos-category-btn{border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:10px;padding:11px 16px;min-height:46px;font-weight:700;cursor:pointer;white-space:nowrap;}
+#pos .pos-category-btn.active{background:#173f35;color:#fff;border-color:#173f35;box-shadow:0 2px 7px rgba(15,23,42,.12);}
+#pos #posMenu{margin-top:4px;}
+#pos #fnbActiveTablePanel table{min-width:620px;}
+@media(max-width:700px){#pos .pos-category-tabs{gap:6px;}#pos .pos-category-btn{flex:1 1 auto;padding:10px 12px;font-size:14px;}#pos #posMenu{grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
 </style>
 
 
@@ -1093,30 +1102,19 @@ footer{padding:25px;text-align:center;color:#6b7280;font-size:12px}
 <div class="section">
 <div class="section-header"><h3>Restaurant POS</h3></div><div class="form-group" style="margin-bottom:15px"><label>Restaurant / Outlet</label><select id="posOutlet" onchange="selectPOSOutlet(this.value)"></select></div><div id="posOutletContext" style="font-size:12px;color:#64748b;margin:-7px 0 12px 0"></div><div class="form-group" style="margin-bottom:15px"><label>Customer Type</label><select id="posCustomerType" onchange="renderPOSCustomerMode()"><option value="In-House">In-House Guest</option><option value="Walk-In">Walk-In / Outside Guest</option></select></div><div class="form-group" style="margin-bottom:15px"><label>Guest Rate Type</label><select id="posRateType" onchange="renderPOS()"><option value="Local">Local Rate</option><option value="Foreign">Foreign Rate</option></select><div style="font-size:11px;color:#64748b;margin-top:4px">Choose the applicable rate before adding menu items.</div></div><div class="form-group" id="posGuestWrap" style="margin-bottom:15px"><label>In-House Guest / Folio</label><select id="posGuest"><option value="">Select In-House Guest / Folio</option></select></div><div class="form-group" id="posWalkInWrap" style="margin-bottom:15px;display:none"><label>Walk-In Guest Name (optional)</label><input id="posWalkInName" placeholder="Customer name"/></div><div class="form-group" style="margin-bottom:15px"><label>Payment Method</label><select id="posPaymentMethod"><option value="Room Charge">Room Charge</option><option value="Cash">Cash</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Online Payment">Online Payment</option><option value="Other">Other</option></select></div>
 <div id="posMenuRule"><div style="background:#f8faf9;border:1px solid #d1d5db;border-radius:8px;padding:9px;margin-bottom:10px;font-size:12px;color:#475569"><strong>Restaurant pricing:</strong> Food cost + 20% preparation &amp; service. Tea / Coffee included.</div></div>
+<div id="posMenuCategories" class="pos-category-tabs" aria-label="Menu categories"></div>
 <div class="pos-menu" id="posMenu"><div class="empty">No active restaurant menu items for this property.</div></div>
-</div>
-<div class="section">
-<div class="section-header">
-<h3>Current Order</h3>
-<button class="btn btn-secondary btn-small" onclick="clearPOSOrder()">
-                    Clear
-                </button>
-</div>
-<div id="posOrder">
-<div class="empty">
-            No items in order.
-        </div></div>
+<!-- Keep the legacy order model and actions available; table orders are displayed in the selected table panel. -->
+<div id="posOrder" style="display:none" aria-hidden="true"></div>
 <div class="summary-box" style="margin-top:15px">
-<div style="display:flex;justify-content:space-between">
-<strong>Total</strong>
-<strong id="posTotal">LKR 0.00</strong>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <strong>Order Total</strong><strong id="posTotal">LKR 0.00</strong>
+  </div>
+  <div class="toolbar" style="margin-top:10px;justify-content:flex-end">
+    <button class="btn btn-secondary btn-small" onclick="clearPOSOrder()">Clear Order</button>
+    <button class="btn btn-success" onclick="savePOSOrder()">Save Restaurant Order</button>
+  </div>
 </div>
-</div>
-<button class="btn btn-success" onclick="savePOSOrder()" style="width:100%;margin-top:12px">
-
-                Save Restaurant Order
-
-            </button>
 </div>
 </div>
 <div class="section" id="fnbTableServiceSection" style="margin-top:18px"><div class="section-header"><div><h3>Restaurant Table Service</h3><div style="font-size:12px;color:#6b7280;margin-top:4px">Open a table → add items → send new KOT / BOT → add more → close &amp; settle.</div></div><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="refreshFNBTablesFromCloud()">Refresh Tables</button><button class="btn btn-secondary btn-small" onclick="addFNBTable()">+ Add Table</button></div></div><div class="grid-2"><div><div id="fnbTableGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div></div><div><div id="fnbActiveTablePanel"><div class="empty">Select an available table to open it.</div></div></div></div></div>
@@ -3077,6 +3075,7 @@ function canDo(permission){if(!currentUser)return false;if(currentUser.role==="A
 
 /* Mutable menu: existing PMS functions can continue using POS_MENU. */
 let POS_MENU=[];
+let signaturePOSSelectedCategory="All";
 
 /* =========================================================
    CORE HELPERS
@@ -12054,40 +12053,43 @@ function renderPOS(){
 
     const rateType=document.getElementById("posRateType")?.value||"Local";
     const activeMenu=POS_MENU.filter(item=>item.active!==false && String(item.outletId||current?.id||"")===String(current?.id||""));
-
-    menu.innerHTML=activeMenu.length ? activeMenu.map(item=>{
+    const categoryHost=document.getElementById("posMenuCategories");
+    const categories=["All",...Array.from(new Set(activeMenu.map(item=>String(item.category||"General").trim()||"General"))).sort((a,b)=>a.localeCompare(b))];
+    if(!categories.includes(signaturePOSSelectedCategory))signaturePOSSelectedCategory="All";
+    if(categoryHost){
+      categoryHost.innerHTML=categories.map(category=>`<button type="button" class="pos-category-btn ${category===signaturePOSSelectedCategory?'active':''}" data-pos-category="${escapeHtml(category)}" onclick="selectPOSMenuCategory(this.getAttribute('data-pos-category'))">${escapeHtml(category==='All'?'All Items':category)}</button>`).join("");
+    }
+    const visibleMenu=signaturePOSSelectedCategory==="All"?activeMenu:activeMenu.filter(item=>(String(item.category||"General").trim()||"General")===signaturePOSSelectedCategory);
+    menu.innerHTML=visibleMenu.length ? visibleMenu.map(item=>{
         const selectedPrice=rateType==="Foreign"?(item.priceForeign ?? item.priceLocal ?? item.price):(item.priceLocal ?? item.price);
         return `
-
             <div class="pos-item">
-
-                <div style="font-size:11px;color:#6b7280;margin-bottom:4px">
-                    ${escapeHtml(item.category||"General")}
-                </div>
-
-                <h4>
-                    ${escapeHtml(item.name)}
-                </h4>
-
-                <div class="pos-price">
-                    ${posMoney(selectedPrice)}
-                </div>
-
-                <button type="button" class="btn btn-primary btn-small pos-menu-add-btn"
-                    data-pos-item-id="${escapeHtml(String(item.id))}">
-                    Add
-                </button>
-
-            </div>
-
-        `;
-    }).join("") : `<div class="empty">No active restaurant menu items for this property.</div>`;
+                <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${escapeHtml(item.category||"General")}</div>
+                <h4>${escapeHtml(item.name)}</h4>
+                <div class="pos-price">${posMoney(selectedPrice)}</div>
+                <button type="button" class="btn btn-primary btn-small pos-menu-add-btn" data-pos-item-id="${escapeHtml(String(item.id))}">Add</button>
+            </div>`;
+    }).join("") : `<div class="empty">${activeMenu.length?'No active items in this category.':'No active restaurant menu items for this property.'}</div>`;
 
 
     renderPOSOrder();
 
 }
 
+
+function selectPOSMenuCategory(category){
+  signaturePOSSelectedCategory=String(category||"All");
+  const outlet=getCurrentPOSOutlet();
+  const activeMenu=POS_MENU.filter(item=>item.active!==false && String(item.outletId||outlet?.id||"")===String(outlet?.id||""));
+  const valid=["All",...activeMenu.map(item=>String(item.category||"General").trim()||"General")];
+  if(!valid.includes(signaturePOSSelectedCategory))signaturePOSSelectedCategory="All";
+  const host=document.getElementById("posMenuCategories");
+  if(host)host.querySelectorAll(".pos-category-btn").forEach(button=>button.classList.toggle("active",button.getAttribute("data-pos-category")===signaturePOSSelectedCategory));
+  const menu=document.getElementById("posMenu");if(!menu)return;
+  const rateType=document.getElementById("posRateType")?.value||"Local";
+  const filtered=signaturePOSSelectedCategory==="All"?activeMenu:activeMenu.filter(item=>(String(item.category||"General").trim()||"General")===signaturePOSSelectedCategory);
+  menu.innerHTML=filtered.length?filtered.map(item=>{const price=rateType==="Foreign"?(item.priceForeign??item.priceLocal??item.price):(item.priceLocal??item.price);return `<div class="pos-item"><div style="font-size:11px;color:#6b7280;margin-bottom:4px">${escapeHtml(item.category||"General")}</div><h4>${escapeHtml(item.name)}</h4><div class="pos-price">${posMoney(price)}</div><button type="button" class="btn btn-primary btn-small pos-menu-add-btn" data-pos-item-id="${escapeHtml(String(item.id))}">Add</button></div>`;}).join(""):`<div class="empty">No active items in this category.</div>`;
+}
 
 function addPOSItem(id){
     try{
@@ -12527,7 +12529,7 @@ function refreshFNBTableService(){
  if(!fnbTables.length){fnbTables=defaultFNBTableList();saveFNBTableData();}
  g.innerHTML=fnbTables.map(t=>{const open=t.status==="Open";return `<button class="btn ${open?'btn-primary':'btn-secondary'}" style="min-height:72px;text-align:left" onclick="selectFNBTable('${escapeHtml(t.id)}')"><strong>${escapeHtml(t.name)}</strong><br><span style="font-size:11px">${open?'OPEN · '+posMoney(fnbTableTotal(t)):'AVAILABLE'}</span></button>`}).join("");
  const t=fnbTableById(activeFNBTableId);if(!t){p.innerHTML='<div class="empty">Select an available table to open it.</div>';return;}
- p.innerHTML=`<div style="border:1px solid #d1d5db;border-radius:10px;padding:14px;background:#fff"><div style="display:flex;justify-content:space-between"><div><h3 style="margin:0">${escapeHtml(t.name)}</h3><div style="font-size:11px;color:#64748b">${t.status} · KOT ${t.kotNo||0} · BOT ${t.botNo||0}</div></div><button class="btn btn-secondary btn-small" onclick="closeFNBTableSelection()">Close</button></div><div class="form-grid" style="margin:12px 0"><div class="form-group"><label>Customer</label><select id="fnbTableCustomerType" onchange="updateFNBTableGuestMode()"><option value="In-House" ${t.customerType==='In-House'?'selected':''}>In-House Guest</option><option value="Walk-In" ${t.customerType!=='In-House'?'selected':''}>Walk-In</option></select></div><div class="form-group" id="fnbTableGuestWrap" style="display:${t.customerType==='In-House'?'block':'none'}"><label>Guest / Folio</label><select id="fnbTableGuest" onchange="updateFNBTableGuest()"><option value="">Select checked-in guest</option>${reservations.filter(r=>r.status==='Checked-In').map(r=>`<option value="${escapeHtml(r.id)}" ${String(t.guestId)===String(r.id)?'selected':''}>${escapeHtml(r.guestName)} — ${escapeHtml(r.bookingNo)}</option>`).join('')}</select></div><div class="form-group" id="fnbTableWalkWrap" style="display:${t.customerType==='In-House'?'none':'block'}"><label>Walk-In Name</label><input id="fnbTableWalkName" value="${escapeHtml(t.guestName||'')}" oninput="updateFNBTableGuest()" placeholder="Optional"/></div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Sent</th><th>New</th><th>Amount</th></tr></thead><tbody>${t.items.length?t.items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td>${i.qty}</td><td>${i.sentQty||0}</td><td>${Math.max(0,Number(i.qty)-Number(i.sentQty||0))}</td><td>${posMoney(Number(i.price)*Number(i.qty))}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No items. Add items from the POS menu above.</td></tr>'}</tbody></table></div><div style="display:flex;justify-content:space-between;margin-top:12px"><strong>Total</strong><strong>${posMoney(fnbTableTotal(t))}</strong></div><div class="toolbar" style="margin-top:12px"><button class="btn btn-primary" onclick="sendFNBTableTickets()">Send New KOT / BOT</button><button class="btn btn-success" onclick="settleFNBTable()">Close Table & Settle</button></div><div style="font-size:11px;color:#64748b;margin-top:7px">Only NEW quantities are sent. Previous KOT/BOT items are never duplicated.</div><div style="margin-top:16px"><h4 style="margin:0 0 8px">KOT / BOT History</h4>${hasActionPermission("pos.history")?fnbTicketHistoryHtml(t):'<div class="empty">KOT / BOT History access has not been assigned to this user.</div>'}</div></div>`;
+ p.innerHTML=`<div style="border:1px solid #d1d5db;border-radius:10px;padding:14px;background:#fff"><div style="display:flex;justify-content:space-between"><div><h3 style="margin:0">${escapeHtml(t.name)}</h3><div style="font-size:11px;color:#64748b">${t.status} · KOT ${t.kotNo||0} · BOT ${t.botNo||0}</div></div><button class="btn btn-secondary btn-small" onclick="closeFNBTableSelection()">Close</button></div><div class="form-grid" style="margin:12px 0"><div class="form-group"><label>Customer</label><select id="fnbTableCustomerType" onchange="updateFNBTableGuestMode()"><option value="In-House" ${t.customerType==='In-House'?'selected':''}>In-House Guest</option><option value="Walk-In" ${t.customerType!=='In-House'?'selected':''}>Walk-In</option></select></div><div class="form-group" id="fnbTableGuestWrap" style="display:${t.customerType==='In-House'?'block':'none'}"><label>Guest / Folio</label><select id="fnbTableGuest" onchange="updateFNBTableGuest()"><option value="">Select checked-in guest</option>${reservations.filter(r=>r.status==='Checked-In').map(r=>`<option value="${escapeHtml(r.id)}" ${String(t.guestId)===String(r.id)?'selected':''}>${escapeHtml(r.guestName)} — ${escapeHtml(r.bookingNo)}</option>`).join('')}</select></div><div class="form-group" id="fnbTableWalkWrap" style="display:${t.customerType==='In-House'?'none':'block'}"><label>Walk-In Name</label><input id="fnbTableWalkName" value="${escapeHtml(t.guestName||'')}" oninput="updateFNBTableGuest()" placeholder="Optional"/></div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Sent</th><th>New</th><th>Amount</th><th>Adjust</th></tr></thead><tbody>${t.items.length?t.items.map(i=>`<tr><td><strong>${escapeHtml(i.name)}</strong><div style="font-size:11px;color:#64748b">${escapeHtml(i.category||'')}</div></td><td>${i.qty}</td><td>${i.sentQty||0}</td><td>${Math.max(0,Number(i.qty)-Number(i.sentQty||0))}</td><td>${posMoney(Number(i.price)*Number(i.qty))}</td><td><div class="toolbar"><button class="btn btn-secondary btn-small" onclick="changePOSQty('${escapeHtml(String(i.id))}',-1)">−</button><button class="btn btn-secondary btn-small" onclick="changePOSQty('${escapeHtml(String(i.id))}',1)">+</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">No items. Add items from the menu above.</td></tr>'}</tbody></table></div><div style="display:flex;justify-content:space-between;margin-top:12px"><strong>Total</strong><strong>${posMoney(fnbTableTotal(t))}</strong></div><div class="toolbar" style="margin-top:12px"><button class="btn btn-primary" onclick="sendFNBTableTickets()">Send New KOT / BOT</button><button class="btn btn-success" onclick="settleFNBTable()">Close Table & Settle</button></div><div style="font-size:11px;color:#64748b;margin-top:7px">Only NEW quantities are sent. Previous KOT/BOT items are never duplicated.</div><div style="margin-top:16px"><h4 style="margin:0 0 8px">KOT / BOT History</h4>${hasActionPermission("pos.history")?fnbTicketHistoryHtml(t):'<div class="empty">KOT / BOT History access has not been assigned to this user.</div>'}</div></div>`;
 }
 function selectFNBTable(id){
  if(!currentUser){showLoginScreen();return;}
