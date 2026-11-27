@@ -12689,13 +12689,16 @@ function saveFNBTableData(){
 }
 function fnbTableById(id){return (fnbTables||[]).find(x=>String(x.id)===String(id));}
 function fnbLineTotal(i){
- const priceCents=Math.round((Number(i?.price)||0)*100);
+ // Round in LKR, not in the internal guest currency, before summing.
+ const rate=posRate();
  const qty=Math.max(0,Number(i?.qty)||0);
- return (priceCents*qty)/100;
+ const cents=Math.round((Number(i?.price)||0)*qty*rate*100);
+ return cents/100/rate;
 }
 function fnbTableTotal(t){
- const cents=(t?.items||[]).reduce((sum,i)=>sum+Math.round(fnbLineTotal(i)*100),0);
- return cents/100;
+ const rate=posRate();
+ const cents=(t?.items||[]).reduce((sum,i)=>sum+Math.round(fnbLineTotal(i)*rate*100),0);
+ return cents/100/rate;
 }
 function fnbEnsureHistory(t){if(!Array.isArray(t.ticketHistory))t.ticketHistory=[];return t.ticketHistory;}
 function fnbTicketHistoryHtml(t){const h=fnbEnsureHistory(t);if(!h.length)return '<div class="empty">No KOT / BOT history yet.</div>';return '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Type</th><th>Time</th><th>Items</th></tr></thead><tbody>'+h.slice().reverse().map(x=>'<tr><td><strong>'+escapeHtml(x.no||'')+'</strong></td><td>'+escapeHtml(x.type||'')+'</td><td>'+escapeHtml(x.time||'')+'</td><td>'+escapeHtml((x.items||[]).map(i=>String(i.name||'')+' × '+Number(i.qty||0)).join(', '))+'</td></tr>').join('')+'</tbody></table></div>';}
@@ -12719,7 +12722,7 @@ function refreshFNBTableService(){
  const subtotalDisplay=posMoney(subtotal);
  p.innerHTML=`<div class="pos-bill-head"><div><span>TABLE NO.</span><strong>${escapeHtml(t.name||('Table '+t.tableNo))}</strong></div><div class="pos-pax-control"><label for="fnbTablePax">PAX</label><select id="fnbTablePax" onchange="updateFNBTablePax(this.value)">${Array.from({length:30},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===pax?'selected':''}>${n}</option>`).join('')}</select></div><button class="btn btn-secondary btn-small" onclick="closeFNBTableSelection()">Change</button></div>
  <div class="pos-guest-fields"><div class="form-group"><label>Order Type</label><select id="fnbTableCustomerType" onchange="updateFNBTableGuestMode()"><option value="In-House" ${t.customerType==='In-House'?'selected':''}>In-House</option><option value="Walk-In" ${t.customerType!=='In-House'?'selected':''}>Walk-In</option></select></div><div class="form-group" id="fnbTableGuestWrap" style="display:${t.customerType==='In-House'?'block':'none'}"><label>Room / Guest</label><select id="fnbTableGuest" onchange="updateFNBTableGuest()"><option value="">Select checked-in guest</option>${reservations.filter(r=>r.status==='Checked-In').map(r=>`<option value="${escapeHtml(r.id)}" ${String(t.guestId)===String(r.id)?'selected':''}>${escapeHtml(getRoomLabel(r.roomId))} · ${escapeHtml(r.guestName)} — ${escapeHtml(r.bookingNo)}</option>`).join('')}</select></div><div class="form-group" id="fnbTableWalkWrap" style="display:${t.customerType==='In-House'?'none':'block'}"><label>Guest Name</label><input id="fnbTableWalkName" value="${escapeHtml(t.guestName||'')}" oninput="updateFNBTableGuest()" placeholder="Enter guest name"/></div></div>
- <div class="pos-bill-lines">${t.items.length?t.items.map(i=>`<div class="pos-bill-line"><div class="pos-bill-item"><strong>${escapeHtml(i.name)}</strong><small>${escapeHtml(i.category||'')}</small><span>${posMoney(Number(i.price||0))} each</span></div><div class="pos-qty-stepper"><button type="button" onclick="changePOSQty('${escapeHtml(String(i.id))}',-1)">−</button><b>${Number(i.qty||0)}</b><button type="button" onclick="changePOSQty('${escapeHtml(String(i.id))}',1)">+</button></div><strong class="pos-line-total">${posMoney(Number(i.price||0)*Number(i.qty||0))}</strong></div>`).join(''):'<div class="pos-empty-lines">No items added yet. Choose menu items in the centre panel.</div>'}</div>
+ <div class="pos-bill-lines">${t.items.length?t.items.map(i=>`<div class="pos-bill-line"><div class="pos-bill-item"><strong>${escapeHtml(i.name)}</strong><small>${escapeHtml(i.category||'')}</small><span>${posMoney(Number(i.price||0))} each</span></div><div class="pos-qty-stepper"><button type="button" onclick="changePOSQty('${escapeHtml(String(i.id))}',-1)">−</button><b>${Number(i.qty||0)}</b><button type="button" onclick="changePOSQty('${escapeHtml(String(i.id))}',1)">+</button></div><strong class="pos-line-total">${posMoney(fnbLineTotal(i))}</strong></div>`).join(''):'<div class="pos-empty-lines">No items added yet. Choose menu items in the centre panel.</div>'}</div>
  <div class="pos-bill-summary"><div><span>Subtotal</span><strong>${subtotalDisplay}</strong></div><div><span>Discount</span><strong>${posMoney(0)}</strong></div></div><div class="pos-bill-total"><span>BILL TOTAL</span><strong>${subtotalDisplay}</strong></div>
  <div class="pos-bill-actions"><button class="btn pos-discount-btn" type="button" disabled title="Discount control is not enabled for table orders yet">Discount</button><button class="btn pos-view-btn" type="button" onclick="printPOSInvoiceForActiveTable()">View Bill</button><button class="btn pos-print-btn" type="button" onclick="printPOSInvoiceForActiveTable()">Print Check</button><button class="btn pos-kot-btn" type="button" onclick="sendFNBTableTickets()">KOT / BOT</button></div>
  <button class="btn pos-save-btn" type="button" onclick="saveFNBTableDraft()">Save / Send Order</button><div class="pos-ticket-note">KOT / BOT sends only new quantities. Previously sent items will not be duplicated.</div><details class="pos-ticket-history"><summary>KOT / BOT History</summary>${hasActionPermission("pos.history")?fnbTicketHistoryHtml(t):'<div class="empty">KOT / BOT History access has not been assigned to this user.</div>'}</details>`;
